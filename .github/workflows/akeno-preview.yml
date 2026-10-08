@@ -1,0 +1,46 @@
+name: Akeno Anime PS5 Preview
+
+on:
+  push:
+    branches:
+      - akeno
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout akeno branch
+        uses: actions/checkout@v4
+
+      - name: Install PS5 build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl git make ninja-build ccache pkg-config python3 python3-pip python3-venv tar wget unzip clang-18 clang-format-18 lld-18
+
+      - name: Verify Akeno app model
+        run: |
+          mkdir -p build/tests
+          c++ -std=c++20 -Wall -Wextra -Werror -pedantic -Isrc src/app_model.cpp PPSA99999/tests/app_model_test.cpp -o build/tests/akeno-model
+          ./build/tests/akeno-model
+
+      - name: Compile PS5 application
+        run: |
+          make doctor
+          make BUILD_JOBS=4
+          test -f dist/PPSA99276/eboot.bin
+          test -f dist/PPSA99276/sce_sys/param.json
+          test -f dist/PPSA99276.zip
+          sha256sum dist/PPSA99276.zip
+
+      - name: Upload installable folder archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: AKENO-ANIME-PS5-PPSA99276
+          path: dist/PPSA99276.zip
+          if-no-files-found: error
+          retention-days: 14
