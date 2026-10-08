@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - akeno
+      - akeno-preview-fix
   workflow_dispatch:
 
 permissions:
