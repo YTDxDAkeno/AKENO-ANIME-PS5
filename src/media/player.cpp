@@ -322,6 +322,8 @@ PlayerStatus Player::status() const
         std::lock_guard<std::mutex> guard(status_lock_);
         out = status_;
     }
+    if (config_.frames && config_.frames->last_convert_us())
+        out.convert_us = config_.frames->last_convert_us();
     if (!session_)
         return out;
     std::lock_guard<std::mutex> guard(session_->control_lock);
@@ -796,7 +798,8 @@ void Player::run()
                     status_.width = static_cast<int>(t->format.visible_width);
                     status_.height = static_cast<int>(t->format.visible_height);
                 }
-                if (t->last_error[0])
+                // A stop or seek cancels the decoder (-125); that is not an error.
+                if (t->last_error[0] && result != RunResult::stopped && result != RunResult::seek)
                     status_.demux_error = t->last_error;
             }
         }
@@ -820,6 +823,13 @@ void Player::run()
                 std::lock_guard<std::mutex> status_guard(status_lock_);
                 status_.frames_decoded = last.frames_decoded;
                 status_.frames_presented = last.frames_presented;
+                status_.frames_dropped = last.frames_dropped;
+                status_.audio_underruns = last.audio_underruns;
+                status_.audio_errors = last.audio_errors;
+                status_.access_units = tap.video_units.load();
+                status_.audio_frames = tap.audio_units.load();
+                if (config_.frames)
+                    status_.convert_us = config_.frames->last_convert_us();
                 status_.decoder = last.decoder;
                 status_.decoder_errors = last.decoder_errors;
                 status_.last_native_result = last.last_native_result;

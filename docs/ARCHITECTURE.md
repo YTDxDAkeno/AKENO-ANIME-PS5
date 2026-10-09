@@ -56,16 +56,20 @@
 ## Storage
 
 Everything the app writes stays under `/download0/akeno/` (the title's own
-download-data area; `/app0` is read-only):
+download-data area, mounted only while the app runs; a PC can read it over
+FTP at `/mnt/sandbox/PPSA99276_000/download0/akeno/` but not write to it):
 
 | File | Contents |
 | --- | --- |
 | `settings.json` | Versioned settings (`"version": 1`); unknown or corrupt files are moved aside and defaults used |
 | `history.json`, `favorites.json` | Watch history with positions, favourites |
 | `secrets.json` | YouTube API key only; never logged or exported |
-| `streams.json` | Your own stream list (optional, you create it) |
-| `media/` | Your own video files (optional) |
 | `akeno-diagnostics-*.txt` | Exported reports |
+| `crash.txt`, `crash-previous.txt` | Crash report of the last session; shown and renamed at the next start |
+
+Files a user provides are read from the install folder, which a PC can write
+(`/data/homebrew/PPSA99276/`, `/app0` in the app; read-only to the app):
+`media/`, `streams.json` and `youtube-key.txt`.
 
 Writes go to a temporary file first and are renamed into place.
 

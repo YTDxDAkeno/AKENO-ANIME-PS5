@@ -21,6 +21,8 @@ void sleep_us(std::uint32_t microseconds) noexcept;
 std::string app_dir();
 // Writable title data (/download0/akeno on the console). Created on demand.
 std::string data_dir();
+// Where a PC finds data_dir() (over FTP while the app runs on the console).
+std::string data_dir_from_pc();
 
 struct SystemInfo
 {

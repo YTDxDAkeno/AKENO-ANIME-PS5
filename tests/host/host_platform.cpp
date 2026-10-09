@@ -46,6 +46,11 @@ std::string data_dir()
     return path;
 }
 
+std::string data_dir_from_pc()
+{
+    return data_dir();
+}
+
 SystemInfo system_info()
 {
     SystemInfo info;

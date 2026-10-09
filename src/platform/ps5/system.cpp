@@ -89,6 +89,12 @@ std::string data_dir()
     return path;
 }
 
+std::string data_dir_from_pc()
+{
+    // The title's download data is mounted into its sandbox only while it runs.
+    return "/mnt/sandbox/PPSA99276_000/download0/akeno";
+}
+
 SystemInfo system_info()
 {
     SystemInfo info;

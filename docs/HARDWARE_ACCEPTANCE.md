@@ -1,4 +1,4 @@
-# Hardware acceptance checklist (AKENO STREAM 0.4.1)
+# Hardware acceptance checklist (AKENO STREAM 0.4.x)
 
 Run this on the console before calling a build "working". Note the result of
 each step (pass / fail / not tested) and, when anything fails, export a
@@ -13,8 +13,8 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
       `sce_module/libc.prx` and `assets/` (fonts and `selftest/`)
 - [ ] No old `/data/homebrew/PPSA99999/` remains
 - [ ] The tile is named **AKENO STREAM** and shows the icon
-- [ ] Notifications "AKENO STREAM 0.4.1 starting" and, within ~5 s,
-      "AKENO STREAM 0.4.1 ready" appear; the splash screen shows the startup
+- [ ] Notifications "AKENO STREAM 0.4.2 starting" and, within ~5 s,
+      "AKENO STREAM 0.4.2 ready" appear; the splash screen shows the startup
       steps in between
 - [ ] If it crashes instead: note the "crashed: ..." notification text
       (signal, `eboot+0x…`, stage) and the last splash message
@@ -70,19 +70,22 @@ Settings -> *Diagnostics*:
 
 ## 6. Library and your own media
 
-- [ ] Library lists *Bundled test clips* and *AKENO media folder*
-- [ ] Copy an MP4 (H.264 + AAC) to `/download0/akeno/media/` over FTP; it
-      appears after reopening Library and plays with sound
+- [ ] Library lists *Bundled test clips* and *Media in the install folder*
+- [ ] Copy an MP4 (H.264 + AAC) over FTP to `/data/homebrew/PPSA99276/media/`;
+      it appears under *Media in the install folder* and plays with sound
 - [ ] An MKV and a TS file play
 - [ ] A USB drive: note what Library shows for USB drive 1 (files / "Not
       connected" / "No access from the title sandbox"): ______
-- [ ] `streams.json` (README example with a real stream) shows *Your Streams* in Open Streams
+- [ ] `/data/homebrew/PPSA99276/streams.json` (README example with a real
+      stream) shows *Your Streams* in Open Streams
 
 ## 7. Export a report
 
 - [ ] Diagnostics -> *Export report* names a file
       `/download0/akeno/akeno-diagnostics-….txt`
-- [ ] Download it over FTP; it contains no API key (search for `AIza`)
+- [ ] With the app still running, download it over FTP from
+      `/mnt/sandbox/PPSA99276_000/download0/akeno/`; it contains no API key
+      (search for `AIza`)
 
 ## 8. Catalogues (network)
 
@@ -101,3 +104,10 @@ Settings -> *Diagnostics*:
 - [ ] Switching modes rapidly while artwork loads does not crash
 
 Result: ______ passed, ______ failed, ______ not tested.
+
+## Results so far
+
+| Date | Console | Version | Result |
+| --- | --- | --- | --- |
+| 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.0 | Crashed at launch (`CE-108255-1`): system heap returned null |
+| 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1 | Starts; UI, controller, fonts; network test passed (HTTPS 200, HLS master with 5 variants); FFmpeg self-test passed; A/V sync clip 360/360 frames presented, 0 dropped, 0 decoder errors, 0 audio underruns/errors; Big Buck Bunny HLS played and resumed; AniList artwork loaded; report export works; a fMP4/CMAF stream was refused as designed |

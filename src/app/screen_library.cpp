@@ -49,7 +49,9 @@ class LibraryScreen final : public Screen
   public:
     explicit LibraryScreen(App &app) : Screen{app}
     {
-        media_dir_ = fs::join(platform::data_dir(), "media");
+        // The install folder is the one place a PC can copy files to (FTP to
+        // /data/homebrew/<title>/media); the app sees it as /app0/media.
+        media_dir_ = fs::join(platform::app_dir(), "media");
         const auto add = [this](std::string label, std::string path, Icon icon)
         {
             Root root;
@@ -59,7 +61,7 @@ class LibraryScreen final : public Screen
             roots_.push_back(std::move(root));
         };
         add("Bundled test clips", fs::join(platform::app_dir(), "assets/selftest"), Icon::film);
-        add("AKENO media folder", media_dir_, Icon::folder);
+        add("Media in the install folder", media_dir_, Icon::folder);
         for (int i = 0; i < 8; ++i)
             add("USB drive " + std::to_string(i + 1), "/mnt/usb" + std::to_string(i), Icon::usb);
         add("Extended storage 1", "/mnt/ext0", Icon::usb);
@@ -74,7 +76,6 @@ class LibraryScreen final : public Screen
         if (!probed_)
         {
             probed_ = true;
-            (void)fs::make_directory(media_dir_);
             probe();
             app_.mark_dirty();
         }
@@ -188,13 +189,14 @@ class LibraryScreen final : public Screen
             p.text(right.x + 40, right.y + 40, "Select a storage location", th::kHeading,
                    th::kTextSecondary);
             p.wrapped(right.x + 40, right.y + 100,
-                      "Copy your own, legally obtained video files to the AKENO media folder or a "
-                      "USB drive. "
-                      "Encrypted (DRM) files cannot be played. Folders the title sandbox may not "
-                      "read are "
-                      "marked accordingly.",
+                      "Copy your own, legally obtained video files over FTP into a folder named "
+                      "media inside the app's install folder, or use a USB drive. Encrypted (DRM) "
+                      "files cannot be played. Folders the title sandbox may not read are marked "
+                      "accordingly.",
                       th::kBody, th::kTextMuted, right.w - 80, 4);
-            p.text(right.x + 40, right.y + 290, "AKENO media folder: " + media_dir_, th::kCaption,
+            p.text(right.x + 40, right.y + 290, "From a PC: /data/homebrew/PPSA99276/media",
+                   th::kCaption, th::kTextMuted, right.w - 80);
+            p.text(right.x + 40, right.y + 324, "In the app: " + media_dir_, th::kCaption,
                    th::kTextMuted, right.w - 80);
             return;
         }
@@ -277,11 +279,12 @@ class LibraryScreen final : public Screen
             else
             {
                 r.available = false;
-                r.status =
-                    error.find("ermission") != std::string::npos ||
-                            error.find("ot permitted") != std::string::npos
-                        ? "No access from the title sandbox"
-                        : (error.find("No such") != std::string::npos ? "Not connected" : error);
+                r.status = error.find("ermission") != std::string::npos ||
+                                   error.find("ot permitted") != std::string::npos
+                               ? "No access from the title sandbox"
+                           : error.find("No such") == std::string::npos ? error
+                           : r.path == media_dir_                       ? "No media folder yet"
+                                                                        : "Not connected";
             }
         }
     }

@@ -4,10 +4,12 @@
 #include "app/app.hpp"
 
 #include "app/screens.hpp"
+#include "core/fs.hpp"
 #include "net/http.hpp"
 #include "platform/platform.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <ctime>
 
 namespace akeno
@@ -115,6 +117,18 @@ void App::start(std::uint64_t now_ms)
     store_.load();
     if (!store_.last_error().empty())
         report_error("storage", store_.last_error());
+    // A crash report left by the previous run (platform crash reporter):
+    // show it once, keep it as crash-previous.txt for the next report.
+    const std::string crash_path = fs::join(platform::data_dir(), "crash.txt");
+    if (auto text = fs::read_text(crash_path, 8192))
+    {
+        std::string first = text->substr(0, text->find('\n'));
+        report_error("previous run", first);
+        toast("The last session ended with a crash - details in Settings > Diagnostics",
+              th::kWarning);
+        (void)fs::write_atomic(fs::join(platform::data_dir(), "crash-previous.txt"), *text);
+        (void)fs::remove_file(crash_path);
+    }
     apply_settings();
     stacks_[static_cast<int>(Mode::home)].push_back(make_home_screen(*this));
     stacks_[static_cast<int>(Mode::anime)].push_back(make_anime_screen(*this));
@@ -293,7 +307,35 @@ void App::finish_playback_record()
     if (!s.live && (s.position > 0.0 || s.state == media::PlayerState::ended))
         store_.record_progress(
             playing_, s.state == media::PlayerState::ended ? s.duration : s.position, s.duration);
+    if (playing_.provider == "open" && playing_.id.rfind("bundled-", 0) == 0)
+        record_hardware_test(s);
     playing_active_ = false;
+}
+
+// A bundled clip doubles as the hardware playback test in Diagnostics.
+void App::record_hardware_test(const media::PlayerStatus &s)
+{
+    TestResult r;
+    const bool ok =
+        s.frames_presented > 0 && s.decoder_errors == 0 && s.state != media::PlayerState::error;
+    r.state = ok ? TestResult::State::passed : TestResult::State::failed;
+    char line[256];
+    std::snprintf(line, sizeof(line),
+                  "%s: %llu frames decoded, %llu presented, %llu dropped; audio errors %llu",
+                  playing_.title.c_str(), static_cast<unsigned long long>(s.frames_decoded),
+                  static_cast<unsigned long long>(s.frames_presented),
+                  static_cast<unsigned long long>(s.frames_dropped),
+                  static_cast<unsigned long long>(s.audio_errors));
+    r.summary = line;
+    r.details.push_back("Decoder: " + s.decoder);
+    std::snprintf(line, sizeof(line), "Video: %s %dx%d; audio: %s; %llu underruns",
+                  s.video_codec.c_str(), s.width, s.height,
+                  s.audio_codec.empty() ? "none" : s.audio_codec.c_str(),
+                  static_cast<unsigned long long>(s.audio_underruns));
+    r.details.push_back(line);
+    if (!s.error.empty())
+        r.details.push_back("Error: " + s.error);
+    diagnostics_.hardware_playback = std::move(r);
 }
 
 void App::show_qr(const MediaItem &item)

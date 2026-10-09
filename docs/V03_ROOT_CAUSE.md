@@ -35,6 +35,15 @@ was never run on hardware.
 Without a console the exact failing call cannot be identified: v0.3 did not
 record FFmpeg's error code or log.
 
+## Confirmed on the console
+
+0.4.1 - same FFmpeg-based open/probe/decode path as v0.3, but with the
+executable's own heap - ran its media self-test on a PS5 (firmware 13.09):
+`mpegts h264 640x360`, stream info found, 21 packets read, 8 video and 11 audio
+frames decoded. The hardware decoder presented 360 of 360 frames of the 720p
+clip. This is consistent with the heap explanation above (the FFmpeg build
+also changed, so the two cannot be separated with certainty).
+
 ## What 0.4.0 and 0.4.1 change
 
 0. **0.4.1: the executable owns its heap.** `malloc`, `calloc`, `realloc`,

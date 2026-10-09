@@ -6,5 +6,5 @@
 namespace akeno
 {
 // Keep in step with contentVersion in sce_sys/param.json.
-inline constexpr const char *kAppVersion = "0.4.1";
+inline constexpr const char *kAppVersion = "0.4.2";
 } // namespace akeno

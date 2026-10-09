@@ -567,7 +567,8 @@ class DiagnosticsScreen final : public Screen
             if (Diagnostics::export_report(platform::data_dir(), report,
                                            platform::wall_clock_seconds(), &path, &error))
             {
-                exported_ = "Report saved: " + path;
+                exported_ = "Report saved: " + path + "  -  on a PC (FTP, while the app runs): " +
+                            platform::data_dir_from_pc();
                 app_.toast("Diagnostics report saved", th::kSuccess);
             }
             else

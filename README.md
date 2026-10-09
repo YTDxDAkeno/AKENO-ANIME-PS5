@@ -12,19 +12,19 @@ watch history, favourites and a diagnostics screen.
 | | |
 | --- | --- |
 | Title ID | `PPSA99276` (unchanged since v0.1) |
-| Version | 0.4.1 (`contentVersion` 01.004.001) |
-| Target | Firmware 12.20 with ShadowMountPlus; no PSN account, no PC needed after install |
+| Version | 0.4.2 (`contentVersion` 01.004.002) |
+| Tested on | PS5 firmware 13.09 with ShadowMountPlus (0.4.1); no PSN account, no PC needed after install |
 | Install path | `/data/homebrew/PPSA99276/` |
 | Licence | GPL-3.0-or-later |
 
-> **Read this first.** AKENO STREAM is compiled, linked and tested on a Linux
-> build machine; it has **not yet run successfully on a PS5**. Earlier versions
-> verified that the app launches (v0.1) and that HTTPS works (v0.2) on
-> firmware 12.20; v0.3's video playback failed with `ERROR -51 / FRAMES 0`,
-> and 0.4.0 crashed at launch (`CE-108255-1`) because the system heap returns
-> null for real allocations. 0.4.1 brings its own heap and reports any crash
-> as a notification naming the startup stage and code address - please send
-> that text (a photo is fine). Then run the
+> **Status.** 0.4.1 runs on a PS5 (firmware 13.09, ShadowMountPlus): the
+> interface, controller, HTTPS, the FFmpeg self-test, hardware H.264 decoding
+> with AAC audio (360 of 360 frames presented, nothing dropped, no audio
+> errors), an HLS stream (Big Buck Bunny), the AniList catalogue and the
+> diagnostics export all worked on the console. Earlier, 0.4.0 crashed at
+> launch because the system heap returns null for real allocations; 0.4.1
+> brought its own heap. Features not yet tried on the console are marked
+> below. Please keep reporting with the
 > [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md).
 
 German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
@@ -40,30 +40,34 @@ with recorded API responses and generated placeholder artwork; more in
 
 ## Feature status
 
-"Host-tested" means automated tests on the build machine exercise the real
-code path (with a local HTTP server, generated media and FFmpeg's software
-decoder standing in for the console's hardware decoder). "PS5 build" means
-the code compiles and links into `eboot.bin`. Nothing in 0.4.x is
-hardware-verified yet.
+**Console** = seen working on a PS5 (firmware 13.09, version 0.4.1).
+**Host-tested** = automated tests on the build machine exercise the real code
+path (local HTTP server, generated media, FFmpeg's software decoder standing
+in for the console's hardware decoder). **PS5 build** = compiled and linked
+into `eboot.bin`, not yet tried on the console.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Launch, 1080p interface, DualSense navigation | Host-tested, PS5 build | Same VideoOut and pad sequence as the hardware-verified v0.1; new renderer and input mapper |
-| Mode switching with L1/R1 (Home, Anime, YouTube, Library, Settings) | Host-tested, PS5 build | |
-| HTTPS with certificate verification | Host-tested, PS5 build | Uses the console's CA list like the hardware-verified v0.2 |
-| HLS playback (master playlists, variant choice, live streams, retries) | Host-tested, PS5 build | Clear MPEG-TS segments; see limitations |
-| Hardware video decoding (H.264, HEVC; Videodec2) | PS5 build | ProsperoTV's shipping native backend |
-| Audio (AAC via Audiodec; MP2; AC-3/E-AC-3 via FFmpeg) | PS5 build | Host tests cover demuxing, not console audio output |
+| Launch, 1080p interface, Inter fonts, DualSense navigation | **Console** | |
+| Mode switching with L1/R1 (Home, Anime, YouTube, Library, Settings) | **Console** | The last mode is restored at the next start |
+| HTTPS with certificate verification | **Console** | Console CA list; example.com and mux.dev answered |
+| HLS playback (MPEG-TS segments) | **Console** | Big Buck Bunny played; resume position saved |
+| HLS with fMP4/CMAF segments | Not supported | Refused with a clear message (seen on the console) |
+| Hardware H.264 decoding (Videodec2) | **Console** | 720p30 clip: 360/360 frames presented, 0 dropped, 0 decoder errors |
+| Hardware HEVC decoding | PS5 build | |
+| AAC audio (Audiodec + AudioOut) | **Console** | 0 underruns, 0 output errors; A/V sync by eye not yet reported |
+| MP2, AC-3/E-AC-3 audio | PS5 build | |
 | Local files: MP4, M4V, MKV, MOV, TS, M2TS | Host-tested, PS5 build | Remuxed on the fly to MPEG-TS by FFmpeg 8.0.1 |
-| Pause, seek ±10 s / ±60 s, stop, replay, quality change | Host-tested, PS5 build | |
-| Resume where you left off, history, favourites, settings | Host-tested, PS5 build | Stored in `/download0/akeno/` |
-| Offline test clips (no network needed) | Host-tested, PS5 build | 2 s 360p clip and a 12 s 720p A/V sync clip |
-| Public DRM-free test streams (Blender open movies, Apple, Akamai) | Host-tested with local copies | Third-party streams may go offline |
+| Stop, pause, seek ±10 s / ±60 s, replay, quality change | Stop: **Console**; rest host-tested | |
+| Resume where you left off, history, favourites, settings | **Console** | Files written on the console |
+| Offline test clips (no network needed) | **Console** | 2 s 360p clip and a 12 s 720p A/V sync clip |
+| Public DRM-free test streams | Big Buck Bunny **Console** | Third-party streams may go offline or use fMP4 |
 | Your own streams (`streams.json`) | Host-tested, PS5 build | |
-| Anime mode: AniList catalogue, search, details, official links (QR) | Host-tested with recorded API responses | Discovery only - AniList has no video |
-| YouTube: trending, search, channels (Data API v3, your key) | Host-tested with recorded API responses | **No YouTube playback** - see below |
+| Anime mode: AniList catalogue, search, details, official links (QR) | **Console** (catalogue and artwork loaded) | Discovery only - AniList has no video |
+| YouTube: trending, search, channels (Data API v3, your key) | Host-tested, PS5 build | **No YouTube playback** - see below |
 | Crunchyroll | **Unsupported** | Status page explains why and lists legitimate options |
-| Diagnostics: network test, media self-test, hardware test clip, report export | Host-tested, PS5 build | Reports exclude keys and tokens |
+| Diagnostics: network test, FFmpeg self-test, report export | **Console** | Reports exclude keys and tokens |
+| Crash reporter, previous-crash notice | PS5 build | No crash since 0.4.1 to test it with |
 | USB drives in the library | PS5 build | Title sandbox access is unverified; the app reports what it can reach |
 | Subtitles | Not implemented | |
 | HDR | Not implemented | HDR streams play without tone mapping |
@@ -96,18 +100,40 @@ The folder contains `eboot.bin`, `sce_sys/` (param.json, icon, backgrounds),
 | OPTIONS | Service information | Stream information panel |
 
 **First test:** Home -> *Offline Test Clips* -> *A/V Sync Test Clip*. It plays
-from the app folder without network access: a test pattern with a beep once a
-second. If you see the picture and hear the beeps in sync, hardware video and
-audio work.
+from the app folder without network access: a test pattern with a seconds
+counter and a beep once a second. If you see the picture and hear the beeps in
+sync, hardware video and audio work.
+
+### Where files go
+
+Over FTP a PC can **write** only to the install folder
+`/data/homebrew/PPSA99276/` (the app sees it as `/app0`). The app's own data
+folder (`/download0/akeno` inside the app) can only be **read** from a PC, and
+only while AKENO STREAM is running, at
+`/mnt/sandbox/PPSA99276_000/download0/akeno/`. When the app is closed, that
+data lives in the image `/user/download/PPSA99276/download0.dat` (readable
+with [UFS2Tool](https://github.com/SvenGDK/UFS2Tool)).
+
+| What | Copy to (from a PC) |
+| --- | --- |
+| Your video files | `/data/homebrew/PPSA99276/media/` |
+| Your stream list | `/data/homebrew/PPSA99276/streams.json` |
+| YouTube API key (optional) | `/data/homebrew/PPSA99276/youtube-key.txt` |
+
+| What | Read from (while the app runs) |
+| --- | --- |
+| Diagnostics reports, `crash-previous.txt` | `/mnt/sandbox/PPSA99276_000/download0/akeno/` |
+
+Files in the install folder are kept when you update the app by copying the
+new `PPSA99276/` folder over the old one.
 
 ### Your own media
 
-- **Files:** copy MP4, MKV, MOV or TS files to `/download0/akeno/media/` (the
-  app's own storage; the folder is created when you first open *Library*) or a
-  USB drive and open them in *Library*. `/download0` is limited to about 256 MB by `param.json`; use USB
-  for larger files if the title sandbox allows access (the Library shows
-  "No access from the title sandbox" otherwise).
-- **Streams:** create `/download0/akeno/streams.json`:
+- **Files:** copy MP4, MKV, MOV or TS files to
+  `/data/homebrew/PPSA99276/media/` and open them in *Library* -> *Media in
+  the install folder*. USB drives are listed too; the Library shows "No access
+  from the title sandbox" if the console does not let the app read them.
+- **Streams:** create `/data/homebrew/PPSA99276/streams.json`:
 
   ```json
   {
@@ -128,8 +154,9 @@ audio work.
 YouTube mode uses the official YouTube Data API v3 with **your own free API
 key** (Google Cloud Console -> enable "YouTube Data API v3" -> create an API
 key). Enter it in YouTube mode or Settings with the on-screen keyboard, or put
-it in `/download0/akeno/youtube-key.txt` and press Square; the file is deleted
-after import. The key is stored in `/download0/akeno/secrets.json`, never
+it in `/data/homebrew/PPSA99276/youtube-key.txt` and press Square in YouTube
+mode; delete the file afterwards (the app cannot delete files in its install
+folder). The key is stored in the app's data folder (`secrets.json`), never
 shown in logs or diagnostics reports. A search costs 100 of the default 10,000
 daily quota units, a trending page 1 unit.
 
@@ -154,21 +181,24 @@ Anime mode.
 
 ### If the app crashes
 
-0.4.1 shows its startup steps on screen ("Loading fonts...", "Starting
+The app shows its startup steps on screen ("Loading fonts...", "Starting
 network...") and catches crashes: before the system's error dialog appears,
-a notification reads for example *"AKENO STREAM 0.4.1 crashed: SIGSEGV (invalid
-memory access) at eboot+0x1a2b3c, address 0x0, during startup: fonts"*. The
-same text with a backtrace is written to `/download0/akeno/crash.txt`. The
-`eboot+0x…` offsets map to source lines with the `build/llvm-pie.elf` of the
-same build (CI uploads it with the screenshots).
+a notification reads for example *"AKENO STREAM 0.4.2 crashed: SIGSEGV (invalid
+memory access) at eboot+0x1a2b3c, address 0x0, during startup: fonts"*. A
+photo of it is the most useful bug report. At the next start the app says that
+the last session crashed, lists the first line under Settings -> Diagnostics
+and keeps the full text with a backtrace as `crash-previous.txt` in its data
+folder. The `eboot+0x…` offsets map to functions with the `build/llvm-pie.elf`
+of the same build (CI uploads it with the screenshots).
 
 ### Diagnostics
 
 Settings -> *Diagnostics* shows system, network, media and last-playback
 information and can run a network test, an FFmpeg media self-test and the
 hardware test clip. *Export report* writes
-`/download0/akeno/akeno-diagnostics-YYYYMMDD-HHMMSS.txt`; fetch it over FTP
-and attach it to bug reports. API keys, tokens and signed URL parameters are
+`akeno-diagnostics-YYYYMMDD-HHMMSS.txt` to the app's data folder; while the
+app is still running, fetch it over FTP from
+`/mnt/sandbox/PPSA99276_000/download0/akeno/` and attach it to bug reports. API keys, tokens and signed URL parameters are
 redacted.
 
 ## Limitations

@@ -463,7 +463,7 @@ class YouTubeScreen final : public BrowseScreen
             "3.  Create an API key (APIs & Services > Credentials > Create credentials).",
             "4.  Recommended: restrict the key to the YouTube Data API v3.",
             "5.  Enter it here with the on-screen keyboard, or copy it into",
-            "     /download0/akeno/youtube-key.txt over FTP and press Square.",
+            "     youtube-key.txt in the app's install folder over FTP and press Square.",
         };
         int y = steps.y + 96;
         for (const char *line : lines)
@@ -526,18 +526,28 @@ class YouTubeScreen final : public BrowseScreen
 
     void load_key_file()
     {
-        const auto text = fs::read_text(fs::join(platform::data_dir(), "youtube-key.txt"), 4096);
+        // A PC can write to the install folder (/data/homebrew/<title>, /app0
+        // here) but not to the app's data folder, which the app can clean up.
+        const std::string installed = fs::join(platform::app_dir(), "youtube-key.txt");
+        const std::string data = fs::join(platform::data_dir(), "youtube-key.txt");
+        const bool from_install = fs::exists(installed);
+        const auto text = fs::read_text(from_install ? installed : data, 4096);
         if (!text)
         {
-            app_.toast("No youtube-key.txt in " + platform::data_dir(), th::kWarning);
+            app_.toast("No youtube-key.txt in the app's install folder", th::kWarning);
             return;
         }
         std::string key = *text;
         while (!key.empty() && (key.back() == '\n' || key.back() == '\r' || key.back() == ' '))
             key.pop_back();
         accept_key(key);
-        if (app_.youtube().configured())
-            (void)fs::remove_file(fs::join(platform::data_dir(), "youtube-key.txt"));
+        if (!app_.youtube().configured())
+            return;
+        if (from_install)
+            app_.toast("Key saved. Delete youtube-key.txt from the install folder now.",
+                       th::kWarning);
+        else
+            (void)fs::remove_file(data);
     }
 
     void accept_key(const std::string &key)

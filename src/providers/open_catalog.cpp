@@ -171,7 +171,10 @@ std::vector<MediaItem> parse_user_streams(const std::string &text, std::string *
 
 std::string OpenCatalog::user_streams_path() const
 {
-    return fs::join(data_dir_, "streams.json");
+    // The install folder (/app0 in the app, /data/homebrew/<title> from a PC)
+    // is where a PC can put files; the app's own data folder is read-only to FTP.
+    const std::string installed = fs::join(app_dir_, "streams.json");
+    return fs::exists(installed) ? installed : fs::join(data_dir_, "streams.json");
 }
 
 std::vector<MediaItem> OpenCatalog::user_streams(std::string *error) const

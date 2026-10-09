@@ -203,6 +203,7 @@ class App final
     Screen &top();
     std::vector<std::unique_ptr<Screen>> &stack();
     void finish_playback_record();
+    void record_hardware_test(const media::PlayerStatus &status);
 
     AppConfig config_;
     gfx::FontEngine &fonts_;

@@ -1,12 +1,12 @@
-# AKENO STREAM 0.4.1 – Installation (Kurzfassung auf Deutsch)
+# AKENO STREAM 0.4.2 – Installation (Kurzfassung auf Deutsch)
 
 Ausführliche Dokumentation (Englisch): [README.md](README.md).
 
-**Wichtig:** AKENO STREAM wurde gebaut und auf dem Build-Rechner getestet,
-lief aber **noch nicht erfolgreich auf einer echten PS5** (0.4.0 stürzte beim
-Start ab; 0.4.1 behebt die wahrscheinliche Ursache, den System-Heap). Bitte nach der Installation die
-[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) durchgehen und bei Fehlern
-einen Diagnosebericht exportieren (siehe unten).
+**Stand:** 0.4.1 läuft auf einer PS5 mit Firmware 13.09 und ShadowMountPlus:
+Oberfläche, Controller, HTTPS, Hardware-Video (H.264) mit Ton, ein HLS-Stream,
+der Anime-Katalog und der Diagnose-Export funktionierten auf der Konsole. Was
+noch nicht auf der Konsole ausprobiert wurde, steht in der README. Bitte die
+[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) weiter durchgehen.
 
 ## Herunterladen
 
@@ -48,13 +48,23 @@ Tonausgabe.
 - **Quadrat**: Favorit; im Player maximale Qualität ändern
 - **OPTIONS**: Dienst-Infos, im Player Stream-Informationen
 
-## Eigene Videos und Streams
+## Wo Dateien hingehören
 
-- Videos (MP4, MKV, MOV, TS) per FTP nach `/download0/akeno/media/` kopieren
-  (der Ordner entsteht beim ersten Öffnen von *Library*) und unter *Library*
-  abspielen. `/download0` ist auf ca. 256 MB begrenzt.
-- Eigene HLS-/TS-Links in `/download0/akeno/streams.json` eintragen (Format
-  siehe README). Nur Streams verwenden, die man ansehen darf.
+Per FTP **schreiben** kann man nur in den Installationsordner
+`/data/homebrew/PPSA99276/` (die App sieht ihn als `/app0`). Den eigenen
+Datenordner der App kann man vom PC nur **lesen**, und nur solange AKENO STREAM
+läuft: `/mnt/sandbox/PPSA99276_000/download0/akeno/`.
+
+| Was | Wohin (vom PC aus) |
+| --- | --- |
+| Eigene Videos (MP4, MKV, MOV, TS) | `/data/homebrew/PPSA99276/media/` |
+| Eigene Stream-Liste | `/data/homebrew/PPSA99276/streams.json` |
+| YouTube-API-Schlüssel (optional) | `/data/homebrew/PPSA99276/youtube-key.txt` |
+| Diagnoseberichte abholen | `/mnt/sandbox/PPSA99276_000/download0/akeno/` (App muss laufen) |
+
+Videos erscheinen unter *Library* -> *Media in the install folder*. Nur
+Streams und Dateien verwenden, die man ansehen darf. Die YouTube-Datei nach
+dem Import (Quadrat im YouTube-Modus) wieder löschen.
 
 ## YouTube und Crunchyroll
 
@@ -69,18 +79,19 @@ Tonausgabe.
 
 ## Wenn die App abstürzt
 
-0.4.1 zeigt beim Start die einzelnen Schritte auf dem Bildschirm an und meldet
-einen Absturz vor dem Fehlerdialog als Benachrichtigung, z. B. *„AKENO STREAM
-0.4.1 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*. Bitte
-diesen Text (gern als Foto) und die letzte Meldung auf dem Startbildschirm
-schicken.
+Die App zeigt beim Start die einzelnen Schritte auf dem Bildschirm an und
+meldet einen Absturz vor dem Fehlerdialog als Benachrichtigung, z. B. *„AKENO
+STREAM 0.4.2 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*.
+Bitte diesen Text (gern als Foto) schicken. Beim nächsten Start weist die App
+selbst auf den Absturz hin und zeigt ihn unter Settings -> Diagnostics.
 
 ## Wenn etwas nicht funktioniert
 
 1. Settings -> *Diagnostics* öffnen, *Run media self-test* und
    *Play hardware test clip* ausführen.
-2. *Export report* wählen; die Datei
-   `/download0/akeno/akeno-diagnostics-….txt` per FTP herunterladen. Sie
-   enthält keine API-Schlüssel.
+2. *Export report* wählen und die App offen lassen; die Datei
+   `akeno-diagnostics-….txt` per FTP aus
+   `/mnt/sandbox/PPSA99276_000/download0/akeno/` herunterladen. Sie enthält
+   keine API-Schlüssel.
 3. Bericht, genaue Firmware-Version, ShadowMountPlus-Version und den im Menü
    *About* angezeigten Build-Namen im GitHub-Issue oder Pull Request posten.
