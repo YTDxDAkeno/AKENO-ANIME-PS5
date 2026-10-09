@@ -60,10 +60,10 @@ void draw_diagnostics(Canvas &canvas) noexcept
     canvas.text(160, 753, "DRM VIDEOPLAYER", 5, Color::white);
 
     canvas.text(850, 684, "NOT IMPLEMENTED", 4, Color::yellow);
-    canvas.text(850, 753, "NICHT IMPLEMENTIERT", 4, Color::yellow);
+    canvas.text(850, 753, "NOT IMPLEMENTED", 4, Color::yellow);
 
     const char *https = "NOT TESTED";
-    const char *playlist = "NICHT GEPRUEFT";
+    const char *playlist = "NOT TESTED";
     char http_detail[72]{};
     char hls_detail[72]{};
 
@@ -77,7 +77,7 @@ void draw_diagnostics(Canvas &canvas) noexcept
         break;
     case ProbeStage::thread_error:
         https = "THREAD ERROR";
-        playlist = "KEIN TEST";
+        playlist = "NOT TESTED";
         break;
     case ProbeStage::https_error:
         std::snprintf(http_detail, sizeof(http_detail), "ERROR HTTP %d CURL %d",
@@ -87,14 +87,14 @@ void draw_diagnostics(Canvas &canvas) noexcept
         break;
     case ProbeStage::playlist_error:
         std::snprintf(http_detail, sizeof(http_detail), "OK HTTP %d", probe.https_http_code);
-        std::snprintf(hls_detail, sizeof(hls_detail), "FEHLER HTTP %d CURL %d",
+        std::snprintf(hls_detail, sizeof(hls_detail), "ERROR HTTP %d CURL %d",
                       probe.hls_http_code, probe.curl_code);
         https = http_detail;
         playlist = hls_detail;
         break;
     case ProbeStage::ready:
         std::snprintf(http_detail, sizeof(http_detail), "OK HTTP %d", probe.https_http_code);
-        std::snprintf(hls_detail, sizeof(hls_detail), "OK HTTP %d - %d QUALITAETEN",
+        std::snprintf(hls_detail, sizeof(hls_detail), "OK HTTP %d - %d VARIANTS",
                       probe.hls_http_code, probe.variants);
         https = http_detail;
         playlist = hls_detail;
@@ -135,7 +135,7 @@ void draw_scene(Canvas &canvas) noexcept
     canvas.clear(Color::background);
     canvas.rectangle(0, 0, 1920, 14, Color::yellow);
     canvas.text(105, 65, "AKENO ANIME", 11, Color::white);
-    canvas.text(105, 158, "CRUNCHYROLL CLIENT - TECH PREVIEW 0.3", 3, Color::cyan);
+    canvas.text(105, 158, "CRUNCHYROLL CLIENT - TECH PREVIEW 0.3.1", 3, Color::cyan);
     draw_tabs(canvas);
     canvas.rectangle(110, 330, 1700, 590, Color::panel);
     canvas.text(150, 370, akeno::page_title(state.page), 7, Color::white);
@@ -145,11 +145,21 @@ void draw_scene(Canvas &canvas) noexcept
     {
         video.draw_frame(canvas);
         auto vs = video.snapshot();
-        canvas.text(160, 820, "EXPERIMENTAL PUBLIC HLS VIDEO - NO AUDIO YET", 3, Color::white);
+        canvas.text(160, 782, "PUBLIC HLS MPEG-TS DECODER TEST - VIDEO ONLY", 3, Color::white);
         char video_status[96]{};
         std::snprintf(video_status, sizeof(video_status), "VIDEO STATUS %d - FRAMES %u - ERROR %d",
                       static_cast<int>(vs.stage), vs.frames, vs.error);
-        canvas.text(160, 875, video_status, 3, Color::yellow);
+        canvas.text(160, 835, video_status, 3, Color::yellow);
+        char transfer[116]{};
+        std::snprintf(transfer, sizeof(transfer),
+                      "HTTP %d  BYTES %u  TS SYNC %d  DEMUXER %d",
+                      vs.http, vs.segment_bytes, vs.ts_sync, vs.demuxer);
+        canvas.text(160, 878, transfer, 3, Color::cyan);
+        char decoder[104]{};
+        std::snprintf(decoder, sizeof(decoder),
+                      "FFMPEG ERROR %d  STREAM INFO %d",
+                      vs.av_error, vs.stream_info_error);
+        canvas.text(160, 908, decoder, 3, Color::yellow);
     }
     else if (state.details)
     {
@@ -185,5 +195,5 @@ void draw_scene(Canvas &canvas) noexcept
 int main()
 {
     state.set_controller(pad.open());
-    ps5::demo::run_frames(draw_scene, "Akeno Anime 0.2 started");
+    ps5::demo::run_frames(draw_scene, "Akeno Anime 0.3.1 started");
 }

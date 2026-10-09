@@ -213,6 +213,11 @@ bool VideoPreview::start() noexcept
     frames_.store(0);
     error_.store(0);
     http_.store(0);
+    segment_bytes_.store(0);
+    ts_sync_.store(0);
+    demuxer_.store(0);
+    av_error_.store(0);
+    stream_info_error_.store(0);
     pthread_mutex_lock(&mutex_);
     frame_ready_ = false;
     pthread_mutex_unlock(&mutex_);
@@ -261,7 +266,9 @@ void VideoPreview::toggle_pause() noexcept
 
 VideoSnapshot VideoPreview::snapshot() const noexcept
 {
-    return {stage_.load(std::memory_order_acquire), frames_.load(), error_.load(), http_.load()};
+    return {stage_.load(std::memory_order_acquire), frames_.load(), error_.load(),
+            http_.load(), segment_bytes_.load(), ts_sync_.load(),
+            demuxer_.load(), av_error_.load(), stream_info_error_.load()};
 }
 
 void VideoPreview::draw_frame(ps5::demo::Canvas &canvas) noexcept
@@ -338,9 +345,25 @@ void VideoPreview::run() noexcept
         return;
     }
     http_.store(http);
+    segment_bytes_.store(static_cast<unsigned>(segment.used));
     if (should_stop())
     {
         stage_.store(VideoStage::stopped);
+        curl_global_cleanup();
+        return;
+    }
+
+    // A valid HLS URL can return HTTP 200 with HTML, a media-playlist,
+    // or a different transport format. Do not hand that to the MPEG-TS demuxer.
+    const bool looks_like_ts =
+        segment.used >= 3 * 188 &&
+        segment.data[0] == 0x47 && segment.data[188] == 0x47 &&
+        segment.data[376] == 0x47;
+    ts_sync_.store(looks_like_ts ? 1 : -1);
+    if (!looks_like_ts)
+    {
+        error_.store(-43);
+        stage_.store(VideoStage::error, std::memory_order_release);
         curl_global_cleanup();
         return;
     }
@@ -369,10 +392,34 @@ void VideoPreview::run() noexcept
     format->pb = io;
     format->flags |= AVFMT_FLAG_CUSTOM_IO;
     const AVInputFormat *ts_format = av_find_input_format("mpegts");
-    if (avformat_open_input(&format, nullptr, ts_format, nullptr) < 0 ||
-        avformat_find_stream_info(format, nullptr) < 0)
+    demuxer_.store(ts_format ? 1 : -1);
+    // Keep AVIO and the format context cleanup independent: avformat_open_input
+    // can free the format context on failure and set the pointer to null.
+    if (!ts_format)
     {
-        failure = -51;
+        failure = -50;
+    }
+    else
+    {
+        const int opened = avformat_open_input(&format, nullptr, ts_format, nullptr);
+        if (opened < 0)
+        {
+            av_error_.store(opened);
+            failure = -511; // Failed to open the MPEG-TS container.
+        }
+        else
+        {
+            const int inspected = avformat_find_stream_info(format, nullptr);
+            stream_info_error_.store(inspected);
+            // A single HLS segment can contain a partial elementary stream.
+            // If FFmpeg already discovered streams, try its parsed codecpar.
+            // The codec open step below still rejects incomplete parameters.
+            if (inspected < 0 && format->nb_streams == 0)
+            {
+                av_error_.store(inspected);
+                failure = -512;
+            }
+        }
     }
 
     int stream_index = -1;
