@@ -166,13 +166,16 @@ jobs:
           compression-level: 0
           retention-days: 30
 
-      - name: Upload screenshots and import table
+      # llvm-pie.elf keeps the symbols that turn a crash report's eboot+0x...
+      # offsets into function names (llvm-symbolizer-18 --obj llvm-pie.elf 0x...).
+      - name: Upload screenshots, import table and symbols
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.label.outputs.artifact }}-screenshots
           path: |
             build/screenshots/*.png
             build/imports.txt
+            build/llvm-pie.elf
           if-no-files-found: error
           retention-days: 30
 

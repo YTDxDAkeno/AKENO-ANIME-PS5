@@ -207,8 +207,10 @@ for source in "${sources[@]}"; do
     object="$build/obj/$source.o"
     mkdir -p "$(dirname "$object")"
     if [[ $source == *.c ]]; then standard=-std=c11; else standard=-std=c++20; fi
-    args=("$standard" -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
-    [[ $source == *.c ]] || args+=(-fno-exceptions -fno-rtti)
+    # Frame pointers make crash backtraces readable; static destructors would
+    # only register atexit callbacks before main for an app that never exits.
+    args=("$standard" -O2 -Wall -Wextra -ffunction-sections -fdata-sections -fno-omit-frame-pointer)
+    [[ $source == *.c ]] || args+=(-fno-exceptions -fno-rtti -fno-c++-static-destructors)
     for definition in "${definitions[@]}"; do
         [[ $definition =~ ^[A-Za-z_][A-Za-z0-9_]*(=[A-Za-z0-9_]+)?$ ]] || {
             echo "invalid compile definition: $definition" >&2; exit 2;

@@ -1,9 +1,10 @@
-# AKENO STREAM 0.4.0 – Installation (Kurzfassung auf Deutsch)
+# AKENO STREAM 0.4.1 – Installation (Kurzfassung auf Deutsch)
 
 Ausführliche Dokumentation (Englisch): [README.md](README.md).
 
-**Wichtig:** Version 0.4.0 wurde gebaut und auf dem Build-Rechner getestet,
-lief aber **noch nicht auf einer echten PS5**. Bitte nach der Installation die
+**Wichtig:** AKENO STREAM wurde gebaut und auf dem Build-Rechner getestet,
+lief aber **noch nicht erfolgreich auf einer echten PS5** (0.4.0 stürzte beim
+Start ab; 0.4.1 behebt die wahrscheinliche Ursache, den System-Heap). Bitte nach der Installation die
 [Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) durchgehen und bei Fehlern
 einen Diagnosebericht exportieren (siehe unten).
 
@@ -65,6 +66,14 @@ Tonausgabe.
   und die Videos sind DRM-geschützt; eine Umgehung kommt nicht in Frage. Bitte
   die offizielle Crunchyroll-App der PS5 nutzen. Der Anime-Modus zeigt
   Katalogdaten von AniList mit Links zu offiziellen Anbietern.
+
+## Wenn die App abstürzt
+
+0.4.1 zeigt beim Start die einzelnen Schritte auf dem Bildschirm an und meldet
+einen Absturz vor dem Fehlerdialog als Benachrichtigung, z. B. *„AKENO STREAM
+0.4.1 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*. Bitte
+diesen Text (gern als Foto) und die letzte Meldung auf dem Startbildschirm
+schicken.
 
 ## Wenn etwas nicht funktioniert
 

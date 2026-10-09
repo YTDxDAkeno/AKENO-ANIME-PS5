@@ -49,9 +49,7 @@ class LibraryScreen final : public Screen
   public:
     explicit LibraryScreen(App &app) : Screen{app}
     {
-        const std::string data = platform::data_dir();
-        media_dir_ = fs::join(data, "media");
-        (void)fs::make_directory(media_dir_);
+        media_dir_ = fs::join(platform::data_dir(), "media");
         const auto add = [this](std::string label, std::string path, Icon icon)
         {
             Root root;
@@ -67,12 +65,25 @@ class LibraryScreen final : public Screen
         add("Extended storage 1", "/mnt/ext0", Icon::usb);
         add("Extended storage 2", "/mnt/ext1", Icon::usb);
         add("Console storage /data", "/data", Icon::folder);
-        probe();
+    }
+
+    void update(std::uint64_t now_ms) override
+    {
+        (void)now_ms;
+        // Storage is looked at when the Library is first shown, not at launch.
+        if (!probed_)
+        {
+            probed_ = true;
+            (void)fs::make_directory(media_dir_);
+            probe();
+            app_.mark_dirty();
+        }
     }
 
     void resumed() override
     {
-        probe();
+        if (probed_)
+            probe();
     }
 
     void handle(input::Button b) override
@@ -350,6 +361,7 @@ class LibraryScreen final : public Screen
     int root_ = 0;
     int pane_ = 0;
     std::string path_;
+    bool probed_ = false;
     std::string media_dir_;
     std::vector<fs::Entry> entries_;
     int entry_ = 0;

@@ -21,6 +21,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SDK_LIB = ROOT / ".deps/native/ps5-payload-sdk/target/lib"
 EXTRA_STUBS = ROOT / "build/import-stubs"
 FORBIDDEN = {"libScePosixForWebKit": "its functions are not available to native titles"}
+# The executable owns its allocator family (tooling/native/app_cpp_runtime.cpp):
+# the system heap behind the clean-room libc returns null for real workloads,
+# and memory from one heap must never be released into the other.
+OWNED = {"malloc", "calloc", "realloc", "free", "posix_memalign", "aligned_alloc", "memalign",
+         "strdup", "strndup"}
 
 
 def readelf() -> str:
@@ -86,7 +91,9 @@ def main() -> int:
         provider = next((module for module in needed if name in stubs.get(module, set())), None)
         module = provider.split(".")[0] if provider else "UNRESOLVED"
         table.append(f"{name} {module}")
-        if provider is None:
+        if name in OWNED:
+            problems.append(f"{name}: imported, but the executable must define its own")
+        elif provider is None:
             problems.append(f"{name}: no NEEDED module exports it")
         elif module in FORBIDDEN:
             problems.append(f"{name}: binds to {module} ({FORBIDDEN[module]})")

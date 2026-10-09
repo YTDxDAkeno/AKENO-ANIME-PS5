@@ -36,6 +36,16 @@ SystemInfo system_info();
 // System notification (toast); best effort.
 void notify(std::string_view message) noexcept;
 
+// Reports a crash (signal, code address, current stage) as a system
+// notification and in <data>/crash.txt before the system ends the app. Call
+// first in main. No-op on the host.
+void install_crash_reporter() noexcept;
+// Names what the app is doing for the crash report; the string must stay valid.
+void set_stage(const char *stage) noexcept;
+const char *stage() noexcept;
+// Bytes the allocator has mapped (0 when unknown).
+std::size_t heap_bytes() noexcept;
+
 // Applies console-specific options to a new curl easy handle (CA list,
 // non-blocking sockets, no signals). No-op on the host.
 void configure_curl(void *curl_easy) noexcept;

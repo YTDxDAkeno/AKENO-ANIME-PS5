@@ -1,4 +1,4 @@
-# Hardware acceptance checklist (AKENO STREAM 0.4.0)
+# Hardware acceptance checklist (AKENO STREAM 0.4.1)
 
 Run this on the console before calling a build "working". Note the result of
 each step (pass / fail / not tested) and, when anything fails, export a
@@ -13,7 +13,11 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
       `sce_module/libc.prx` and `assets/` (fonts and `selftest/`)
 - [ ] No old `/data/homebrew/PPSA99999/` remains
 - [ ] The tile is named **AKENO STREAM** and shows the icon
-- [ ] The app starts within ~5 s; a system notification "AKENO STREAM 0.4.0 ready" appears
+- [ ] Notifications "AKENO STREAM 0.4.1 starting" and, within ~5 s,
+      "AKENO STREAM 0.4.1 ready" appear; the splash screen shows the startup
+      steps in between
+- [ ] If it crashes instead: note the "crashed: ..." notification text
+      (signal, `eboot+0x…`, stage) and the last splash message
 - [ ] Home shows the AKENO STREAM header, mode tabs and shelves; text is
       smooth (Inter font). Blocky pixel text means the fonts were not found.
 - [ ] No "Controller disconnected" chip while the DualSense is on

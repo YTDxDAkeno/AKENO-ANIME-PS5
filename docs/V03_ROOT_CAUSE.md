@@ -29,12 +29,23 @@ was never run on hardware.
 | A missing import aborted loading | Ruled out: the title started and ran the network stages. |
 | A call through a null import on the open/probe path | One import of the v0.3 executable bound to `libScePosixForWebKit` (`arc4random_buf`), whose functions are not available to native titles. FFmpeg uses it for random seeds (encoders, RTP/RTSP, HTTP auth), not in the TS demuxer's open/probe path, so it is unlikely to be the cause - but it is a latent crash. |
 | Text relocations or a broken PacBrew archive layout | No text relocations in the linked executable; the archives link cleanly. |
+| The system heap ran out | **Most likely.** The clean-room `libc.prx` provides the loader's heap contract, not a general-purpose heap: ProsperoTV recorded on hardware (fw 6.02) that system `malloc`/`calloc` return null once an app asks for real amounts of memory, and fixed it by giving the executable its own page-backed allocator. v0.3 had already allocated an 8 MB segment buffer and playlists when FFmpeg's probing allocations ran; an `ENOMEM` from `avformat_open_input`/`avformat_find_stream_info` gives exactly -51. 0.4.0, which allocates more than 30 MB at launch through the same heap, crashed immediately on the console (`CE-108255-1`). |
 | A libc difference inside FFmpeg (locale, `iconv`, time, file APIs) | **Not excluded.** PacBrew's FFmpeg is built for a FreeBSD-like userland with libiconv and many components enabled. Its behaviour against the console's `libSceLibcInternal` (where `localtime_r`, `isatty`, `mkstemp`, `nl_langinfo` are missing and had to be faked) was never tested. |
 
 Without a console the exact failing call cannot be identified: v0.3 did not
 record FFmpeg's error code or log.
 
-## What 0.4.0 changes
+## What 0.4.0 and 0.4.1 change
+
+0. **0.4.1: the executable owns its heap.** `malloc`, `calloc`, `realloc`,
+   `free`, `posix_memalign`, `aligned_alloc`, `strdup` and every C++
+   `new`/`delete` use an allocator backed by anonymous pages
+   (`tooling/native/page_allocator.hpp`, host-tested), 32-byte aligned as the
+   PS5 compiler target expects. The import check fails the build if any of
+   them is imported from the system. 0.4.1 also runs no code before `main`,
+   reports crashes with their stage and code address as a system
+   notification (and in `/download0/akeno/crash.txt`), and shows its startup
+   progress on screen.
 
 1. **Video no longer depends on FFmpeg decoding.** HLS and TS playback use
    ProsperoTV's native MPEG-TS demuxer and the console's hardware decoder
@@ -51,7 +62,7 @@ record FFmpeg's error code or log.
    compatibility shim are gone.
 3. **The build checks every import binding** (`tools/check-imports.py`, run by
    `make app` and CI). It fails if anything binds to
-   `libScePosixForWebKit` or cannot be resolved. 0.4.0 has 251 imports from
+   `libScePosixForWebKit` or cannot be resolved. 0.4.1 has 245 imports from
    11 modules, none of them in `libScePosixForWebKit`.
 4. **The failure can now be diagnosed on the console.** Settings ->
    Diagnostics -> *Run media self-test* runs FFmpeg's open/probe/decode on the

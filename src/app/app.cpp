@@ -14,6 +14,28 @@ namespace akeno
 {
 namespace th = ui::theme;
 
+namespace
+{
+// Static texts for the crash reporter's stage.
+const char *mode_stage(Mode mode) noexcept
+{
+    switch (mode)
+    {
+    case Mode::home:
+        return "Home";
+    case Mode::anime:
+        return "Anime mode";
+    case Mode::youtube:
+        return "YouTube mode";
+    case Mode::library:
+        return "Library";
+    case Mode::settings:
+        return "Settings";
+    }
+    return "browsing";
+}
+} // namespace
+
 const char *mode_name(Mode mode) noexcept
 {
     switch (mode)
@@ -351,6 +373,7 @@ void App::update(std::uint64_t now_ms)
     for (auto &screen : overlay_)
         screen->update(now_ms);
     stack().back()->update(now_ms);
+    platform::set_stage(player_ && player_->active() ? "playback" : mode_stage(mode_));
 }
 
 bool App::needs_redraw() const

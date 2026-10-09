@@ -12,18 +12,20 @@ watch history, favourites and a diagnostics screen.
 | | |
 | --- | --- |
 | Title ID | `PPSA99276` (unchanged since v0.1) |
-| Version | 0.4.0 (`contentVersion` 01.004.000) |
+| Version | 0.4.1 (`contentVersion` 01.004.001) |
 | Target | Firmware 12.20 with ShadowMountPlus; no PSN account, no PC needed after install |
 | Install path | `/data/homebrew/PPSA99276/` |
 | Licence | GPL-3.0-or-later |
 
-> **Read this first.** Version 0.4.0 has been compiled, linked and tested on a
-> Linux build machine. It has **not yet run on a PS5**. Earlier versions
+> **Read this first.** AKENO STREAM is compiled, linked and tested on a Linux
+> build machine; it has **not yet run successfully on a PS5**. Earlier versions
 > verified that the app launches (v0.1) and that HTTPS works (v0.2) on
-> firmware 12.20; v0.3's video playback failed with `ERROR -51 / FRAMES 0`.
-> 0.4.0 replaces that player completely. Please run the
-> [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md) and report the
-> results with an exported diagnostics report.
+> firmware 12.20; v0.3's video playback failed with `ERROR -51 / FRAMES 0`,
+> and 0.4.0 crashed at launch (`CE-108255-1`) because the system heap returns
+> null for real allocations. 0.4.1 brings its own heap and reports any crash
+> as a notification naming the startup stage and code address - please send
+> that text (a photo is fine). Then run the
+> [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md).
 
 German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
 
@@ -41,7 +43,7 @@ with recorded API responses and generated placeholder artwork; more in
 "Host-tested" means automated tests on the build machine exercise the real
 code path (with a local HTTP server, generated media and FFmpeg's software
 decoder standing in for the console's hardware decoder). "PS5 build" means
-the code compiles and links into `eboot.bin`. Nothing in 0.4.0 is
+the code compiles and links into `eboot.bin`. Nothing in 0.4.x is
 hardware-verified yet.
 
 | Feature | Status | Notes |
@@ -149,6 +151,16 @@ circumventing that protection, which this project will not do. Use the
 official Crunchyroll app on PS5. The *Crunchyroll* card on Home explains this
 in the app. Open animated films (Blender Foundation, CC BY) are playable in
 Anime mode.
+
+### If the app crashes
+
+0.4.1 shows its startup steps on screen ("Loading fonts...", "Starting
+network...") and catches crashes: before the system's error dialog appears,
+a notification reads for example *"AKENO STREAM 0.4.1 crashed: SIGSEGV (invalid
+memory access) at eboot+0x1a2b3c, address 0x0, during startup: fonts"*. The
+same text with a backtrace is written to `/download0/akeno/crash.txt`. The
+`eboot+0x…` offsets map to source lines with the `build/llvm-pie.elf` of the
+same build (CI uploads it with the screenshots).
 
 ### Diagnostics
 

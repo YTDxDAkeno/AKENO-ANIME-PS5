@@ -5,6 +5,7 @@
 
 #include <curl/curl.h>
 
+#include <atomic>
 #include <cstdlib>
 #include <ctime>
 #include <pthread.h>
@@ -58,6 +59,30 @@ SystemInfo system_info()
 
 void notify(std::string_view) noexcept
 {
+}
+
+namespace
+{
+std::atomic<const char *> g_stage{"startup"};
+}
+
+void install_crash_reporter() noexcept
+{
+}
+
+void set_stage(const char *stage) noexcept
+{
+    g_stage.store(stage);
+}
+
+const char *stage() noexcept
+{
+    return g_stage.load();
+}
+
+std::size_t heap_bytes() noexcept
+{
+    return 0;
 }
 
 void configure_curl(void *curl_easy) noexcept

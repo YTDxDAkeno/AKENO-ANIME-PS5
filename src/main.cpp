@@ -15,8 +15,8 @@
 #include "platform/pad.hpp"
 #include "platform/platform.hpp"
 
-#include <cstdio>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace akeno;
@@ -27,7 +27,6 @@ namespace
 [[noreturn]] void halt(const std::string &message)
 {
     platform::notify(message);
-    std::fprintf(stderr, "[akeno] %s\n", message.c_str());
     for (;;)
         platform::sleep_us(1000000);
 }
@@ -61,28 +60,56 @@ std::string build_label()
     }
     return "release";
 }
+
+void draw_splash(gfx::Surface &surface, gfx::FontEngine &fonts, std::string_view status)
+{
+    surface.clear(gfx::hex(0x0b0e17));
+    fonts.draw(surface, 96, 430, "AKENO STREAM", {72, gfx::Weight::bold, gfx::hex(0xffffff)});
+    fonts.draw(surface, 100, 540, status, {30, gfx::Weight::regular, gfx::hex(0x9aa3b8)});
+    fonts.draw(surface, 100, 1000, kAppVersion, {22, gfx::Weight::regular, gfx::hex(0x5d6680)});
+}
+
+// One startup step: named for the crash report and shown on the splash.
+void step(platform::Display &display, gfx::Surface &surface, gfx::FontEngine &fonts,
+          const char *stage, std::string_view status)
+{
+    platform::set_stage(stage);
+    draw_splash(surface, fonts, status);
+    display.present(surface);
+}
 } // namespace
 
 int main()
 {
-    net::Client::global_init();
+    // First: anything that goes wrong from here on is reported with its stage.
+    platform::install_crash_reporter();
+    platform::set_stage("startup: display");
+    platform::notify(std::string{"AKENO STREAM "} + kAppVersion + " starting");
 
-    gfx::FontEngine fonts;
-    load_fonts(fonts);
-
+    // The display comes up first, in the same order as the earlier versions
+    // that ran on the console, so every later step can show progress.
     platform::Display display;
     std::string error;
     if (!display.open(&error))
         halt("AKENO STREAM could not open the display: " + error);
 
+    platform::set_stage("startup: frame buffer");
     std::vector<gfx::Pixel> pixels(static_cast<std::size_t>(platform::Display::kWidth) *
                                    platform::Display::kHeight);
     gfx::Surface surface{pixels.data(), platform::Display::kWidth, platform::Display::kHeight,
                          platform::Display::kWidth};
+    gfx::FontEngine fonts; // the built-in pixel font until the typefaces load
+    step(display, surface, fonts, "startup: fonts", "Loading fonts...");
+    load_fonts(fonts);
 
+    step(display, surface, fonts, "startup: network", "Starting network...");
+    net::Client::global_init();
+
+    step(display, surface, fonts, "startup: controller", "Connecting the controller...");
     platform::Pad pad;
     (void)pad.open();
 
+    step(display, surface, fonts, "startup: interface", "Preparing the interface...");
     AppConfig config;
     config.version = kAppVersion;
     config.build = build_label();
@@ -90,12 +117,14 @@ int main()
     config.make_sink = [&app_ptr] { return media::make_native_sink(app_ptr->frames()); };
     config.set_volume = [](int percent)
     { media::set_native_volume(static_cast<unsigned>(percent < 0 ? 0 : percent)); };
-    config.log = [](const std::string &message)
-    { std::fprintf(stderr, "[akeno] %s\n", message.c_str()); };
 
     App app(config, fonts);
     app_ptr = &app;
+    platform::set_stage("startup: settings and history");
     app.start(platform::monotonic_us() / 1000);
+    platform::set_stage("startup: first frame");
+    app.render(surface, platform::monotonic_us() / 1000);
+    display.present(surface);
     platform::notify(std::string{"AKENO STREAM "} + kAppVersion + " ready");
 
     std::vector<input::Event> events;
