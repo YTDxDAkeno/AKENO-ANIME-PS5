@@ -31,6 +31,6 @@ int main() {
     assert(m.focus == 0);
     m.set_controller(false);
     assert(m.status.controller == Capability::unavailable);
-    assert(page_title(Page::account) == std::string_view{"KONTO"});
+    assert(page_title(Page::account) == std::string_view{"ACCOUNT"});
     return 0;
 }
