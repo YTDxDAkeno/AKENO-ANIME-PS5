@@ -25,9 +25,18 @@ for file in "${repository_files[@]}"; do
             ;;
         *.c|*.cc|*.cpp|*.h|*.hpp|*.ld|*.py|*.ps1|*.sh|*.yml|*.yaml|Makefile|.clang-format|.clang-tidy|.env.example)
             header=$(head -n 20 "$file")
-            grep -Fq ps5-native-app-boilerplate <<<"$header"
-            grep -Fq 'Copyright (C) 2026 BlackBearReloaded' <<<"$header"
-            grep -Fq 'SPDX-License-Identifier: GPL-3.0-or-later' <<<"$header"
+            # Boilerplate files keep their upstream header; AKENO STREAM files carry their own.
+            if ! { grep -Fq ps5-native-app-boilerplate <<<"$header" &&
+                grep -Fq 'Copyright (C) 2026 BlackBearReloaded' <<<"$header"; } &&
+                ! { grep -Fq 'AKENO STREAM' <<<"$header" &&
+                    grep -Fq 'Copyright (C) 2026 AKENO STREAM contributors' <<<"$header"; }; then
+                echo "missing project and copyright header: $file" >&2
+                exit 2
+            fi
+            grep -Fq 'SPDX-License-Identifier: GPL-3.0-or-later' <<<"$header" || {
+                echo "missing SPDX license identifier: $file" >&2
+                exit 2
+            }
             ((checked += 1))
             ;;
         *.cs|*.csproj)

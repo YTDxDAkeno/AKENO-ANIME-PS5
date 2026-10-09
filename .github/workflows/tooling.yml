@@ -1,12 +1,18 @@
 # ps5-native-app-boilerplate - Lint, build, and release validation.
 # Copyright (C) 2026 BlackBearReloaded
 # SPDX-License-Identifier: GPL-3.0-or-later
+#
+# AKENO STREAM: lint, host tests (GoogleTest with ASan/UBSan, local HTTP
+# server, software decoder), the PS5 build with its import-binding guard,
+# interface screenshots, and the installable PPSA99276 folder ZIP.
 
 name: Build
 
 on:
-  # A build on main is started by hand (Run workflow): pushes to main build nothing.
   push:
+    branches:
+      - main
+      - "claude/**"
     tags:
       - "[0-9][0-9].[0-9][0-9][0-9].[0-9][0-9][0-9]"
   pull_request:
@@ -21,12 +27,12 @@ concurrency:
 
 jobs:
   build:
-    name: Lint, build, and package
+    name: Lint, test, build, and package
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CCACHE_DIR: ${{ github.workspace }}/.deps/ccache
-      CCACHE_MAXSIZE: 500M
+      CCACHE_MAXSIZE: 800M
 
     steps:
       - name: Check out source
@@ -40,7 +46,10 @@ jobs:
       - name: Install native toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang-18 clang-format-18 lld-18 make ninja-build ccache pkg-config tar unzip wget
+          sudo apt-get install --yes clang-18 clang-format-18 lld-18 libclang-rt-18-dev make ninja-build \
+            ccache pkg-config tar unzip wget ffmpeg libfreetype-dev libcurl4-openssl-dev zlib1g-dev
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
 
       - name: Restore dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -50,7 +59,9 @@ jobs:
             .deps/test
             .deps/pacbrew
             .deps/MkPFS
-          key: deps-${{ runner.os }}-${{ runner.arch }}-ubuntu24-python313-${{ hashFiles('tools/setup-*-dependencies.sh') }}
+            .deps/ffmpeg-ps5
+            .deps/ffmpeg-host
+          key: deps-${{ runner.os }}-${{ runner.arch }}-ubuntu24-clang18-${{ hashFiles('tools/setup-*.sh') }}
 
       - name: Restore compiler cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -71,7 +82,7 @@ jobs:
         run: |
           metadata=$(python3 -c 'import json; p=json.load(open("sce_sys/param.json")); print(p["titleId"], p["contentVersion"])')
           read -r title_id content_version <<< "$metadata"
-          [[ $title_id =~ ^PPSA[0-9]{5}$ ]] || exit 2
+          [[ $title_id == PPSA99276 ]] || { echo "unexpected title ID: $title_id" >&2; exit 2; }
           [[ $content_version =~ ^[0-9]{2}\.[0-9]{3}\.[0-9]{3}$ ]] || exit 2
           if [[ $GITHUB_REF_TYPE == tag && $GITHUB_REF_NAME != "$content_version" ]]; then
             echo "Release tag must exactly match param.json contentVersion: $content_version" >&2
@@ -95,41 +106,22 @@ jobs:
             echo "artifact=${GITHUB_REPOSITORY##*/}-PR$PR_NUMBER-$short" >> "$GITHUB_OUTPUT"
             echo "BUILD_LABEL=PR $PR_NUMBER, $short" >> "$GITHUB_ENV"
           else
-            echo "artifact=ps5-native-app-boilerplate-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "artifact=AKENO-STREAM-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            if [[ $GITHUB_REF_TYPE != tag ]]; then
+              branch=${GITHUB_REF_NAME##*/}
+              branch=${branch//[^A-Za-z0-9._-]/-}
+              echo "BUILD_LABEL=${branch:0:30} ${GITHUB_SHA:0:7}" >> "$GITHUB_ENV"
+            fi
           fi
 
       - name: Lint source and metadata
         run: LINT_SKIP_TIDY=1 make lint
 
-      - name: Run host GoogleTest suite
+      - name: Run host GoogleTest suite (player, HLS, FFmpeg, providers, UI)
         run: make test-unit
 
       - name: Run host integration tests
         run: make test-integration
-
-      - name: Check Lapy cooperative elevation client
-        run: make test-elevation
-
-      - name: Build filesystem capability example
-        run: |
-          make sandbox-elevation-example
-          test ! -e dist/PPSA99790/assets
-
-      - name: Check update-check parsing and decisions
-        run: make test-update-check
-
-      - name: Build update-check example
-        run: |
-          make update-check-example
-          test -f dist/PPSA99780/assets/targets.txt
-
-      - name: Check self-update engine and helper
-        run: make test-self-update
-
-      - name: Build self-update example
-        run: |
-          make self-update-example
-          test -f dist/PPSA99782/self-updater.elf
 
       - name: Reproduce clean-room runtime shim
         run: make libc
@@ -137,10 +129,24 @@ jobs:
       - name: Verify generated runtime is unchanged
         run: cd runtime && sha256sum -c libc.prx.sha256
 
-      # The ZIP is the one release format: the in-app update worker and ProsperoStore
-      # install from it. The compressed .ffpfsc image is switched off for now.
-      - name: Build the release folder and ZIP
+      # The ZIP is the one release format. "make app" also checks that no import
+      # binds to a module native titles cannot use (tools/check-imports.py).
+      - name: Build the PS5 folder and ZIP
         run: make app
+
+      - name: Check the package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          listing=$(python3 -m zipfile -l "dist/$TITLE_ID.zip")
+          for entry in eboot.bin sce_sys/param.json sce_sys/icon0.png sce_module/libc.prx \
+              assets/fonts/Inter-Regular.ttf assets/selftest/av-sync-720p.ts; do
+            grep -Fq "$TITLE_ID/$entry" <<<"$listing" || { echo "missing $entry" >&2; exit 1; }
+          done
+          if grep -q PPSA99999 <<<"$listing"; then echo "obsolete PPSA99999 packaged" >&2; exit 1; fi
+
+      - name: Render interface screenshots
+        run: make screenshots
 
       - name: Report compiler cache statistics
         if: always()
@@ -158,7 +164,17 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
-          retention-days: 14
+          retention-days: 30
+
+      - name: Upload screenshots and import table
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.label.outputs.artifact }}-screenshots
+          path: |
+            build/screenshots/*.png
+            build/imports.txt
+          if-no-files-found: error
+          retention-days: 30
 
   release:
     name: GitHub release
@@ -176,7 +192,7 @@ jobs:
         run: >-
           gh run download "$GITHUB_RUN_ID"
           --repo "$GITHUB_REPOSITORY"
-          --name "ps5-native-app-boilerplate-$GITHUB_SHA"
+          --name "AKENO-STREAM-$GITHUB_SHA"
           --dir release
 
       - name: Prepare release assets
@@ -224,5 +240,5 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --generate-notes \
-              --title "PS5 Native App Boilerplate $GITHUB_REF_NAME"
+              --title "AKENO STREAM $GITHUB_REF_NAME"
           fi

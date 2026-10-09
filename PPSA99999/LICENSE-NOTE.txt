@@ -1,3 +1,0 @@
-Akeno Anime technical preview files: GPL-3.0-or-later.
-The deployment boilerplate, graphics renderer and referenced input ABI are from separate GPL-3.0-or-later open-source projects; their licenses and notices must be retained when creating a combined checkout/build.
-No Crunchyroll assets, credentials, video or proprietary binaries are included.

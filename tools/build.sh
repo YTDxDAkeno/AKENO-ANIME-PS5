@@ -140,6 +140,10 @@ for source in "${source_paths[@]}"; do
     sources+=("${source#"$root/"}")
 done
 (( ${#sources[@]} > 0 )) || { echo "src/ has no C or C++ sources" >&2; exit 2; }
+# Individual files outside the source directory, such as vendored libraries.
+extra_sources=()
+[[ -z ${APP_EXTRA_SOURCES:-} ]] || read -r -a extra_sources <<< "$APP_EXTRA_SOURCES"
+sources+=("${extra_sources[@]}")
 
 definitions=()
 includes=()
@@ -237,9 +241,37 @@ for name in app_crt app_cpp_runtime; do
         -c "$native/$name.cpp" -o "$object"
 done
 
-link_inputs=("$build/obj/app_crt.o" "$build/obj/app_cpp_runtime.o" "${objects[@]}")
+# Link-only facades for system modules the public SDK has no stub for, as
+# "soname=source" pairs (libSceVideodec2.prx=path/to/stub.c). The linker and
+# the native module writer read their exports; they are never packaged.
+link_stubs=()
+stub_options=()
+link_stub_specs=()
+[[ -z ${APP_LINK_STUBS:-} ]] || read -r -a link_stub_specs <<< "$APP_LINK_STUBS"
+for spec in "${link_stub_specs[@]}"; do
+    soname=${spec%%=*}
+    source=${spec#*=}
+    [[ $soname =~ ^libSce[A-Za-z0-9]+\.s?prx$ && $source =~ ^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*\.(c|cpp)$ &&
+        -f $root/$source ]] || {
+        echo "invalid link stub: $spec" >&2; exit 2;
+    }
+    name=${soname%%.*}
+    object="$build/import-stubs/$name.o"
+    stub="$build/import-stubs/$name.so"
+    mkdir -p "$build/import-stubs"
+    if [[ $source == *.c ]]; then stub_flags=(-std=c11); else stub_flags=(-std=c++20 -fno-exceptions -fno-rtti); fi
+    ninja_inputs=("$root/$source" "$root/tooling/prospero-clang18" "$target_compiler")
+    ninja_edge CC "$object" env PS5_PAYLOAD_SDK="$sdk_root" PS5_CLANG="$target_compiler" USE_CCACHE=0 \
+        sh "$root/tooling/prospero-clang18" "${stub_flags[@]}" -O2 -fPIC -MD -MF "$object.d" -c "$root/$source" -o "$object"
+    ninja_inputs=("$object" "$sdk_root/bin/prospero-lld")
+    ninja_edge LINK "$stub" "$sdk_root/bin/prospero-lld" --shared -soname "$soname" -o "$stub" "$object"
+    link_stubs+=("$stub")
+    stub_options+=(--stub "$stub")
+done
+
+link_inputs=("$build/obj/app_crt.o" "$build/obj/app_cpp_runtime.o" "${objects[@]}" "${link_stubs[@]}")
 for archive in "${archives[@]}"; do
-    [[ $archive =~ ^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*\.a$ && -f $root/$archive ]] || {
+    [[ $archive =~ ^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)*\.a$ && -f $root/$archive ]] || {
         echo "invalid static archive: $archive" >&2; exit 2;
     }
     link_inputs+=("$root/$archive")
@@ -259,11 +291,11 @@ if [[ -n ${pacbrew_root:-} ]]; then
 fi
 ninja_edge LINK "$build/llvm-pie.elf" "$sdk_root/bin/prospero-lld" -T "$native/ps5-pie.ld" --eh-frame-hdr \
     "${wrap_options[@]}" --version-script "$native/app-symbols.map" \
-    -e _start -o "$build/llvm-pie.elf" "${link_inputs[@]}" \
+    -L "$sdk_root/target/lib" -e _start -o "$build/llvm-pie.elf" "${link_inputs[@]}" \
     --as-needed "$sdk_root"/target/lib/*.so
-ninja_inputs=("$build/llvm-pie.elf" "$tool" "$sdk_root"/target/lib/*.so)
+ninja_inputs=("$build/llvm-pie.elf" "$tool" "$sdk_root"/target/lib/*.so "${link_stubs[@]}")
 ninja_edge CONVERT "$build/eboot.elf" "$tool" link --in "$build/llvm-pie.elf" --out "$build/eboot.elf" \
-    --stub-dir "$sdk_root/target/lib" --module-sdk "$module_sdk" \
+    --stub-dir "$sdk_root/target/lib" "${stub_options[@]}" --module-sdk "$module_sdk" \
     --companion-sdk "$companion_sdk" --file-name eboot.elf
 ninja_run
 

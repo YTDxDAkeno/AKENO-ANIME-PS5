@@ -1,0 +1,233 @@
+/* ProsperoTV - native PS5 IPTV client derived from ps5-native-app-boilerplate.
+ * Copyright (C) 2026 BlackBearReloaded
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+#ifndef IPTV_NATIVE_BACKEND_H
+#define IPTV_NATIVE_BACKEND_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include "iptv_color.h"
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+    /* App-wide gain, 0 = mute and 100 = the stream's original level. */
+    void iptv_native_set_volume(unsigned percent);
+    unsigned iptv_native_get_volume(void);
+
+#define IPTV_NATIVE_BACKEND_STORAGE_BYTES (64u * 1024u)
+#if IPTV_PROBE
+#define IPTV_NATIVE_PROBE_SAMPLES 36u
+    typedef struct iptv_native_probe_sample
+    {
+        uint32_t elapsed_ms;
+        uint32_t video_queue_frames;
+        uint64_t presented_frames;
+        uint64_t pacing_late_frames;
+        uint64_t gaps_over_40ms;
+        uint64_t max_gap_us;
+        uint64_t decode_max_us;
+        uint64_t present_max_us;
+    } iptv_native_probe_sample_t;
+#endif
+#define IPTV_NATIVE_CHROMA_420 420u
+#define IPTV_NATIVE_H264_PROFILE_BASELINE 66u
+#define IPTV_NATIVE_H264_PROFILE_MAIN 77u
+#define IPTV_NATIVE_H264_PROFILE_HIGH 100u
+#define IPTV_NATIVE_HEVC_PROFILE_MAIN 1u
+#define IPTV_NATIVE_HEVC_PROFILE_MAIN10 2u
+#define IPTV_NATIVE_VP9_PROFILE_0 0u
+
+    typedef enum iptv_native_codec
+    {
+        IPTV_NATIVE_CODEC_H264 = 1,
+        IPTV_NATIVE_CODEC_HEVC = 2,
+        IPTV_NATIVE_CODEC_VP9_PROFILE0 = 3
+    } iptv_native_codec_t;
+
+    typedef enum iptv_native_state
+    {
+        IPTV_NATIVE_STATE_UNINITIALIZED = 0,
+        IPTV_NATIVE_STATE_IDLE,
+        IPTV_NATIVE_STATE_OPEN,
+        IPTV_NATIVE_STATE_STOPPING,
+        IPTV_NATIVE_STATE_CLOSED,
+        IPTV_NATIVE_STATE_ERROR
+    } iptv_native_state_t;
+
+    /* A borrowed linear NV12 picture (low-aligned 16-bit words for Main10).
+     * Only valid during the callback.
+     * A consumer must copy it before returning; it owns no display resources. */
+    typedef struct iptv_native_picture
+    {
+        const void *data;
+        size_t bytes;
+        uint32_t pitch, surface_height, width, height, bit_depth;
+        uint64_t pts_us;
+        iptv_color_info_t color;
+    } iptv_native_picture_t;
+
+    typedef struct iptv_native_open_config
+    {
+        iptv_native_codec_t codec;
+        uint32_t profile; /* AVC/HEVC profile id or VP9 profile number. */
+        uint32_t level;   /* Codec level (for example 41, 50, 51 or 153). */
+        uint32_t coded_width;
+        uint32_t coded_height;
+        uint32_t visible_width;
+        uint32_t visible_height;
+        uint32_t bit_depth;
+        uint32_t chroma_format; /* IPTV_NATIVE_CHROMA_420 only. */
+        uint32_t hdr;
+        uint32_t enable_audio;
+        uint32_t audio_stream_type; /* TS 0x03/0x04: MP2; zero/0x0f: AAC ADTS. */
+        /* Optional picture consumer: bypasses the full-screen presenter.
+         * Menu previews leave enable_audio zero; multiview may select one track. */
+        void (*picture)(void *context, const iptv_native_picture_t *picture);
+        void *picture_context;
+        int (*picture_cancelled)(void *context);
+        /* Called on the draining caller's thread while queued video finishes. */
+        void (*poll_controls)(void *context);
+        void *controls_context;
+    } iptv_native_open_config_t;
+
+    typedef struct iptv_native_telemetry
+    {
+        iptv_native_state_t state;
+        iptv_native_codec_t codec;
+        uint32_t profile;
+        uint32_t level;
+        int32_t last_result;
+        int32_t last_native_result;
+        int32_t cleanup_result;
+        uint32_t coded_width;
+        uint32_t coded_height;
+        uint32_t visible_width;
+        uint32_t visible_height;
+        uint32_t output_pitch;
+        uint32_t output_surface_height;
+        uint64_t input_slot_bytes;
+        uint64_t frame_slot_bytes;
+        uint64_t submitted_video_access_units;
+        uint64_t submitted_video_bytes;
+        uint64_t decoded_frames;
+        uint64_t presented_frames;
+        uint64_t hidden_decoded_frames;
+        uint64_t buffered_video_access_units;
+        uint64_t drained_video_frames;
+        uint64_t dropped_delayed_frames;
+        uint64_t decoder_flushes;
+        uint64_t drain_flush_limit_hits;
+        uint64_t decoder_errors;
+        uint64_t rejected_video_access_units;
+        uint64_t last_video_access_unit_bytes;
+        uint32_t last_video_nal_mask;
+        uint32_t decoder_output_reject_flags;
+        uint32_t decoder_output_valid;
+        uint32_t decoder_output_error;
+        uint32_t decoder_output_picture_count;
+        uint32_t decoder_output_codec;
+        uint32_t decoder_output_width;
+        uint32_t decoder_output_height;
+        uint32_t decoder_output_pitch;
+        uint32_t decoder_frame_accepted;
+        uint32_t software_video;
+        int32_t software_video_trigger;
+        iptv_color_info_t color;
+        uint32_t hdr_output;
+        uint64_t submitted_audio_frames;
+        uint64_t decoded_audio_frames;
+        uint64_t audio_output_grains;
+        uint64_t audio_output_errors;
+        uint64_t audio_output_total_us;
+        uint64_t audio_output_max_us;
+        uint32_t audio_queue_max_frames;
+        uint64_t audio_queue_underruns;
+        uint32_t video_queue_max_frames;
+        uint64_t video_queue_max_bytes;
+        uint64_t video_queue_underruns;
+        int32_t last_audio_result;
+        uint32_t audio_disabled;
+        uint64_t decode_total_us;
+        uint64_t decode_max_us;
+        uint64_t present_total_us;
+        uint64_t present_max_us;
+        uint64_t present_gap_max_us;
+        uint64_t present_gaps_over_250ms;
+        uint64_t present_gaps_over_500ms;
+#if IPTV_PROBE
+        uint32_t probe_sample_count;
+        iptv_native_probe_sample_t probe_samples[IPTV_NATIVE_PROBE_SAMPLES];
+#endif
+        uint64_t first_frame_latency_us;
+        uint64_t last_video_pts_us;
+        uint64_t last_presented_video_pts_us;
+        uint64_t last_audio_pts_us;
+        uint64_t unknown_video_timestamps;
+        uint32_t pending_video_timestamps;
+        uint64_t pacing_resets;
+        uint64_t pacing_waits;
+        uint64_t pacing_wait_total_us;
+        uint64_t pacing_wait_max_us;
+        uint64_t pacing_late_frames;
+        uint64_t pacing_max_late_us;
+        uint64_t dropped_late_video_frames;
+        uint32_t actual_frame_rate_x100;
+        uint32_t bitrate_kbps;
+        uintptr_t last_decoder_output;
+        uintptr_t last_present_source;
+        uint32_t decoder_output_in_frame_pool;
+        uint32_t zero_copy_pointer_match;
+        uint32_t hardware_validated;
+        uint32_t stream_acceptance_validated;
+        uint32_t stop_requested;
+    } iptv_native_telemetry_t;
+
+    typedef union iptv_native_backend
+    {
+        long double alignment;
+        unsigned char storage[IPTV_NATIVE_BACKEND_STORAGE_BYTES];
+    } iptv_native_backend_t;
+
+    int32_t iptv_native_backend_init(iptv_native_backend_t *backend);
+    int32_t iptv_native_backend_open(iptv_native_backend_t *backend,
+                                     const iptv_native_open_config_t *config);
+    int32_t iptv_native_backend_submit_video(iptv_native_backend_t *backend,
+                                             const void *coded_packet, size_t access_unit_bytes,
+                                             uint64_t pts_us); /* media PTS, usec */
+    int32_t iptv_native_backend_submit_audio(iptv_native_backend_t *backend, const void *adts_frame,
+                                             size_t frame_bytes, uint64_t pts_us);
+    int32_t iptv_native_backend_disable_audio(iptv_native_backend_t *backend);
+    /* Stream owner's thread only, serialized with submit_audio. Discard the old
+     * audio queue and reopen only audio; zero type selects Off. */
+    int32_t iptv_native_backend_select_audio(iptv_native_backend_t *backend, uint32_t stream_type);
+    int32_t iptv_native_backend_programme_boundary(iptv_native_backend_t *backend);
+    int32_t iptv_native_backend_discontinuity(iptv_native_backend_t *backend);
+    /* Control-thread requests while an opened backend remains alive; only
+     * atomic state is touched. Reposition releases
+     * blocked submissions. The stream owner must then reset its timeline. */
+    void iptv_native_backend_set_paused(iptv_native_backend_t *backend, int paused);
+    int iptv_native_backend_paused(const iptv_native_backend_t *backend);
+    void iptv_native_backend_request_reposition(iptv_native_backend_t *backend);
+    /* UINT64_MAX until a picture from the current playback timeline is presented. */
+    uint64_t iptv_native_backend_presented_pts(const iptv_native_backend_t *backend);
+    void iptv_native_backend_request_stop(iptv_native_backend_t *backend);
+    int iptv_native_backend_stop_requested(const iptv_native_backend_t *backend);
+    int32_t iptv_native_backend_drain(iptv_native_backend_t *backend);
+    int32_t iptv_native_backend_get_telemetry(const iptv_native_backend_t *backend,
+                                              iptv_native_telemetry_t *telemetry);
+    uint64_t iptv_native_backend_presented_frames(const iptv_native_backend_t *backend);
+    int32_t iptv_native_backend_close(iptv_native_backend_t *backend);
+
+    /* Development: blend the lines of every 8-bit picture as if it were
+     * interlaced, to time that work on a console with an ordinary channel. */
+    void iptv_native_backend_force_field_blend(int enabled);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

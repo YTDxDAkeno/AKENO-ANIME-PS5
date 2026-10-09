@@ -12,18 +12,12 @@
 
 extern "C"
 {
-    void *malloc(std::size_t size);
     void free(void *address);
     int posix_memalign(void **address, std::size_t alignment, std::size_t size);
 }
 
 namespace
 {
-[[nodiscard]] void *allocate(std::size_t size) noexcept
-{
-    return malloc(size == 0 ? 1 : size);
-}
-
 [[nodiscard]] void *allocate_aligned(std::size_t size, std::size_t alignment) noexcept
 {
     void *address = nullptr;
@@ -32,6 +26,14 @@ namespace
     if ((alignment & (alignment - 1)) != 0)
         return nullptr;
     return posix_memalign(&address, alignment, size == 0 ? 1 : size) == 0 ? address : nullptr;
+}
+
+// The PS5 target's default new alignment is 32 bytes: the compiler may emit
+// aligned 256-bit stores into memory returned by plain operator new, so the
+// allocation must honour that whatever alignment malloc itself guarantees.
+[[nodiscard]] void *allocate(std::size_t size) noexcept
+{
+    return allocate_aligned(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 [[noreturn]] void allocation_failure() noexcept

@@ -24,20 +24,20 @@ for command in wget sha256sum tar; do
 done
 
 mkdir -p "$directory"
-if [[ -f $archive ]] &&
-    ! printf '%s  %s\n' "$hash" "$archive" | sha256sum --check --strict >/dev/null 2>&1; then
-    rm -f -- "$archive"
-fi
-if [[ ! -f $archive ]]; then
-    temporary="$archive.download"
-    rm -f -- "$temporary"
-    wget -q "$url" -O "$temporary"
-    printf '%s  %s\n' "$hash" "$temporary" | sha256sum --check --strict >/dev/null
-    mv "$temporary" "$archive"
-fi
-
+# An extraction stamped with the pinned archive digest is reused as is.
 if [[ ! -f $source/googletest/include/gtest/gtest.h ||
     ! -f $stamp || $(<"$stamp") != "$hash" ]]; then
+    if [[ -f $archive ]] &&
+        ! printf '%s  %s\n' "$hash" "$archive" | sha256sum --check --strict >/dev/null 2>&1; then
+        rm -f -- "$archive"
+    fi
+    if [[ ! -f $archive ]]; then
+        temporary="$archive.download"
+        rm -f -- "$temporary"
+        wget -q "$url" -O "$temporary"
+        printf '%s  %s\n' "$hash" "$temporary" | sha256sum --check --strict >/dev/null
+        mv "$temporary" "$archive"
+    fi
     echo "==> [test-deps] Extracting GoogleTest $version" >&2
     rm -rf -- "$source"
     tar -xzf "$archive" -C "$directory"

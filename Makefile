@@ -20,7 +20,6 @@ APP_ASSETS ?= assets
 APP_ROOT_FILES ?=
 APP_LAPY_HELPER ?= 0
 PACBREW_PACKAGES ?=
-PACBREW_PACKAGES += libcurl libavformat libavcodec libavutil libswscale
 PACBREW_INCLUDE_PATHS ?=
 PACBREW_STATIC_ARCHIVES ?=
 PS5_HOST ?=
@@ -53,12 +52,34 @@ export PACBREW_PACKAGES PACBREW_INCLUDE_PATHS PACBREW_STATIC_ARCHIVES
 export PS5_HOST FTP_PORT DEPLOY_FORMAT PS5_FTP_USER PS5_FTP_PASSWORD DEPLOY_DRY_RUN
 export TITLE_ID APP_NAME APP_CATEGORY CONTENT_SUFFIX
 
+# AKENO STREAM build inputs, applied to the app targets only so the bundled
+# boilerplate examples keep building as before. FFmpeg 8.0.1 is built from
+# source by tools/setup-ffmpeg.sh; PacBrew provides libcurl and FreeType.
+FFMPEG_PS5 := .deps/ffmpeg-ps5/root
+AKENO_INCLUDE_PATHS := src third_party third_party/prosperotv/include third_party/prosperotv/src \
+	$(FFMPEG_PS5)/include
+AKENO_EXTRA_SOURCES := $(sort $(wildcard third_party/prosperotv/src/*.c third_party/prosperotv/src/*.cpp)) \
+	third_party/qrcodegen/qrcodegen.c
+AKENO_LINK_STUBS := libSceVideodec2.prx=third_party/prosperotv/stubs/videodec2_link_stub.c \
+	libSceAudiodec.sprx=third_party/prosperotv/stubs/audiodec_link_stub.cpp
+# The payload SDK's C++ runtime, as linked by ProsperoTV: std::string,
+# std::mutex, std::function and friends need more than the headers.
+SDK_LIB := .deps/native/ps5-payload-sdk/target/lib
+AKENO_STATIC_ARCHIVES := $(addprefix $(FFMPEG_PS5)/lib/,libavformat.a libavcodec.a libswresample.a libavutil.a) \
+	$(addprefix $(SDK_LIB)/,libc++.a libc++abi.a libunwind.a)
+AKENO_PACBREW_PACKAGES := libcurl freetype2
+AKENO_BUILD_ENV = APP_INCLUDE_PATHS="$(AKENO_INCLUDE_PATHS) $(APP_INCLUDE_PATHS)" \
+	APP_EXTRA_SOURCES="$(AKENO_EXTRA_SOURCES)" APP_LINK_STUBS="$(AKENO_LINK_STUBS)" \
+	APP_STATIC_ARCHIVES="$(AKENO_STATIC_ARCHIVES) $(APP_STATIC_ARCHIVES)" \
+	PACBREW_PACKAGES="$(AKENO_PACBREW_PACKAGES) $(PACBREW_PACKAGES)"
+
 RUNTIME := runtime/libc.prx
 RUNTIME_INPUTS := tools/rebuild-libc.sh tools/build-host-tools.sh tools/ninja-build.sh \
 	$(wildcard tooling/native/*.cpp tooling/native/*.hpp) \
 	$(wildcard tooling/native/runtime/*.txt)
-HOST_UNIT_TEST := build/tests/demo_renderer_tests
+HOST_UNIT_TEST := build/tests/akeno_tests
 
+.PHONY: ffmpeg-ps5 screenshots import-check
 .PHONY: all app build init doctor test test-deps test-unit test-integration libc deps pacbrew pacbrew-list assets-check format format-check tidy lint check ffpkg ffpfsc packages sandbox-elevation-example sandbox-elevation-ffpfsc update-check-example test-update-check self-update-helper self-update-example test-self-update deploy undeploy clean distclean help
 
 all: app
@@ -110,7 +131,19 @@ test-deps:
 test-unit:
 	@bash tools/build-tests.sh
 	@printf '%s\n' '==> [test-unit] Running host-native GoogleTest application tests'
-	@$(HOST_UNIT_TEST) $(GTEST_ARGS)
+	@AKENO_SOURCE_ROOT="$(CURDIR)" $(HOST_UNIT_TEST) $(GTEST_ARGS)
+
+screenshots:
+	@printf '%s\n' '==> [screenshots] Rendering every screen with canned data into build/screenshots'
+	@bash tools/build-screenshots.sh
+
+ffmpeg-ps5:
+	@printf '%s\n' '==> [ffmpeg] Building the pinned FFmpeg for the PS5 target'
+	@bash tools/setup-ffmpeg.sh ps5 >/dev/null
+
+import-check:
+	@printf '%s\n' '==> [imports] Checking which system module each import binds to'
+	@python3 tools/check-imports.py build/eboot.elf
 
 test-integration:
 	@printf '%s\n' '==> [test-integration] Running host tooling integration tests'
@@ -141,21 +174,25 @@ $(RUNTIME): $(RUNTIME_INPUTS)
 	@printf '%s\n' '==> [libc] Generating the missing or outdated runtime'
 	@bash tools/rebuild-libc.sh
 
-app: $(RUNTIME)
+app: $(RUNTIME) ffmpeg-ps5
 	@printf '%s\n' '==> [app] Compiling, linking, signing, and assembling the app folder'
-	@bash tools/build.sh Folder
+	@$(AKENO_BUILD_ENV) bash tools/build.sh Folder
+	@python3 tools/check-imports.py build/eboot.elf
 
-ffpkg: $(RUNTIME)
+ffpkg: $(RUNTIME) ffmpeg-ps5
 	@printf '%s\n' '==> [ffpkg] Building the app folder and UFS2 image'
-	@bash tools/build.sh Ffpkg
+	@$(AKENO_BUILD_ENV) bash tools/build.sh Ffpkg
+	@python3 tools/check-imports.py build/eboot.elf
 
-ffpfsc: $(RUNTIME)
+ffpfsc: $(RUNTIME) ffmpeg-ps5
 	@printf '%s\n' '==> [ffpfsc] Building the app folder and compressed image'
-	@bash tools/build.sh Ffpfsc
+	@$(AKENO_BUILD_ENV) bash tools/build.sh Ffpfsc
+	@python3 tools/check-imports.py build/eboot.elf
 
-packages: $(RUNTIME)
+packages: $(RUNTIME) ffmpeg-ps5
 	@printf '%s\n' '==> [packages] Building the app folder and both package formats'
-	@bash tools/build.sh All
+	@$(AKENO_BUILD_ENV) bash tools/build.sh All
+	@python3 tools/check-imports.py build/eboot.elf
 
 sandbox-elevation-example: $(RUNTIME)
 	@printf '%s\n' '==> [sandbox-elevation] Building the embedded upstream-Lapy proof folder and ZIP'

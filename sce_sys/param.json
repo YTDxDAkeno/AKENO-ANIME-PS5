@@ -10,12 +10,12 @@
   "conceptId": "99276",
   "contentBadgeType": 2,
   "contentId": "UP9000-PPSA99276_00-AKENOANIMEDEV001",
-  "contentVersion": "01.000.004",
+  "contentVersion": "01.004.000",
   "downloadDataSize": 256,
   "localizedParameters": {
     "defaultLanguage": "en-US",
     "en-US": {
-      "titleName": "Akeno Anime Preview"
+      "titleName": "AKENO STREAM"
     }
   },
   "masterVersion": "01.00",
