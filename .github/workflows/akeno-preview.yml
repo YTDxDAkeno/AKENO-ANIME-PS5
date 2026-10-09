@@ -5,6 +5,7 @@ on:
     branches:
       - akeno
       - akeno-preview-fix
+      - akeno-v02-network
   workflow_dispatch:
 
 permissions:
