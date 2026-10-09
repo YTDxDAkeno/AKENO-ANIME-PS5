@@ -30,6 +30,11 @@ struct VideoSnapshot
     unsigned frames;
     int error;
     int http;
+    unsigned segment_bytes;
+    int ts_sync;
+    int demuxer;
+    int av_error;
+    int stream_info_error;
 };
 
 // Downloads one small, public, unencrypted MPEG-TS HLS segment and decodes it.
@@ -62,6 +67,11 @@ class VideoPreview final
     std::atomic<unsigned> frames_{0};
     std::atomic<int> error_{0};
     std::atomic<int> http_{0};
+    std::atomic<unsigned> segment_bytes_{0};
+    std::atomic<int> ts_sync_{0};
+    std::atomic<int> demuxer_{0};
+    std::atomic<int> av_error_{0};
+    std::atomic<int> stream_info_error_{0};
     std::atomic<bool> stop_{false};
     std::atomic<bool> paused_{false};
 };
