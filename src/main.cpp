@@ -5,6 +5,7 @@
 #include "controller.hpp"
 #include "demo_renderer.hpp"
 #include "network_probe.hpp"
+#include "video_preview.hpp"
 
 #include <array>
 #include <cstdio>
@@ -22,6 +23,9 @@ using ps5::demo::Color;
 Model state{};
 akeno::Controller pad{};
 akeno::NetworkProbe network{};
+akeno::VideoPreview video{};
+bool show_video = false;
+bool previous_dialog = false;
 
 void text_row(Canvas &canvas, unsigned y, std::string_view title,
               std::string_view details, bool selected) noexcept
@@ -35,7 +39,7 @@ void text_row(Canvas &canvas, unsigned y, std::string_view title,
 void draw_tabs(Canvas &canvas) noexcept
 {
     constexpr std::array<std::string_view, 5> tabs = {
-        "START", "KATALOG", "MEINE LISTE", "KONTO", "DIAGNOSE"};
+        "START", "CATALOG", "MY LIST", "ACCOUNT", "DIAGNOSTICS"};
     for (unsigned i = 0; i < tabs.size(); ++i)
     {
         const unsigned x = 110 + i * 345;
@@ -49,16 +53,16 @@ void draw_tabs(Canvas &canvas) noexcept
 void draw_diagnostics(Canvas &canvas) noexcept
 {
     const akeno::ProbeSnapshot probe = network.snapshot();
-    canvas.text(160, 478, "FIRMWARE 12.20 - X: HTTPS/HLS TEST STARTEN", 4, Color::white);
+    canvas.text(160, 478, "FIRMWARE 12.20 - X: RUN HTTPS/HLS TEST", 4, Color::white);
     canvas.text(160, 546, "HTTPS", 5, Color::white);
     canvas.text(160, 615, "HLS PLAYLIST", 5, Color::white);
     canvas.text(160, 684, "CRUNCHYROLL LOGIN", 5, Color::white);
     canvas.text(160, 753, "DRM VIDEOPLAYER", 5, Color::white);
 
-    canvas.text(850, 684, "NICHT IMPLEMENTIERT", 4, Color::yellow);
+    canvas.text(850, 684, "NOT IMPLEMENTED", 4, Color::yellow);
     canvas.text(850, 753, "NICHT IMPLEMENTIERT", 4, Color::yellow);
 
-    const char *https = "NICHT GEPRUEFT";
+    const char *https = "NOT TESTED";
     const char *playlist = "NICHT GEPRUEFT";
     char http_detail[72]{};
     char hls_detail[72]{};
@@ -68,18 +72,18 @@ void draw_diagnostics(Canvas &canvas) noexcept
     case ProbeStage::idle:
         break;
     case ProbeStage::running:
-        https = "TEST LAEUFT ...";
-        playlist = "BITTE WARTEN ...";
+        https = "RUNNING ...";
+        playlist = "PLEASE WAIT ...";
         break;
     case ProbeStage::thread_error:
-        https = "THREAD FEHLER";
+        https = "THREAD ERROR";
         playlist = "KEIN TEST";
         break;
     case ProbeStage::https_error:
-        std::snprintf(http_detail, sizeof(http_detail), "FEHLER HTTP %d CURL %d",
+        std::snprintf(http_detail, sizeof(http_detail), "ERROR HTTP %d CURL %d",
                       probe.https_http_code, probe.curl_code);
         https = http_detail;
-        playlist = "NICHT ERREICHT";
+        playlist = "NOT REACHED";
         break;
     case ProbeStage::playlist_error:
         std::snprintf(http_detail, sizeof(http_detail), "OK HTTP %d", probe.https_http_code);
@@ -106,6 +110,20 @@ void draw_diagnostics(Canvas &canvas) noexcept
 void draw_scene(Canvas &canvas) noexcept
 {
     pad.poll(state);
+    // The model reports Cross as an information modal. On the START tab,
+    // use that action to open and replay the experimental HLS video.
+    if (state.details && !previous_dialog && state.page == Page::home)
+    {
+        show_video = true;
+        (void)video.start();
+        state.details = false;
+    }
+    previous_dialog = state.details;
+    if (show_video && state.page != Page::home)
+    {
+        video.stop();
+        show_video = false;
+    }
     // Diagnostics actions initiate a genuine network request, not a fake success dialog.
     if (state.page == Page::diagnostics && state.details)
     {
@@ -117,18 +135,28 @@ void draw_scene(Canvas &canvas) noexcept
     canvas.clear(Color::background);
     canvas.rectangle(0, 0, 1920, 14, Color::yellow);
     canvas.text(105, 65, "AKENO ANIME", 11, Color::white);
-    canvas.text(105, 158, "CRUNCHYROLL CLIENT - TECH PREVIEW 0.2", 3, Color::cyan);
+    canvas.text(105, 158, "CRUNCHYROLL CLIENT - TECH PREVIEW 0.3", 3, Color::cyan);
     draw_tabs(canvas);
     canvas.rectangle(110, 330, 1700, 590, Color::panel);
     canvas.text(150, 370, akeno::page_title(state.page), 7, Color::white);
     canvas.rectangle(150, 445, 1600, 6, Color::yellow);
 
-    if (state.details)
+    if (show_video)
     {
-        canvas.text(160, 505, "AKTUELLE EINSCHRAENKUNG", 5, Color::yellow);
-        canvas.text(160, 585, "CRUNCHYROLL LOGIN UND DRM NOCH NICHT VERFUEGBAR", 4, Color::white);
-        canvas.text(160, 655, "NETZTEST UNTER DIAGNOSE MIT X STARTEN", 4, Color::white);
-        canvas.text(160, 790, "X ODER KREIS ZURUECK", 4, Color::cyan);
+        video.draw_frame(canvas);
+        auto vs = video.snapshot();
+        canvas.text(160, 820, "EXPERIMENTAL PUBLIC HLS VIDEO - NO AUDIO YET", 3, Color::white);
+        char video_status[96]{};
+        std::snprintf(video_status, sizeof(video_status), "VIDEO STATUS %d - FRAMES %u - ERROR %d",
+                      static_cast<int>(vs.stage), vs.frames, vs.error);
+        canvas.text(160, 875, video_status, 3, Color::yellow);
+    }
+    else if (state.details)
+    {
+        canvas.text(160, 505, "CURRENT LIMITATION", 5, Color::yellow);
+        canvas.text(160, 585, "CRUNCHYROLL LOGIN AND DRM ARE NOT AVAILABLE", 4, Color::white);
+        canvas.text(160, 655, "PRESS X IN DIAGNOSTICS TO TEST NETWORK", 4, Color::white);
+        canvas.text(160, 790, "X OR CIRCLE TO GO BACK", 4, Color::cyan);
     }
     else if (state.page == Page::diagnostics)
     {
@@ -137,20 +165,20 @@ void draw_scene(Canvas &canvas) noexcept
     else
     {
         constexpr std::array<std::string_view, 3> labels = {
-            "VERBINDUNG", "HLS TESTSTREAM", "CRUNCHYROLL"};
+            "NETWORK", "PUBLIC HLS VIDEO", "CRUNCHYROLL"};
         constexpr std::array<std::string_view, 3> info = {
-            "DIAGNOSE: HTTPS OHNE PSN PRUEFEN",
-            "PUBLIC HLS PLAYLIST TESTEN - NOCH KEIN VIDEO",
-            "LOGIN UND DRM SIND NOCH NICHT INTEGRIERT"};
+            "DIAGNOSTICS: TEST HTTPS WITHOUT PSN",
+            "PRESS X TO START AN EXPERIMENTAL HLS VIDEO",
+            "LOGIN AND DRM ARE NOT INTEGRATED"};
         for (unsigned i = 0; i < labels.size(); ++i)
         {
             text_row(canvas, 490 + i * 132, labels[i], info[i], i == state.focus);
         }
     }
 
-    canvas.text(110, 985, "L1/R1 SEITEN  -  HOCH/RUNTER  -  X AUSWAHL  -  KREIS ZURUECK",
+    canvas.text(110, 985, "L1/R1 TABS - UP/DOWN SELECT - X OPEN - CIRCLE BACK",
                 3, Color::white);
-    canvas.text(1270, 1030, "HLS DATENTEST - KEINE VIDEOWIEDERGABE", 2, Color::yellow);
+    canvas.text(1270, 1030, "TEST VIDEO - NO AUDIO OR DRM", 2, Color::yellow);
 }
 } // namespace
 

@@ -35,20 +35,20 @@ void Model::navigate(Nav action) noexcept {
 std::string_view page_title(Page page) noexcept {
     switch (page) {
     case Page::home: return "START";
-    case Page::catalog: return "KATALOG";
-    case Page::library: return "MEINE LISTE";
-    case Page::account: return "KONTO";
-    case Page::diagnostics: return "DIAGNOSE";
+    case Page::catalog: return "CATALOG";
+    case Page::library: return "MY LIST";
+    case Page::account: return "ACCOUNT";
+    case Page::diagnostics: return "DIAGNOSTICS";
     }
-    return "UNBEKANNT";
+    return "UNKNOWN";
 }
 
 std::string_view capability_label(Capability value) noexcept {
     switch (value) {
-    case Capability::ready: return "BEREIT";
-    case Capability::unavailable: return "NICHT VERFUEGBAR";
-    case Capability::unverified: return "NICHT GEPRUEFT";
+    case Capability::ready: return "READY";
+    case Capability::unavailable: return "UNAVAILABLE";
+    case Capability::unverified: return "NOT TESTED";
     }
-    return "UNBEKANNT";
+    return "UNKNOWN";
 }
 } // namespace akeno
