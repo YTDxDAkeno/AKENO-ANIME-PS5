@@ -133,6 +133,11 @@ for flag in raw_libs:
     if flag == "-pthread":
         if flag not in cflags:
             cflags.append(flag)
+    elif flag == "-lpthread":
+        # The PS5 SDK provides pthread symbols through libkernel import stubs.
+        # PacBrew FFmpeg advertises a POSIX libpthread archive that does not exist
+        # in the PS5 sysroot; do not pass this host-style -l option to lld.
+        continue
     elif flag.startswith("-Wl,"):
         libs.extend(part for part in flag[4:].split(",") if part)
     else:
