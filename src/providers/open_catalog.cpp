@@ -62,7 +62,7 @@ std::vector<MediaItem> OpenCatalog::bundled() const
     av.title = "A/V Sync Test Clip";
     av.subtitle = "Bundled - 12 s - 720p H.264 + AAC";
     av.description =
-        "A timestamped test pattern with a beep every second. Plays without a network "
+        "A test pattern with a seconds counter and a beep every second. Plays without a network "
         "connection and checks hardware video decoding, audio output and their timing.";
     av.badge = "OFFLINE";
     av.accent = 0x7c5cff;

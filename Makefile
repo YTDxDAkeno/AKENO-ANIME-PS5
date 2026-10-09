@@ -71,7 +71,8 @@ AKENO_PACBREW_PACKAGES := libcurl freetype2
 AKENO_BUILD_ENV = APP_INCLUDE_PATHS="$(AKENO_INCLUDE_PATHS) $(APP_INCLUDE_PATHS)" \
 	APP_EXTRA_SOURCES="$(AKENO_EXTRA_SOURCES)" APP_LINK_STUBS="$(AKENO_LINK_STUBS)" \
 	APP_STATIC_ARCHIVES="$(AKENO_STATIC_ARCHIVES) $(APP_STATIC_ARCHIVES)" \
-	PACBREW_PACKAGES="$(AKENO_PACBREW_PACKAGES) $(PACBREW_PACKAGES)"
+	PACBREW_PACKAGES="$(AKENO_PACBREW_PACKAGES) $(PACBREW_PACKAGES)" \
+	APP_ROOT_FILES="LICENSE THIRD_PARTY_NOTICES.md $(APP_ROOT_FILES)"
 
 RUNTIME := runtime/libc.prx
 RUNTIME_INPUTS := tools/rebuild-libc.sh tools/build-host-tools.sh tools/ninja-build.sh \
@@ -275,7 +276,10 @@ distclean: clean
 
 help:
 	@printf '%s\n' \
-	  'make                 Generate libc.prx and build the Hello World folder' \
+	  'make                 Build AKENO STREAM: dist/PPSA99276/ and dist/PPSA99276.zip' \
+	  'make screenshots     Render every screen with canned data into build/screenshots' \
+	  'make import-check    Re-check the import bindings of the last PS5 build' \
+	  'make ffmpeg-ps5      Build the pinned FFmpeg 8.0.1 for the PS5 target' \
 	  'make init TITLE_ID=PPSA12345 APP_NAME="My App"  Configure app identity' \
 	  'make doctor          Check required and optional Linux/WSL tools' \
 	  'make test            Run all host unit and integration tests' \

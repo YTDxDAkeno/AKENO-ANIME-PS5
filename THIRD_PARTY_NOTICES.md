@@ -1,5 +1,40 @@
 # Third-party notices
 
+## AKENO STREAM
+
+AKENO STREAM is Copyright (C) 2026 AKENO STREAM contributors and licensed
+under GPL-3.0-or-later. Its PS5 package (`PPSA99276.zip`) contains code and
+data from the projects below; each keeps its own licence. Licence texts for
+vendored code are in the repository at the paths given, and the package
+carries `LICENSE` and this file next to `eboot.bin`.
+
+| Component | Version | Licence | Where |
+| --- | --- | --- | --- |
+| [ProsperoTV](https://github.com/blackbearreloaded/ProsperoTV) native TS demuxer, Videodec2/Audiodec backend, link stubs | commit `3aac8345af6cb4a1188ffbf24be060a184f196ce`, unmodified | GPL-3.0-or-later | `third_party/prosperotv/` (`LICENSE`) |
+| [minimp3](https://github.com/lieff/minimp3) (via ProsperoTV) | as vendored by ProsperoTV | CC0-1.0 | `third_party/prosperotv/vendor/minimp3/` |
+| [FFmpeg](https://ffmpeg.org/) libavformat, libavcodec, libavutil, libswresample | 8.0.1, built from the verified release source by `tools/setup-ffmpeg.sh` (no `--enable-gpl`/`--enable-nonfree`) | LGPL-2.1-or-later | downloaded at build time; configuration in `tools/setup-ffmpeg.sh` |
+| [Inter](https://rsms.me/inter/) typeface (Regular, SemiBold, Bold) | 4.1 | SIL Open Font License 1.1 | `assets/fonts/` (`Inter-LICENSE.txt`) |
+| [stb_image / stb_image_write](https://github.com/nothings/stb) | 2.30 / 1.16, commit `2c980bb59875b0d32144a71867fbdebb2f77cd20` | MIT or public domain | `third_party/stb/` (`LICENSE`) |
+| [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library) (C) | as vendored by ProsperoTV | MIT | `third_party/qrcodegen/` |
+| [libcurl](https://curl.se/), [OpenSSL](https://www.openssl.org/), [libpsl](https://github.com/rockdaboot/libpsl), [zstd](https://github.com/facebook/zstd), [zlib](https://zlib.net/) | PacBrew v0.40.2 (see the table further down) | curl, Apache-2.0, MIT (+ MPL-2.0 PSL data), BSD-3-Clause, zlib | linked from PacBrew |
+| [FreeType](https://freetype.org/), [libpng](http://www.libpng.org/), [bzip2](https://sourceware.org/bzip2/) | PacBrew v0.40.2: FreeType 2.13.2, libpng 1.6.43 | FreeType License (FTL), libpng, bzip2 licence | linked from PacBrew |
+| LLVM libc++, libc++abi, libunwind | from the PS5 payload SDK v0.42 | Apache-2.0 WITH LLVM-exception | linked from the SDK |
+
+The bundled test clips in `assets/selftest/` were generated with FFmpeg's
+built-in `testsrc`/`testsrc2` and `sine` sources and contain no third-party
+material. The README screenshots use generated placeholder artwork.
+
+Catalogue data shown at run time comes from [AniList](https://anilist.co)
+(public GraphQL API; data under AniList's terms) and from the
+[YouTube Data API](https://developers.google.com/youtube/v3) (under the YouTube
+API Services Terms, with the user's own API key). The public test streams in
+the Open Streams catalogue are operated by Mux, Bitmovin, Apple and Akamai;
+"Big Buck Bunny", "Sintel" and "Tears of Steel" are (c) Blender Foundation,
+CC BY 3.0. AKENO STREAM is not affiliated with any of these services, with
+Crunchyroll or with Sony.
+
+AKENO STREAM is built on ps5-native-app-boilerplate; its notices follow.
+
 ## Credits and acknowledgements
 
 | Project | Role |
@@ -14,7 +49,7 @@
 | [GoogleTest](https://github.com/google/googletest) | Pinned host-only C++ unit-test framework |
 | [zlib](https://zlib.net/) | Pinned source-built compression library used by the host FSELF tool |
 | [Microsoft DirectXTex](https://github.com/microsoft/DirectXTex) | `texconv` presentation-image preparation |
-| [FFmpeg](https://ffmpeg.org/) | Developer-supplied selection-audio preparation |
+| [FFmpeg](https://ffmpeg.org/) | Developer-supplied selection-audio preparation; AKENO STREAM links its libraries (see above) |
 | [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | Directory-style deployment and hardware validation |
 | [ArkSama/PS5-Lapy-JB-Daemon](https://github.com/ArkSama/PS5-Lapy-JB-Daemon) | Original Lapy project and owned-root design |
 | [mpereiraesaa/PS5-Lapy-JB-Daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon) | Exact-title one-shot helper and cooperative elevation protocol |
@@ -33,8 +68,8 @@ this repository. No Sony SDK file is included.
 
 Target C++ compilation uses the LLVM libc++ headers distributed by the public
 SDK. Those headers retain the Apache-2.0 WITH LLVM-exception license recorded
-upstream. The application does not redistribute or dynamically load the
-complete libc++ or libc++abi archives.
+upstream. AKENO STREAM also links the SDK's static libc++, libc++abi and
+libunwind archives (same licence) into its executable, as ProsperoTV does.
 
 The PS5 ELF converter and FSELF writer in `tooling/native/` are derived from
 [SharpProspero](https://github.com/SvenGDK/SharpProspero), Copyright (C) 2026

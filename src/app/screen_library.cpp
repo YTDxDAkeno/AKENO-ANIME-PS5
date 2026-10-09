@@ -25,7 +25,7 @@ struct Root
 {
     std::string label;
     std::string path;
-    Icon icon;
+    Icon icon = Icon::folder;
     std::string status; // filled by probe
     bool available = false;
 };
@@ -52,15 +52,21 @@ class LibraryScreen final : public Screen
         const std::string data = platform::data_dir();
         media_dir_ = fs::join(data, "media");
         (void)fs::make_directory(media_dir_);
-        roots_.push_back(
-            {"Bundled test clips", fs::join(platform::app_dir(), "assets/selftest"), Icon::film});
-        roots_.push_back({"AKENO media folder", media_dir_, Icon::folder});
+        const auto add = [this](std::string label, std::string path, Icon icon)
+        {
+            Root root;
+            root.label = std::move(label);
+            root.path = std::move(path);
+            root.icon = icon;
+            roots_.push_back(std::move(root));
+        };
+        add("Bundled test clips", fs::join(platform::app_dir(), "assets/selftest"), Icon::film);
+        add("AKENO media folder", media_dir_, Icon::folder);
         for (int i = 0; i < 8; ++i)
-            roots_.push_back(
-                {"USB drive " + std::to_string(i + 1), "/mnt/usb" + std::to_string(i), Icon::usb});
-        roots_.push_back({"Extended storage 1", "/mnt/ext0", Icon::usb});
-        roots_.push_back({"Extended storage 2", "/mnt/ext1", Icon::usb});
-        roots_.push_back({"Console storage /data", "/data", Icon::folder});
+            add("USB drive " + std::to_string(i + 1), "/mnt/usb" + std::to_string(i), Icon::usb);
+        add("Extended storage 1", "/mnt/ext0", Icon::usb);
+        add("Extended storage 2", "/mnt/ext1", Icon::usb);
+        add("Console storage /data", "/data", Icon::folder);
         probe();
     }
 

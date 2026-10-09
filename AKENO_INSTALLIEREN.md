@@ -1,42 +1,77 @@
-# Akeno Anime PS5 – Build & Installation (Deutsch)
+# AKENO STREAM 0.4.0 – Installation (Kurzfassung auf Deutsch)
 
-## Was ist das?
-Ein **Offline-Technik-Prototyp** mit eigener Akeno-Anime-Oberfläche und DualSense-Navigation.
-Noch **kein** funktionsfähiger Crunchyroll-Player: Es gibt weder Crunchyroll-Anmeldung noch Katalogabfrage noch geschützte Videowiedergabe.
+Ausführliche Dokumentation (Englisch): [README.md](README.md).
 
-## Wichtig: Den Ordner PPSA99999 nicht installieren
-Der Ordner `PPSA99999/` ist ein **alter, versehentlich ins Repository hochgeladener Build- und Quellcodeordner**. Seine `eboot.bin` enthält noch Hello World. Nicht erneut auf die PS5 kopieren.
+**Wichtig:** Version 0.4.0 wurde gebaut und auf dem Build-Rechner getestet,
+lief aber **noch nicht auf einer echten PS5**. Bitte nach der Installation die
+[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) durchgehen und bei Fehlern
+einen Diagnosebericht exportieren (siehe unten).
 
-Der korrekte Code wird aus dem **Repository-Hauptverzeichnis** (`src/`) gebaut. Die neue App heißt **PPSA99276** und ist unter `sce_sys/param.json` so eingetragen.
+## Herunterladen
 
-## Ohne WSL: GitHub Actions
-1. Auf GitHub **Actions** öffnen.
-2. Workflow **Akeno Anime PS5 Preview** auswählen.
-3. Lauf für Branch `akeno` öffnen und warten, bis `build` grün ist.
-4. Unten unter **Artifacts** `AKENO-ANIME-PS5-PPSA99276` herunterladen.
-5. Äußere GitHub-Artefakt-ZIP entpacken, dann die darin enthaltene `PPSA99276.zip` ebenfalls entpacken.
-6. Den fertigen Ordner `PPSA99276/` per FTP nach `/data/homebrew/PPSA99276/` auf der PS5 übertragen. **Keine** ZIP-Datei direkt hochladen.
-7. Die alte `/data/homebrew/PPSA99999/`-Installation schließen und nach einer Sicherung entfernen, damit es keine doppelte/veraltete Anzeige gibt.
-8. ShadowMountPlus neu starten bzw. die Homebrew-Liste aktualisieren, anschließend **Akeno Anime Preview** starten.
+1. Auf GitHub **Actions** -> Workflow **Build** öffnen.
+2. Den neuesten grünen Lauf für den Branch bzw. Pull Request auswählen.
+3. Unter **Artifacts** das Paket ohne `-screenshots` herunterladen (z. B.
+   `AKENO-STREAM-…` oder `AKENO-ANIME-PS5-PR…`).
+4. Die GitHub-ZIP entpacken, darin `PPSA99276.zip` ebenfalls entpacken.
 
-## Was sollte angezeigt werden?
-Eine Bildschirmüberschrift `AKENO ANIME`, die Register `START`, `KATALOG`, `MEINE LISTE`, `KONTO`, `DIAGNOSE` und ein Hinweis `OFFLINE PROTOTYP - KEIN STREAMING`.
-Kein `HELLO WORLD`.
+## Auf die PS5 kopieren
+
+1. Den kompletten Ordner `PPSA99276/` per FTP nach
+   `/data/homebrew/PPSA99276/` kopieren (ältere Dateien überschreiben).
+   **Nicht** die ZIP-Datei hochladen.
+2. Einen alten Ordner `/data/homebrew/PPSA99999/` (Hello-World-Test von v0.1)
+   löschen, falls noch vorhanden.
+3. ShadowMountPlus neu starten bzw. die Homebrew-Liste aktualisieren und
+   **AKENO STREAM** starten (Firmware 12.20, kein PSN nötig).
+
+Der Ordner enthält `eboot.bin`, `sce_sys/`, `sce_module/libc.prx` und
+`assets/` (Schriften und Offline-Testvideos).
+
+## Erster Test
+
+Home -> *Offline Test Clips* -> **A/V Sync Test Clip**: Testbild mit
+Sekundenzähler, Dauerton und einem Piepton pro Sekunde. Läuft ohne Internet.
+Sind Bild und Ton synchron, funktionieren Hardware-Videodecoder und
+Tonausgabe.
 
 ## Steuerung
-- L1/R1: Tabs wechseln
-- D-Pad hoch/runter: Zeile auswählen
-- Kreuz: Infodialog
-- Kreis: Zurück
 
-## Falls etwas schiefgeht
-- Falls GitHub Actions rot wird: Lauf > `build` > gescheiterten Schritt öffnen und das Fehlerprotokoll teilen.
-- Falls die alte Oberfläche erscheint: Prüfen, dass **genau** `PPSA99276/` aus dem neuen Actions-Artefakt kopiert wurde, und ShadowMountPlus sauber neu starten.
-- Falls die neue App abstürzt: PS5-Firmwareversion (genaue 12.xx-Version), verwendeter Loader/Payload, PS5-Log und Build-Lauf mitteilen.
+- **L1/R1**: Modus wechseln (Home, Anime, YouTube, Library, Settings);
+  im Player ±60 s spulen
+- **Steuerkreuz/linker Stick**: navigieren; im Player links/rechts ±10 s,
+  hoch/runter Lautstärke
+- **Kreuz**: auswählen, im Player Pause/Weiter
+- **Kreis**: zurück, im Player stoppen
+- **Dreieck**: Suche (Anime, YouTube)
+- **Quadrat**: Favorit; im Player maximale Qualität ändern
+- **OPTIONS**: Dienst-Infos, im Player Stream-Informationen
 
-## Technische Basis
-- [ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate), GPL-3.0-or-later
-- Firmware 12.70 von Upstream getestet, nicht jede 12.xx-Version.
-- Die App muss auf der echten Konsole verifiziert werden. Erfolgreiche CI bedeutet **nur**, dass sie gebaut wurde.
+## Eigene Videos und Streams
 
-**Nicht** mit einer offiziell von Crunchyroll unterstützten App verwechseln.
+- Videos (MP4, MKV, MOV, TS) per FTP nach `/download0/akeno/media/` kopieren
+  (der Ordner entsteht beim ersten Öffnen von *Library*) und unter *Library*
+  abspielen. `/download0` ist auf ca. 256 MB begrenzt.
+- Eigene HLS-/TS-Links in `/download0/akeno/streams.json` eintragen (Format
+  siehe README). Nur Streams verwenden, die man ansehen darf.
+
+## YouTube und Crunchyroll
+
+- **YouTube**: Suchen und Stöbern über die offizielle YouTube Data API mit
+  einem **eigenen** kostenlosen API-Schlüssel (Anleitung in der App).
+  Videos werden **nicht** in der App abgespielt – YouTube erlaubt das nur in
+  den eigenen Playern; stattdessen zeigt die App einen QR-Code fürs Handy.
+- **Crunchyroll**: nicht möglich. Es gibt keine öffentliche Schnittstelle,
+  und die Videos sind DRM-geschützt; eine Umgehung kommt nicht in Frage. Bitte
+  die offizielle Crunchyroll-App der PS5 nutzen. Der Anime-Modus zeigt
+  Katalogdaten von AniList mit Links zu offiziellen Anbietern.
+
+## Wenn etwas nicht funktioniert
+
+1. Settings -> *Diagnostics* öffnen, *Run media self-test* und
+   *Play hardware test clip* ausführen.
+2. *Export report* wählen; die Datei
+   `/download0/akeno/akeno-diagnostics-….txt` per FTP herunterladen. Sie
+   enthält keine API-Schlüssel.
+3. Bericht, genaue Firmware-Version, ShadowMountPlus-Version und den im Menü
+   *About* angezeigten Build-Namen im GitHub-Issue oder Pull Request posten.

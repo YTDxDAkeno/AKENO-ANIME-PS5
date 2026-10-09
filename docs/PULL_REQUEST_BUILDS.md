@@ -8,7 +8,7 @@ of the app, kept for 14 days, that a reviewer can put on a console before mergin
 
 | | Pull request | Tag, or a run started by hand |
 | --- | --- | --- |
-| Artifact name | `<repository>-PR<number>-<commit>` | `ps5-native-app-boilerplate-<commit>` |
+| Artifact name | `<repository>-PR<number>-<commit>` | `AKENO-STREAM-<commit>` |
 | `<commit>` | First seven characters of the pull request's own head commit | The commit built |
 | Label inside the app | `PR <number>, <commit>` | None |
 | `contentVersion` | Unchanged | Unchanged |
@@ -67,7 +67,7 @@ BUILD_LABEL="pacing test 2" make
 
 `tools/init-project.sh` leaves the workflow as it is. The pull-request name follows the
 repository's name by itself. The name used for tags and runs started by hand,
-`ps5-native-app-boilerplate-<commit>`, appears twice in the workflow (the upload, and the
+`AKENO-STREAM-<commit>`, appears twice in the workflow (the upload, and the
 release job's download); rename both together if you want your project's name there.
 
 Pull-request runs have a read-only token and no secrets, including for forks. Do not move
