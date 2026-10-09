@@ -365,6 +365,32 @@ void Canvas::text(unsigned x, unsigned y, std::string_view value, unsigned scale
     draw_text(pixels_, x, y, value, scale, color);
 }
 
+void Canvas::blit_rgba(unsigned x, unsigned y, unsigned width, unsigned height,
+                       const std::uint8_t *rgba, unsigned source_width, unsigned source_height) noexcept
+{
+    if (!rgba || !source_width || !source_height)
+        return;
+    if (x >= frame_width || y >= frame_height)
+        return;
+    const unsigned right = width < frame_width - x ? width : frame_width - x;
+    const unsigned bottom = height < frame_height - y ? height : frame_height - y;
+    for (unsigned row = 0; row < bottom; ++row)
+    {
+        const unsigned src_y = row * source_height / height;
+        for (unsigned col = 0; col < right; ++col)
+        {
+            const unsigned src_x = col * source_width / width;
+            const std::size_t offset = (static_cast<std::size_t>(src_y) * source_width + src_x) * 4u;
+            const auto pixel = static_cast<std::uint32_t>(rgba[offset]) |
+                               (static_cast<std::uint32_t>(rgba[offset + 1]) << 8) |
+                               (static_cast<std::uint32_t>(rgba[offset + 2]) << 16) |
+                               UINT32_C(0xff000000);
+            auto *bytes = reinterpret_cast<std::uint8_t *>(pixels_);
+            *reinterpret_cast<std::uint32_t *>(bytes + tiled_byte_offset(x + col, y + row)) = pixel;
+        }
+    }
+}
+
 void read_asset_text(const char *path, std::span<char> destination,
                      std::string_view fallback) noexcept
 {

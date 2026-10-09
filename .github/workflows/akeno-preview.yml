@@ -6,6 +6,7 @@ on:
       - akeno
       - akeno-preview-fix
       - akeno-v02-network
+      - akeno-v03-player
   workflow_dispatch:
 
 permissions:
