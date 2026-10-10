@@ -2,6 +2,7 @@
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/browse.hpp"
+#include "app/home.hpp"
 #include "core/fs.hpp"
 #include "gfx/qr.hpp"
 #include "platform/platform.hpp"
@@ -91,108 +92,166 @@ MediaItem mode_card(const char *id, const char *title, const char *subtitle,
 namespace
 {
 // ---------------------------------------------------------------------------
+// Home: what you were watching, the main sections and your own things. The
+// local rows are there at once; YouTube, Anime and Discover fill in when
+// their front pages arrive (one background job, rows never move: each of
+// them always has its own cards).
 class HomeScreen final : public BrowseScreen
 {
   public:
     explicit HomeScreen(App &app) : BrowseScreen{app, th::kAccentHome, nullptr, nullptr, ""}
     {
         rebuild_on_favorite_ = true;
+        loaded_ = true; // the online rows are fetched by fetch_online()
         rebuild(false);
-        loaded_ = true;
     }
 
     [[nodiscard]] std::vector<Hint> hints() const override
     {
         std::vector<Hint> h{{Glyph::cross, "Select"}};
-        if (shelves_.focused() && shelves_.focused()->provider != "mode" &&
-            shelves_.focused()->provider != "website")
-            h.push_back({Glyph::square, "Favorite"});
+        const MediaItem *item = shelves_.focused();
+        if (item && item->provider == "website")
+            h.push_back({Glyph::square, "Options"});
+        else if (item && favoritable(*item))
+            h.push_back(
+                {Glyph::square, app_.store().is_favorite(item->key()) ? "Unfavorite" : "Favorite"});
         return h;
     }
 
     void handle(input::Button b) override
     {
-        // Website cards are managed in Websites mode, not in Favorites.
-        if (b == input::Button::square && shelves_.focused() &&
-            shelves_.focused()->provider == "website")
+        const MediaItem *item = shelves_.focused();
+        if (b == input::Button::square && item && !favoritable(*item))
+        {
+            // A website's tab, name, icon and Home settings; cards for
+            // actions and sections are not favourites.
+            if (item->provider == "website")
+                open_site_mode_menu(app_, item->id);
             return;
+        }
         BrowseScreen::handle(b);
     }
 
-  protected:
-    std::vector<Shelf> local_before() override
+    void update(std::uint64_t now_ms) override
     {
-        std::vector<Shelf> out;
-        Shelf resume{"Continue Watching", {}, false};
-        for (const auto &e : app_.store().continue_watching())
-            resume.items.push_back(e.item);
-        if (!resume.items.empty())
-            out.push_back(std::move(resume));
-        Shelf modes{"Explore", {}, false};
-        modes.items.push_back(
-            mode_card("anime", "Anime", "Mode",
-                      "Browse trending, seasonal and top-rated anime from the AniList catalogue, "
-                      "with official places to watch each title.",
-                      0xff7a3d));
-        modes.items.push_back(
-            mode_card("youtube", "YouTube", "Mode",
-                      "YouTube's official embedded player inside AKENO STREAM; browse and search "
-                      "with the Data API and your own key.",
-                      0xff3d5a));
-        modes.items.push_back(mode_card("websites", "Websites", "Mode",
-                                        "Your own websites in the PS5 browser inside AKENO "
-                                        "STREAM: add, open, search.",
-                                        0xf5b83d));
-        modes.items.push_back(mode_card("discover", "Discover", "Mode",
-                                        "PeerTube videos and public-domain films from the "
-                                        "Internet Archive, played right here.",
-                                        0xe56bd0));
-        modes.items.push_back(mode_card("library", "My Library", "Mode",
-                                        "Play your own MP4, MKV and TS files from console storage.",
-                                        0x35c79a));
-        modes.items.push_back(mode_card("sources", "Sources", "Mode",
-                                        "Add your own M3U lists, JSON feeds and stream "
-                                        "addresses. The app ships no sources of its own.",
-                                        0x2ec4d6));
-        modes.items.push_back(mode_card(
-            "open", "Open Streams", "DRM-free",
-            "Public test streams, open movies and the HLS links in your streams.json.", 0x4f8cff));
-        modes.items.push_back(mode_card(
-            "crunchyroll", "Crunchyroll", "Website",
-            "crunchyroll.com in the browser with its own sign-in, and what this console can play.",
-            0xf47521));
-        out.push_back(std::move(modes));
-        // Websites the user chose to show on Home.
-        Shelf sites{"Your Websites", {}, false};
-        for (const web::Website &w : app_.websites().sites())
-            if (w.pinned && !w.private_site)
-            {
-                MediaItem m;
-                m.provider = "website";
-                m.id = w.id;
-                m.kind = ItemKind::info;
-                m.title = w.name;
-                m.subtitle = web::display_host(w.url);
-                m.description = w.url;
-                m.image_url = w.icon_url;
-                m.icon_art = true;
-                m.accent = ui::accent_for(m.subtitle);
-                sites.items.push_back(std::move(m));
-            }
-        if (!sites.items.empty())
-            out.push_back(std::move(sites));
-        return out;
+        BrowseScreen::update(now_ms);
+        if (!scanned_)
+        {
+            // The media folder is looked at once Home is on screen, not while
+            // the app starts.
+            scanned_ = true;
+            local_files_ = local_media_items(fs::join(platform::app_dir(), "media"), kHomeRowItems);
+            rebuild(true);
+        }
+        if (!fetching_ && (!online_fetched_ || (!youtube_fetched_ && app_.youtube().configured())))
+            fetch_online();
     }
 
-    std::vector<Shelf> local_after() override
+    void resumed() override
     {
-        std::vector<Shelf> out;
-        out.push_back({"Open Movies & Test Streams", OpenCatalog::public_streams(), false});
-        out.push_back({"Offline Test Clips", app_.open_catalog().bundled(), false});
-        if (!app_.store().favorites().empty())
-            out.push_back({"Favorites", app_.store().favorites(), false});
-        return out;
+        if (scanned_)
+            local_files_ = local_media_items(fs::join(platform::app_dir(), "media"), kHomeRowItems);
+        // Offline at the last attempt: try again, at most once a minute.
+        if (online_fetched_ && !fetching_ && anime_.empty() && discover_.empty() &&
+            app_.now_ms() - fetched_ms_ >= 60000)
+            online_fetched_ = false;
+        BrowseScreen::resumed();
     }
+
+  protected:
+    void activate(const MediaItem &item) override
+    {
+        if (item.provider == "action" && item.id == kHomeYouTubeLink)
+            app_.ask_youtube_link();
+        else if (item.provider == "action" && item.id == kHomeYouTubeSite)
+            app_.open_youtube_site();
+        else
+            BrowseScreen::activate(item);
+    }
+
+    std::vector<Shelf> local_before() override
+    {
+        HomeContent c;
+        c.continue_watching = app_.store().continue_watching();
+        c.history = app_.store().history();
+        c.youtube = youtube_;
+        c.youtube_configured = app_.youtube().configured();
+        c.anime = anime_;
+        c.discover = discover_;
+        c.open_streams = OpenCatalog::public_streams();
+        c.local_files = local_files_;
+        c.bundled = app_.open_catalog().bundled();
+        c.websites = app_.websites().sites();
+        c.favorites = app_.store().favorites();
+        return home_shelves(c);
+    }
+
+    void render_empty_hero(ui::Painter &p) override
+    {
+        p.text(th::kMarginX, kHeroTop + 20, "AKENO STREAM", th::kCaptionStrong, accent_);
+        p.text(th::kMarginX, kHeroTop + 56, "Home", th::kDisplay, th::kText);
+    }
+
+  private:
+    static bool favoritable(const MediaItem &item)
+    {
+        return item.provider != "mode" && item.provider != "action" && item.provider != "link" &&
+               item.provider != "website";
+    }
+
+    // AniList, YouTube (with a key) and Discover, one after the other on one
+    // worker; each row appears as soon as its page is in. A failed page
+    // leaves its row with its cards only: Home shows no errors for them
+    // (the modes do, with their details).
+    void fetch_online()
+    {
+        fetching_ = true;
+        fetched_ms_ = app_.now_ms();
+        const bool everything = !online_fetched_;
+        const bool youtube = app_.youtube().configured();
+        auto cancel = net::make_cancel_flag();
+        cancel_ = cancel;
+        auto alive = alive_;
+        App &app = app_;
+        app_.jobs().run(
+            [everything, youtube, cancel, alive, &app, this]
+            {
+                const auto deliver =
+                    [&](std::vector<MediaItem> HomeScreen::*row, std::vector<MediaItem> items)
+                {
+                    app.jobs().post(
+                        [row, items = std::move(items), alive, this]() mutable
+                        {
+                            if (!*alive)
+                                return;
+                            this->*row = std::move(items);
+                            rebuild(true);
+                        });
+                };
+                if (everything)
+                    deliver(&HomeScreen::anime_, first_row(app.anilist().home(cancel), 16));
+                if (youtube && !cancel->load())
+                    deliver(&HomeScreen::youtube_, first_row(app.youtube().home(cancel), 16));
+                if (everything && !cancel->load())
+                    deliver(&HomeScreen::discover_, discover_row(app.discover().home(cancel), 12));
+                app.jobs().post(
+                    [alive, youtube, this]
+                    {
+                        if (!*alive)
+                            return;
+                        fetching_ = false;
+                        online_fetched_ = true;
+                        youtube_fetched_ = youtube_fetched_ || youtube;
+                    });
+            });
+    }
+
+    std::vector<MediaItem> anime_, youtube_, discover_, local_files_;
+    std::uint64_t fetched_ms_ = 0;
+    bool scanned_ = false;
+    bool fetching_ = false;
+    bool online_fetched_ = false;
+    bool youtube_fetched_ = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -457,28 +516,12 @@ class YouTubeScreen final : public BrowseScreen
 
     void ask_link()
     {
-        app_.open_keyboard("YouTube link or video ID", "", 300, false,
-                           [this, alive = alive_](bool ok, const std::string &text)
-                           {
-                               if (!ok || !*alive || text.empty())
-                                   return;
-                               const auto target = web::parse_youtube(text);
-                               if (!target)
-                               {
-                                   app_.toast("That is not a YouTube video or playlist link",
-                                              th::kWarning);
-                                   return;
-                               }
-                               app_.play_youtube(*target, "YouTube");
-                           });
+        app_.ask_youtube_link();
     }
 
     void open_site()
     {
-        WebSession session;
-        session.url = "https://www.youtube.com/";
-        session.title = "youtube.com";
-        app_.open_web(std::move(session));
+        app_.open_youtube_site();
     }
 
     void enter_key()
@@ -961,7 +1004,11 @@ class DetailsScreen final : public Screen
             break;
         case ActionKind::youtube_play:
             if (item_.kind == ItemKind::video)
+            {
+                // Watch history (no resume point: the official player keeps its own).
+                app_.store().record_progress(item_, 0.0, item_.duration);
                 app_.play_youtube({item_.id, {}, 0}, item_.title);
+            }
             else
                 app_.play_youtube({{}, item_.playlist, 0}, item_.title);
             break;

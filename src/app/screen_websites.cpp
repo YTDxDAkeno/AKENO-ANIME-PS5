@@ -69,6 +69,8 @@ std::string checks_line(const web::SiteChecks &c)
     return out;
 }
 
+} // namespace
+
 MediaItem site_card(const web::Website &w)
 {
     MediaItem m;
@@ -97,6 +99,8 @@ MediaItem site_card(const web::Website &w)
     return m;
 }
 
+namespace
+{
 // ---------------------------------------------------------------------------
 class WebsitesScreen final : public BrowseScreen
 {
@@ -418,10 +422,11 @@ class WebsitesScreen final : public BrowseScreen
                                }
                                open_site_mode_menu(app_, id);
                            }});
-        options.push_back({site.pinned ? "Remove from Home" : "Save to Home",
-                           site.pinned ? "It stays in Websites" : "Adds it to Home's Websites row",
-                           [this, alive, id]
-                           { toggle(alive, id, [](web::Website &w) { w.pinned = !w.pinned; }); }});
+        options.push_back(
+            {site.pinned ? "Remove from Home" : "Save to Home",
+             site.pinned ? "It stays in Websites" : "Adds it to Home's My Websites row",
+             [this, alive, id]
+             { toggle(alive, id, [](web::Website &w) { w.pinned = !w.pinned; }); }});
         options.push_back(
             {site.private_site ? "Private: on" : "Private: off",
              "Private sites stay out of Recently Visited and Home", [this, alive, id]

@@ -206,6 +206,10 @@ class App final
     // Address bar: an address opens, other text is searched for.
     void open_address(const std::string &typed);
     void play_youtube(const web::YouTubeTarget &target, const std::string &title);
+    // Asks for a YouTube link or video ID and plays it in the official player.
+    void ask_youtube_link();
+    // youtube.com in the embedded browser.
+    void open_youtube_site();
     void run_browser_test();
     // A DRM-free video address played in AKENO STREAM's own player (HLS,
     // MPEG-TS, MP4, MKV); asks for the address with the keyboard.

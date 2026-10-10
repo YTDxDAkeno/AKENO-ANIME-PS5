@@ -26,6 +26,9 @@ void error_panel(ui::Painter &p, const std::string &message, ui::Pixel accent);
 // A card that switches mode or opens a screen (provider "mode").
 MediaItem mode_card(const char *id, const char *title, const char *subtitle,
                     const char *description, std::uint32_t accent);
+// A saved website as a card (Websites, Home): its icon or letter tile, its
+// colour and a MODE / HOME / PRIVATE badge.
+MediaItem site_card(const web::Website &site);
 
 // ---------------------------------------------------------------------------
 // Generic browse screen: hero + shelves, loaded asynchronously.

@@ -1,6 +1,7 @@
 // AKENO STREAM PS5 - Local media library (file browser).
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "app/home.hpp"
 #include "app/screens.hpp"
 #include "core/fs.hpp"
 #include "media/remux.hpp"
@@ -324,16 +325,7 @@ class LibraryScreen final : public Screen
         const fs::Entry &e = entries_[static_cast<std::size_t>(entry_)];
         if (e.directory || !media::is_playable_extension(e.name))
             return std::nullopt;
-        MediaItem item;
-        item.provider = "local";
-        item.id = fs::join(path_, e.name);
-        item.kind = ItemKind::file;
-        item.title = e.name;
-        item.subtitle = path_;
-        item.meta = human_size(e.size);
-        item.accent = 0x35c79a;
-        item.playable = Playable{media::SourceKind::local_file, item.id};
-        return item;
+        return local_file_item(path_, e);
     }
 
     void activate()
@@ -371,6 +363,20 @@ class LibraryScreen final : public Screen
     std::string error_;
 };
 } // namespace
+
+MediaItem local_file_item(const std::string &directory, const fs::Entry &entry)
+{
+    MediaItem item;
+    item.provider = "local";
+    item.id = fs::join(directory, entry.name);
+    item.kind = ItemKind::file;
+    item.title = entry.name;
+    item.subtitle = directory;
+    item.meta = human_size(entry.size);
+    item.accent = 0x35c79a;
+    item.playable = Playable{media::SourceKind::local_file, item.id};
+    return item;
+}
 
 std::unique_ptr<Screen> make_library_screen(App &app)
 {

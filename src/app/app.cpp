@@ -620,6 +620,31 @@ void App::play_youtube(const web::YouTubeTarget &target, const std::string &titl
     open_web(std::move(session));
 }
 
+void App::ask_youtube_link()
+{
+    open_keyboard("YouTube link or video ID", "", 300, false,
+                  [this](bool ok, const std::string &text)
+                  {
+                      if (!ok || text.empty())
+                          return;
+                      const auto target = web::parse_youtube(text);
+                      if (!target)
+                      {
+                          toast("That is not a YouTube video or playlist link", th::kWarning);
+                          return;
+                      }
+                      play_youtube(*target, "YouTube");
+                  });
+}
+
+void App::open_youtube_site()
+{
+    WebSession session;
+    session.url = "https://www.youtube.com/";
+    session.title = "youtube.com";
+    open_web(std::move(session));
+}
+
 void App::run_browser_test()
 {
     WebSession session;

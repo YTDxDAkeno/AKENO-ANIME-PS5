@@ -144,11 +144,19 @@ int main()
     if (app.mode() != Mode::home)
         app.switch_mode(Mode::home);
 
+    // Home: Continue Watching, YouTube, Anime, My Websites, Discover, Local
+    // Library, Recently Added Websites, Favorites.
     shot(app, "01-home");
-    press(app, input::Button::down);
-    press(app, input::Button::right, 1);
-    shot(app, "02-home-explore");
-    press(app, input::Button::r1);
+    press(app, input::Button::down, 2);
+    shot(app, "02-home-anime");
+    press(app, input::Button::down, 2);
+    shot(app, "35-home-discover");
+    press(app, input::Button::down, 2);
+    shot(app, "36-home-websites-added");
+    press(app, input::Button::up, 8);
+
+    // Modes are reached by name: the tab order has website modes in it.
+    app.switch_mode(Mode::anime);
     shot(app, "03-anime");
     press(app, input::Button::right, 2);
     shot(app, "04-anime-focus");
@@ -161,11 +169,11 @@ int main()
     shot(app, "07-qr");
     press(app, input::Button::circle);
     press(app, input::Button::circle);
-    press(app, input::Button::r1);
+    app.switch_mode(Mode::youtube);
     shot(app, "08-youtube-setup");
     app.store().set_youtube_api_key("AIzaSyD-test-key-0123456789abcdefghijkl");
-    press(app, input::Button::l1);
-    press(app, input::Button::r1);
+    app.switch_mode(Mode::home);
+    app.switch_mode(Mode::youtube);
     shot(app, "09-youtube");
     press(app, input::Button::triangle);
     shot(app, "10-keyboard");
@@ -182,7 +190,7 @@ int main()
     settle(app, 20);
     press(app, input::Button::circle);
     press(app, input::Button::circle);
-    press(app, input::Button::r1);
+    app.switch_mode(Mode::websites);
     shot(app, "28-websites");
     press(app, input::Button::triangle);
     shot(app, "29-websites-address");
@@ -202,16 +210,32 @@ int main()
     shot(app, "32-crunchyroll");
     press(app, input::Button::circle);
     press(app, input::Button::up, 3);
-    press(app, input::Button::r1);
+    press(app, input::Button::right, 2); // Browse > Playback Lab
+    press(app, input::Button::cross);
+    shot(app, "37-playback-lab");
+    press(app, input::Button::circle);
+    press(app, input::Button::left, 2);
+    // A saved website as its own mode, with its tab after Websites.
+    {
+        const web::Website *peertube = app.websites().find_by_url("https://framatube.org/");
+        std::string why;
+        if (peertube && app.websites().set_mode(peertube->id, true, &why))
+        {
+            app.site_modes_changed();
+            app.open_site_mode(peertube->id);
+            shot(app, "38-website-mode");
+        }
+    }
+    app.switch_mode(Mode::discover);
     shot(app, "13-discover");
     press(app, input::Button::cross);
     shot(app, "14-discover-details");
     press(app, input::Button::circle);
-    press(app, input::Button::r1);
+    app.switch_mode(Mode::library);
     shot(app, "15-library");
     press(app, input::Button::cross);
     shot(app, "16-library-files");
-    press(app, input::Button::r1);
+    app.switch_mode(Mode::sources);
     shot(app, "17-sources");
     press(app, input::Button::cross);
     shot(app, "18-source-list");
@@ -226,7 +250,7 @@ int main()
     press(app, input::Button::cross);
     shot(app, "21-sources-phone");
     press(app, input::Button::circle);
-    press(app, input::Button::r1);
+    app.switch_mode(Mode::settings);
     shot(app, "22-settings");
     press(app, input::Button::down, 12);
     press(app, input::Button::cross);
@@ -239,9 +263,12 @@ int main()
     shot(app, "33-browser-tests");
     press(app, input::Button::circle);
     press(app, input::Button::circle);
-    // Play the bundled clip through the software decoder.
-    press(app, input::Button::r1); // home, focus still on the Explore row
-    press(app, input::Button::down, 3); // past Your Websites and Open Movies
+    // Play the bundled clip through the software decoder: Home's Local
+    // Library row (after Continue Watching, YouTube, Anime, My Websites and
+    // Discover).
+    app.switch_mode(Mode::home);
+    press(app, input::Button::up, 8);
+    press(app, input::Button::down, 5);
     press(app, input::Button::cross);
     shot(app, "25-details-offline-clip");
     press(app, input::Button::cross);
