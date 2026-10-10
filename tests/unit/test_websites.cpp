@@ -1207,8 +1207,8 @@ TEST(WebsiteModes, LifecycleThroughTheMenus)
     h.app().switch_mode(Mode::websites);
     h.step(2);
     press(input::Button::down);   // Your Websites
-    press(input::Button::square); // its menu: Open, Rename, Change address, Pin as Mode, ...
-    press(input::Button::down, 3);
+    press(input::Button::square); // its menu: Open, Find public videos, Rename, Change address, Pin as Mode, ...
+    press(input::Button::down, 4);
     press(input::Button::cross); // Pin as Mode: the mode settings open
     ASSERT_TRUE(h.app().websites().find(id)->mode);
     press(input::Button::circle); // close the mode settings
@@ -1218,7 +1218,7 @@ TEST(WebsiteModes, LifecycleThroughTheMenus)
     EXPECT_EQ(labels[4], "Anime Site");
 
     press(input::Button::square);
-    press(input::Button::down, 4);
+    press(input::Button::down, 5);
     press(input::Button::cross); // Save to Home
     ASSERT_TRUE(h.app().websites().find(id)->pinned);
 
