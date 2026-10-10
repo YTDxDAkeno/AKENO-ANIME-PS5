@@ -1207,7 +1207,7 @@ TEST(WebsiteModes, LifecycleThroughTheMenus)
     h.app().switch_mode(Mode::websites);
     h.step(2);
     press(input::Button::down);   // Your Websites
-    press(input::Button::square); // its menu: Open, Find public videos, Rename, Change address, Pin as Mode, ...
+    press(input::Button::square); // its menu now includes Find public videos
     press(input::Button::down, 4);
     press(input::Button::cross); // Pin as Mode: the mode settings open
     ASSERT_TRUE(h.app().websites().find(id)->mode);
