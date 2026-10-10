@@ -14,6 +14,7 @@
 #include <initializer_list>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace akeno::web
 {
@@ -33,6 +34,24 @@ struct SiteProbe
 
 // Runs on a worker thread. Reads at most the first 384 KiB of the page.
 SiteProbe probe_site(const std::string &url, const net::CancelFlag &cancel);
+
+// Only directly published, unauthenticated media references in ordinary page
+// markup; no browser interception, session transfer, hidden URL extraction,
+// authorization bypass, DRM or JavaScript evaluation.
+struct PublicVideo
+{
+    std::string url;
+    std::string source; // HTML video tag, source tag, or public OG metadata
+};
+struct PublicVideos
+{
+    std::vector<PublicVideo> videos;
+    std::string message;
+    long http_status = 0;
+};
+std::vector<PublicVideo> public_videos_from_html(std::string_view html,
+                                                 const std::string &page_url);
+PublicVideos probe_public_videos(const std::string &page_url, const net::CancelFlag &cancel);
 
 // Exposed for tests.
 std::string find_title(std::string_view html);

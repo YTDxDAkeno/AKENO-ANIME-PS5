@@ -158,6 +158,8 @@ class WebsitesScreen final : public BrowseScreen
             with_notice([this] { app_.push(make_lab_screen(app_)); });
         else if (item.id == "play-link")
             app_.ask_play_link();
+        else if (item.id == "find-public-video")
+            ask_scan_video();
         else if (item.id == "clear-browser-data")
             confirm_clear_browser_data(app_);
         else if (item.provider == "mode")
@@ -184,6 +186,12 @@ class WebsitesScreen final : public BrowseScreen
             "Measures what the console's browser can play - MP4, streaming (MediaSource, HLS), "
             "video in other sites' frames, DRM - and records what you see on each site.",
             0x5aa9ff));
+        start.items.push_back(action_card(
+            "find-public-video", "Find Public Video on a Page", "Try the native AKENO player",
+            "Enter a public page URL. AKENO checks only declared HTML video / source tags "
+            "and public video metadata, without browser cookies or hidden extraction. "
+            "Protected and JavaScript-only players cannot be imported.",
+            0x2cc4c9));
         start.items.push_back(action_card(
             "play-link", "Play a Video Link", "In AKENO's own player",
             "A DRM-free HLS, MP4, MKV or TS address plays in AKENO STREAM's native player "
@@ -373,6 +381,51 @@ class WebsitesScreen final : public BrowseScreen
             });
     }
 
+    void scan_public_video(const std::string &address)
+    {
+        auto alive = alive_;
+        App &app = app_;
+        app_.toast("Checking publicly declared video links...", th::kInfo);
+        app_.jobs().run([address, alive, &app]
+        {
+            web::PublicVideos result = web::probe_public_videos(address, net::make_cancel_flag());
+            app.jobs().post([result = std::move(result), alive, &app]
+            {
+                if (!*alive)
+                    return;
+                if (result.videos.empty())
+                {
+                    app.push(make_confirm_screen(app, "Native video not found",
+                        result.message + "\n\nA website is not itself a direct video address. "
+                        "Use Sources for a DRM-free MP4/HLS link you are authorized to play.",
+                        "", nullptr));
+                    return;
+                }
+                std::vector<MenuOption> entries;
+                for (const auto &video : result.videos)
+                {
+                    entries.push_back({"Play in AKENO - " + video.source,
+                        url::redact(video.url),
+                        [&app, url = video.url] { app.play_link(url); }});
+                }
+                app.push(make_menu_screen(app, "Native playback candidates",
+                    "Only explicitly published media. Not an authentication or DRM bypass.",
+                    std::move(entries)));
+            });
+        });
+    }
+
+    void ask_scan_video()
+    {
+        auto alive = alive_;
+        app_.open_keyboard("Web page containing public video", "https://", 2048, false,
+            [this, alive](bool ok, const std::string &address)
+            {
+                if (ok && *alive && !address.empty())
+                    scan_public_video(address);
+            });
+    }
+
     void site_menu(const std::string &id)
     {
         const web::Website *found = app_.websites().find(id);
@@ -385,6 +438,13 @@ class WebsitesScreen final : public BrowseScreen
                            {
                                if (*alive)
                                    with_notice([this, id] { app_.open_item(site_item(id)); });
+                           }});
+        options.push_back({"Find public videos (native)",
+                           "Detect declared MP4/HLS links without cookies, DRM or page scripts",
+                           [this, alive, url = site.url]
+                           {
+                               if (*alive)
+                                   scan_public_video(url);
                            }});
         options.push_back({"Rename", "Now: " + site.name, [this, alive, id, name = site.name]
                            {
@@ -479,6 +539,13 @@ class WebsitesScreen final : public BrowseScreen
                            {
                                if (*alive)
                                    with_notice([this, url, title] { open_url(url, title); });
+                           }});
+        options.push_back({"Find public videos (native)",
+                           "Only media publicly declared in the HTML page",
+                           [this, alive, url]
+                           {
+                               if (*alive)
+                                   scan_public_video(url);
                            }});
         if (!app_.websites().find_by_url(url))
             options.push_back({"Save to Websites", "Keeps it in Your Websites",
