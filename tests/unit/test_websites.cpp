@@ -1144,3 +1144,72 @@ TEST(WebsiteModes, ClearsBrowserDataOnlyWhenOffered)
     h.app().handle({input::Button::cross}); // "Clear"
     EXPECT_EQ(script.cookies_cleared, 1);
 }
+
+// A website's whole life through the controller: saved, pinned as a mode and
+// to Home from its Square menu, renamed (the tab follows), restored after a
+// restart, then removed from the mode bar while it stays saved and on Home.
+TEST(WebsiteModes, LifecycleThroughTheMenus)
+{
+    AppHarness h;
+    std::string why, id;
+    ASSERT_TRUE(h.app().websites().add("Anime Site", "https://anime.example/", &why, &id));
+    const auto press = [&](input::Button b, int times = 1)
+    {
+        for (int i = 0; i < times; ++i)
+        {
+            h.app().handle({b, false});
+            h.step(2);
+        }
+    };
+    h.app().switch_mode(Mode::websites);
+    h.step(2);
+    press(input::Button::down);   // Your Websites
+    press(input::Button::square); // its menu: Open, Rename, Change address, Pin as Mode, ...
+    press(input::Button::down, 3);
+    press(input::Button::cross); // Pin as Mode: the mode settings open
+    ASSERT_TRUE(h.app().websites().find(id)->mode);
+    press(input::Button::circle); // close the mode settings
+    std::vector<std::string> labels;
+    for (const ModeTab &t : h.app().tabs())
+        labels.push_back(t.label);
+    EXPECT_EQ(labels[4], "Anime Site");
+
+    press(input::Button::square);
+    press(input::Button::down, 4);
+    press(input::Button::cross); // Save to Home
+    ASSERT_TRUE(h.app().websites().find(id)->pinned);
+
+    // Renamed: the tab carries the new name (no tab name of its own was set).
+    web::Website renamed = *h.app().websites().find(id);
+    renamed.name = "My Anime";
+    ASSERT_TRUE(h.app().websites().update(renamed, &why)) << why;
+    h.app().site_modes_changed();
+    EXPECT_EQ(h.app().tabs()[4].label, "My Anime");
+
+    // R1 reaches it; after a restart it is there again, on screen and on Home.
+    press(input::Button::r1);
+    EXPECT_EQ(h.app().mode(), Mode::site);
+    EXPECT_EQ(h.app().site_mode(), id);
+    {
+        gfx::FontEngine fonts;
+        App second(AppConfig{}, fonts);
+        second.start(0);
+        EXPECT_EQ(second.mode(), Mode::site);
+        EXPECT_EQ(second.site_mode(), id);
+        EXPECT_EQ(second.tabs()[4].label, "My Anime");
+        const web::Website *kept = second.websites().find(id);
+        ASSERT_NE(kept, nullptr);
+        EXPECT_TRUE(kept->pinned);
+    }
+
+    // Square on the mode screen: its settings; the first choice removes the tab.
+    press(input::Button::square);
+    press(input::Button::cross);
+    h.step(3);
+    EXPECT_EQ(h.app().mode(), Mode::websites);
+    EXPECT_EQ(h.app().tabs().size(), static_cast<std::size_t>(kBuiltInModes));
+    const web::Website *still = h.app().websites().find(id);
+    ASSERT_NE(still, nullptr); // removed from the mode bar only
+    EXPECT_FALSE(still->mode);
+    EXPECT_TRUE(still->pinned);
+}
