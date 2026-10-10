@@ -800,7 +800,8 @@ ProviderReport report_for(const ProviderState &state, SourceClass base)
 namespace
 {
 // A website an adapter recognised: its first catalogue page, the seasons and
-// episodes of up to three entries, and up to max_probes of their videos.
+// episodes of up to three entries (trying at most six: a site's newest
+// entries may be empty), and up to max_probes of their videos.
 ProviderReport check_website(const SiteDetection &site, const std::string &entered,
                              const std::string &name, const ProviderContext &context,
                              const net::CancelFlag &cancel, ProviderConfig *config, int max_probes)
@@ -819,17 +820,18 @@ ProviderReport check_website(const SiteDetection &site, const std::string &enter
             c.name = u->host;
     c.id = kWebsiteIdPrefix + slug(c.name);
     ProviderState state = Registry::load_provider(c, context, cancel, 0);
-    int opened = 0;
+    int opened = 0, tried = 0;
     for (Series &s : state.series)
     {
-        if (opened >= 3 || (cancel && cancel->load()))
+        if (opened >= 3 || tried >= 6 || (cancel && cancel->load()))
             break;
         if (!s.details_pending)
             continue;
-        ++opened;
+        ++tried;
         SiteSeries full = load_website_series(c, s, context, cancel);
         if (!full.ok)
             continue;
+        ++opened;
         s = std::move(full.series);
         bool media = false;
         for (const Season &season : s.seasons)

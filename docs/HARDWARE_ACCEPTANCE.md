@@ -1,4 +1,4 @@
-# Hardware acceptance checklist (AKENO STREAM 1.0.x)
+# Hardware acceptance checklist (AKENO STREAM 1.x)
 
 Run this on the console before calling a build "working". Note the result of
 each step (pass / fail / not tested) and, when anything fails, export a
@@ -15,8 +15,9 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
 - [ ] The tile is named **AKENO STREAM** and shows the AKENO icon (pink/blue
       "A" with a play symbol), not "Akeno Anime Preview" or the orange ring
       (if not: [docs/INSTALL.md](INSTALL.md), *The home screen still shows ...*)
-- [ ] Notifications "AKENO STREAM 1.0.0 starting" and, within ~5 s,
-      "AKENO STREAM 1.0.0 ready" appear; the splash screen shows the startup
+- [ ] Notifications "AKENO STREAM 1.1.0 starting" and, within ~5 s,
+      "AKENO STREAM 1.1.0 ready" appear (the version of the build you
+      installed); the splash screen shows the startup
       steps in between
 - [ ] **If the app no longer starts at all (an error code like CE-108255-1
       and no "starting" notification), note it and go back to the previous
@@ -358,6 +359,77 @@ Firmware ______ · ShadowMountPlus ______ · build label (Settings, bottom right
 18. [ ] Diagnostics: Settings -> Diagnostics -> *Export report*; the file is
         in `/mnt/sandbox/PPSA99276_000/download0/akeno/` while AKENO runs.
         Attach it.
+
+Result: ______ passed, ______ failed, ______ not tested.
+
+## 13. 1.1.0 acceptance run: website providers (release candidate `v1.1.0-rc.1`)
+
+**This section decides the stable `v1.1.0`.** Items marked **critical** must
+pass. It needs a real, authorized website that a website adapter supports:
+use **`video.blender.org`** (the Blender Foundation's PeerTube instance) or
+another PeerTube instance you watch in Discover. Websites like Aniworld or
+AnikotoTV are *not* supported providers - they stay in Websites
+([WEBSITE_PROVIDERS.md](WEBSITE_PROVIDERS.md)).
+
+Before installing 1.1.0, **keep a copy of your 1.0.0 folder**
+(`/data/homebrew/PPSA99276/`) outside every scan path - it is needed for
+items 15-17 - and note which providers you added in 1.0.0 ______.
+
+Firmware ______ · ShadowMountPlus ______ · build label (Settings, bottom right) ______ ·
+site used ______
+
+1. [ ] **critical** Launch: "AKENO STREAM 1.1.0 starting" / "... ready". Your
+       providers from 1.0.0 (catalogues, PeerTube channels) are still listed
+       under *Anime -> Streaming Providers*, nothing is reported under
+       *Settings -> Diagnostics* about provider files.
+2. [ ] Open **Anime**.
+3. [ ] **critical** Select *Add Streaming Provider* (Anime -> *Your Anime
+       Sources*). The address field shows *e.g. https://video.blender.org* with
+       an **EXAMPLE** tag - clearly not an entered address.
+4. [ ] Cross on the field; after the `https://` type the homepage, for
+       example `video.blender.org`, then OPTIONS (done).
+5. [ ] **critical** AKENO recognises the provider by itself: the panel
+       reads *Recognised: <the site's name>*, *Recognised by: PeerTube
+       instance*, *Found: /api/v1/config: PeerTube <version> ...*, a row of
+       posters and *Episodes checked: N playable of M checked*. Note it
+       ______
+6. [ ] **critical** No JSON was prepared: *Add Provider* (Cross) opens the
+       provider's home directly.
+7. [ ] **critical** The provider's real content is shown: name, *Website
+       provider · PeerTube instance · https://...*, the capability chips and
+       the *Catalogue* with the instance's channels (NOT OPENED until
+       opened). *Load More* adds the next page when the instance has more.
+8. [ ] Search: Triangle, type part of a channel's name: *Results for "..."*
+       lists it.
+9. [ ] **critical** Open a series (a channel): *Loading seasons and
+       episodes...*, then its seasons (playlists) and episodes, with
+       thumbnails and lengths.
+10. [ ] Navigate seasons (left/right) and episodes (up/down) with the
+        DualSense.
+11. [ ] **critical** A playable episode shows *Play* (it was checked as
+        DRM-free video). Choose it.
+12. [ ] **critical** Video and audio play in AKENO's own player (OPTIONS:
+        decoder "PS5 hardware decoder (Videodec2)"); subtitles toggle with
+        Triangle when the video has captions.
+13. [ ] **critical** Circle stops; the series and then the provider's home
+        are shown again (Circle).
+14. [ ] **critical** Close the app (PS button -> close) and start it again:
+        the provider is still in *Streaming Providers* and its home still
+        works. *Add Streaming Provider* with the same address again opens
+        its home instead of adding it twice.
+15. [ ] **critical** Rollback: close AKENO, copy your 1.0.0 folder back to
+        `/data/homebrew/PPSA99276/`, start 1.0.0. It starts normally and lists
+        your catalogues and PeerTube channels as before (it does not show the
+        website provider - expected). Optional: add or remove a catalogue or
+        PeerTube channel in 1.0.0 and note it ______.
+16. [ ] **critical** Upgrade again: copy the 1.1.0 folder back, start it. The
+        website provider is listed with the same name and address, its home
+        and catalogue work, and the change made in 1.0.0 is kept.
+17. [ ] Over FTP, `/mnt/sandbox/PPSA99276_000/download0/akeno/` (while AKENO
+        runs) contains `anime-website-providers.json` next to
+        `anime-providers.json`; the second contains no `"type": "website"`.
+18. [ ] Export a report (Settings -> Diagnostics -> *Export report*) and
+        attach it.
 
 Result: ______ passed, ______ failed, ______ not tested.
 

@@ -111,6 +111,13 @@ title is registered again or the console restarts.
    versions where the format is the same; unknown or damaged files are
    moved aside as `*.corrupt` and defaults are used, never a crash.
 
+**From 1.1.0 back to 1.0.0**: 1.0.0 keeps your catalogues and PeerTube
+channels (`anime-providers.json`, which 1.1.0 writes in 1.0.0's format) and
+does not show website providers. They stay in `anime-website-providers.json`,
+which 1.0.0 never opens, changes or deletes; upgrading to 1.1.0 again shows
+them exactly as before, together with any catalogue you added or removed in
+1.0.0 ([WEBSITE_PROVIDERS.md](WEBSITE_PROVIDERS.md#storage-and-rolling-back-to-100)).
+
 ## Check the download and the installation
 
 - The release's `SHA256SUMS` lists the ZIP's SHA-256. The GitHub release page

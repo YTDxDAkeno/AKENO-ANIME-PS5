@@ -3,10 +3,10 @@
 Anime mode separates three jobs, the way modular media centres such as Kodi
 separate metadata scrapers, source add-ons and the player:
 
-| Role | Answers | In AKENO STREAM 1.0 |
+| Role | Answers | In AKENO STREAM 1.1 |
 | --- | --- | --- |
 | **Catalogue** (metadata) | Which titles exist: artwork, descriptions, seasons, episode counts, genres, ratings, search | [AniList](https://anilist.co) (public API) |
-| **Episode provider** | Which series, seasons and episodes a source really offers, with its own ids, languages, subtitles and restrictions | The bundled sample series, AKENO catalogues, PeerTube channels and playlists |
+| **Episode provider** | Which series, seasons and episodes a source really offers, with its own ids, languages, subtitles and restrictions | The bundled sample series, AKENO catalogues, PeerTube channels and playlists, and website providers (PeerTube instances, schema.org websites - [WEBSITE_PROVIDERS.md](WEBSITE_PROVIDERS.md)) |
 | **Playback provider** | The authorized, DRM-free resource for one episode - or why there is none | The same providers; the resource is checked before it is offered |
 
 AniList never supplies video. A title from AniList is *catalogue only* until a
@@ -35,39 +35,57 @@ play; MPEG-DASH does not (the native player has no DASH demuxer).
 
 ## Adding a provider on the console
 
-*Anime -> Streaming Providers -> Add Streaming Provider*:
+*Anime -> Streaming Providers -> Add Streaming Provider* (also the first
+cards of *Anime -> Your Anime Sources*):
 
-1. **Provider name** (optional; taken from the source when empty).
-2. **Address**: an AKENO catalogue URL, or a PeerTube channel or playlist
-   (`https://host/c/<channel>`, `https://host/video-channels/<channel>`,
-   `https://host/w/p/<playlist>`, `https://host/video-playlists/<playlist>`).
+1. **Website address**: an AKENO catalogue URL, a PeerTube channel or
+   playlist (`https://host/c/<channel>`, `https://host/video-channels/<channel>`,
+   `https://host/w/p/<playlist>`, `https://host/video-playlists/<playlist>`),
+   or a website's homepage for a website adapter (a PeerTube instance, a
+   website with schema.org structured data - see
+   [WEBSITE_PROVIDERS.md](WEBSITE_PROVIDERS.md)). `https://` is added when
+   no scheme is given; addresses with a user name or password are refused.
+2. **Name** (optional; the source's own name when empty).
 3. **AniList id** (optional): for a PeerTube channel that is one series, so
    the AniList page of that title offers the channel's episodes.
-4. **Test Connection**. The compatibility report shows:
+4. Detection runs when the address is entered (or with **Detect Provider**).
+   The report shows:
+   - *Recognised by*: the website adapter, for website providers;
    - *What it is*: a native provider, a documented API, a website, a single
      video, an M3U list, metadata without video, a protected source, or
      unreachable;
-   - *Format*: `AKENO catalogue v1`, `PeerTube channel`, `PeerTube playlist`;
+   - *Format*: `AKENO catalogue v1`, `PeerTube channel`, `PeerTube playlist`,
+     `PeerTube 7.2.1 instance (documented REST API)`, `website with schema.org
+     structured data`;
    - *Catalogue*: series, seasons, episodes and how many name a video;
    - *Offers*: what the loaded data actually contains - seasons, episode
      lists and descriptions, artwork, audio and subtitle languages, AniList
-     links, checked native playback;
+     links, checked native playback (for website providers also catalogue
+     browsing, search on the site and more pages);
    - *Episodes checked*: playable / DRM / sign-in / region / missing /
      unreachable / unsupported, for up to 12 episodes;
    - every validation error and note, by path
-     (`series[0].seasons[1].episodes[3].media.url: ...`);
-   - a *preview* of the first series that Import would add.
-5. **Import Provider** is enabled only when at least one checked episode is
+     (`series[0].seasons[1].episodes[3].media.url: ...`), and what was found
+     on a website;
+   - a *preview* of the first series (with their posters) that Add brings in.
+5. **Add Provider** is enabled only when at least one checked episode is
    playable (or when the episodes could not be reached at all, so the check
-   is repeated later).
+   is repeated later). It opens the provider's home: its catalogue, search,
+   Load More, Check Again, Turn Off and Remove.
 
-In *Streaming Providers*: Cross shows a provider's report, Square removes it
-(built-in providers stay), Triangle checks every provider again. Providers
-are stored in `/download0/akeno/anime-providers.json` (at most 30) and
-survive updates of the app.
+An address that is already a provider opens that provider's home instead -
+nothing is added twice. In *Streaming Providers*: Cross opens a provider's
+home, Options shows its report, Square removes it (built-in providers stay),
+Triangle checks every provider again. Catalogues and PeerTube channels are
+stored in `/download0/akeno/anime-providers.json` (at most 30, built-in ones
+counted), website providers in `anime-website-providers.json` (at most 30;
+[why two files](WEBSITE_PROVIDERS.md#storage-and-rolling-back-to-100)); both
+survive updates of the app. Entries a version cannot use are kept in the
+file, reported, and never rewritten as another type.
 
-A website's homepage is **not** a provider: it stays in Websites, where the
-browser shows it. *Websites -> (a saved site) -> Check for native streaming*
+A website's homepage is a provider only when a website adapter recognises it
+([WEBSITE_PROVIDERS.md](WEBSITE_PROVIDERS.md)); any other site stays in
+Websites, where the browser shows it. *Websites -> (a saved site) -> Check for native streaming*
 runs the same check on a saved address. *Find Public Video on a Page*
 (Websites; also *Find public videos (native)* in a saved site's options) lists videos a page publishes openly in its HTML
 (`<video>`/`<source>` elements, video meta tags, direct `.mp4`/`.m3u8` links)
@@ -192,7 +210,11 @@ returns listings and resolved URLs, without executing code):
    one episode or an `Availability` with the reason) and return it from
    `make_provider`.
 3. Teach `check_source` (`src/anime/registry.cpp`) to recognise the address
-   so *Add Streaming Provider* can test and import it.
+   so *Add Streaming Provider* can test and import it. A provider that is a
+   *website* is better written as a website adapter
+   ([WEBSITE_PROVIDERS.md](WEBSITE_PROVIDERS.md#for-developers-adding-a-website-adapter)):
+   it is recognised from the homepage and gets the provider home, search and
+   catalogue pages for free.
 4. Add host tests with the local HTTP server (`tests/host/test_server.hpp`)
    and recorded responses; `tests/unit/test_anime.cpp` shows the pattern.
 

@@ -13,20 +13,31 @@ MP4, MKV, MOV and TS files - through the console's hardware video decoder.
 plays free video from PeerTube and public-domain films from the Internet
 Archive; **Sources** takes your own M3U lists, JSON feeds and stream addresses
 (also from your phone). **Anime** browses AniList's catalogue and plays
-series, seasons and episodes from streaming providers you add (AKENO
-catalogues, PeerTube channels) in the native player, with subtitles, Up Next
-and resume. The app adds a local library, watch history, favourites, a data
+series, seasons and episodes from streaming providers you add in the native
+player, with subtitles, Up Next and resume: enter a supported website's
+address (a PeerTube instance, a website with schema.org structured data) and
+browse its catalogue inside the app, or add an AKENO catalogue or a PeerTube
+channel. The app adds a local library, watch history, favourites, a data
 backup and a diagnostics screen.
 
 | | |
 | --- | --- |
 | Title ID | `PPSA99276` (unchanged since v0.1) |
-| Version | 1.0.0 (`contentVersion` 01.100.000); first release candidate `v1.0.0-rc.1` |
+| Version | 1.1.0 (`contentVersion` 01.110.000); first release candidate `v1.1.0-rc.1` (previous: 1.0.0, `v1.0.0-rc.1`) |
 | Tested on | PS5 firmware 12.20 (builds before 1.0.0: browser, YouTube, PeerTube, websites) and 13.09 with ShadowMountPlus (0.4.1); no PSN account, no PC needed after install |
 | Install path | `/data/homebrew/PPSA99276/` |
 | Licence | GPL-3.0-or-later |
 
-> **Status: 1.0.0 release candidate.** On a jailbroken PS5 with firmware
+> **Status: 1.1.0 release candidate.** 1.1.0 adds **website providers**:
+> *Add Streaming Provider* recognises PeerTube instances and websites with
+> schema.org structured data from their address, lists their catalogue,
+> search, seasons and episodes in AKENO and plays DRM-free episodes natively
+> ([docs/WEBSITE_PROVIDERS.md](docs/WEBSITE_PROVIDERS.md)); each provider has
+> its own home; rolling back to 1.0.0 keeps every provider. Host-tested and
+> built for the PS5; the console run is section 13 of the
+> [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md).
+>
+> **1.0.0 release candidate.** On a jailbroken PS5 with firmware
 > 12.20, the build before 1.0.0 launched, DualSense navigation worked, native HLS played,
 > PeerTube videos played with picture and sound, YouTube videos played in the
 > embedded browser, user-entered websites opened, and Crunchyroll's website
@@ -49,7 +60,10 @@ German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
 | --- | --- |
 | ![Home](docs/screenshots/01-home.jpg) | ![Home: Anime row](docs/screenshots/02-home-anime.jpg) |
 | ![Anime: a series with seasons and episodes](docs/screenshots/41-anime-episodes.jpg) | ![An episode in the native player with subtitles](docs/screenshots/43-anime-player-subtitles.jpg) |
-| ![Add Streaming Provider](docs/screenshots/45-anime-add-provider.jpg) | ![Streaming Providers](docs/screenshots/46-anime-providers.jpg) |
+| ![Add Streaming Provider: the website address](docs/screenshots/45-anime-add-provider.jpg) | ![Provider detection: recognised, capabilities, checked episodes](docs/screenshots/48-provider-detection.jpg) |
+| ![Provider home](docs/screenshots/49-provider-home.jpg) | ![A website provider's catalogue, browsed natively](docs/screenshots/50-provider-catalogue.jpg) |
+| ![A website series: details, seasons](docs/screenshots/51-provider-series.jpg) | ![Its episodes, checked for native playback](docs/screenshots/52-provider-episodes.jpg) |
+| ![A website provider's episode in the native player](docs/screenshots/53-provider-playback.jpg) | ![Streaming Providers](docs/screenshots/46-anime-providers.jpg) |
 | ![Websites](docs/screenshots/28-websites.jpg) | ![A website as its own mode](docs/screenshots/38-website-mode.jpg) |
 | ![Playback Lab](docs/screenshots/37-playback-lab.jpg) | ![Crunchyroll website test](docs/screenshots/32-crunchyroll.jpg) |
 | ![YouTube: official embedded player](docs/screenshots/08-youtube-setup.jpg) | ![Anime](docs/screenshots/03-anime.jpg) |
@@ -59,7 +73,9 @@ German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
 | ![Player with stream information](docs/screenshots/27-player-info.jpg) | ![Diagnostics](docs/screenshots/23-diagnostics.jpg) |
 
 *Rendered by the real interface code on the build machine (`make screenshots`)
-with recorded API responses and generated placeholder artwork; more in
+with recorded API responses and generated placeholder artwork; the website
+provider is the offline fixture site in `tests/fixtures/website-schema`
+playing AKENO's self-test clip; more in
 [docs/screenshots](docs/screenshots).*
 
 ## Feature status
@@ -105,7 +121,10 @@ into `eboot.bin`, not yet tried on the console.
 | Your own streams (`streams.json`) | Host-tested, PS5 build | Still read; Sources is the more flexible way |
 | Anime mode: AniList catalogue, search, details, official links (QR) | **Console** (catalogue and artwork loaded) | AniList is metadata only; video comes from providers |
 | Anime episodes: providers, series, seasons, episode lists, availability states, Play/Continue, watchlist | Host-tested (end to end, offline sample series), PS5 build | New in 1.0.0; only checked, DRM-free episodes are offered as playable. [docs/ANIME_PROVIDERS.md](docs/ANIME_PROVIDERS.md) |
-| Add Streaming Provider: AKENO catalogue or PeerTube channel/playlist; test, compatibility report, capabilities, preview, import, remove, check again | Host-tested, PS5 build | New in 1.0.0; a website's homepage is never treated as a provider |
+| Add Streaming Provider: AKENO catalogue or PeerTube channel/playlist; test, compatibility report, capabilities, preview, import, remove, check again | Host-tested, PS5 build | New in 1.0.0; 1.1.0 detects automatically, shows posters and opens the provider's home |
+| Website providers: PeerTube instances (documented API) and schema.org websites recognised from their address; catalogue, search, more pages, series, seasons, episodes, native playback | Host-tested (offline fixture site, recorded PeerTube answers, controller-driven end to end), PS5 build | New in 1.1.0; only `contentUrl` media is played, never web players, trailers or protected streams. [docs/WEBSITE_PROVIDERS.md](docs/WEBSITE_PROVIDERS.md) |
+| Provider home: catalogue, search, Load More, Check Again, Open Website, Turn Off, Details, Remove | Host-tested (controller-driven), PS5 build | New in 1.1.0 |
+| Provider storage across versions: website providers in their own file, rollback to 1.0.0 and upgrade again, damaged/duplicate/newer files kept | Host-tested against 1.0.0's own storage code | New in 1.1.0 |
 | Anime search: English, romaji and alternative titles, partial matches, suggestions, history, year/genre/status/availability filters | Host-tested (typed on the on-screen keyboard), PS5 build | New in 1.0.0 |
 | Bundled synthetic test series (offline; generated test patterns, not anime) | Host-tested, PS5 build | New in 1.0.0; checks the episode path on the console without a network |
 | Find public videos on a page (native): explicit `<video>`/`<source>`/meta/direct links | Host-tested, PS5 build | New in 1.0.0; no scripts, cookies, players or DRM; [docs/NATIVE_PUBLIC_VIDEO.md](docs/NATIVE_PUBLIC_VIDEO.md) |
@@ -316,9 +335,13 @@ Anime mode separates **metadata** from **video**. The public
 [AniList](https://anilist.co) API supplies titles, artwork, descriptions,
 seasons and episode counts (*Trending Anime*, *New Episodes*, *This Season*,
 *Most Popular*, genre rows, *Movies*). Video comes from **streaming
-providers** you add under *Anime -> Add Streaming Provider*: an AKENO
-catalogue (a JSON file listing series, seasons and episodes with DRM-free
-MP4/HLS/TS/MKV addresses, subtitles and audio languages) or a PeerTube
+providers** you add under *Anime -> Add Streaming Provider*: a website an
+adapter recognises - a **PeerTube instance** or a website that describes its
+catalogue with **schema.org structured data** - whose catalogue, search,
+series, seasons and episodes then appear on the provider's own home in AKENO
+([docs/WEBSITE_PROVIDERS.md](docs/WEBSITE_PROVIDERS.md)); an AKENO catalogue
+(a JSON file listing series, seasons and episodes with DRM-free
+MP4/HLS/TS/MKV addresses, subtitles and audio languages); or a PeerTube
 channel or playlist. AKENO checks an episode's first bytes before it offers
 it as playable; *Available to Watch* lists only series with such an episode,
 and AniList titles without a provider stay catalogue entries with official
@@ -346,7 +369,7 @@ Open animated films (Blender Foundation, CC BY) are playable in Anime mode.
 
 The app shows its startup steps on screen ("Loading fonts...", "Starting
 network...") and catches crashes: before the system's error dialog appears,
-a notification reads for example *"AKENO STREAM 1.0.0 crashed: SIGSEGV (invalid
+a notification reads for example *"AKENO STREAM 1.1.0 crashed: SIGSEGV (invalid
 memory access) at eboot+0x1a2b3c, address 0x0, during startup: fonts"*. A
 photo of it is the most useful bug report. At the next start the app says that
 the last session crashed, lists the first line under Settings -> Diagnostics
@@ -400,10 +423,13 @@ redacted.
   episode (PeerTube captions included). Subtitle tracks inside MP4/MKV files
   and HLS subtitle playlists are not shown yet. No HDR tone mapping, no
   picture-in-picture, no download manager.
-- Anime episodes play only from providers you add (AKENO catalogues,
-  PeerTube); AniList is metadata only. The bundled test series is synthetic
-  test material, not anime. No site-specific scrapers are included or
-  planned.
+- Anime episodes play only from providers you add (website providers,
+  AKENO catalogues, PeerTube); AniList is metadata only. A website becomes a
+  provider only when an adapter recognises it (PeerTube instances, schema.org
+  structured data naming video files); Aniworld, AnikotoTV, Crunchyroll and
+  similar sites have no adapter and stay in Websites. The bundled test series
+  is synthetic test material, not anime. No site-specific scrapers are
+  included or planned.
 - Third-party test streams can disappear at any time.
 - USB access from inside the title sandbox has not been confirmed on the
   console (firmware 13.09).

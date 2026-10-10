@@ -1,6 +1,19 @@
-# AKENO STREAM 1.0.0 – Installation (Kurzfassung auf Deutsch)
+# AKENO STREAM 1.1.0 – Installation (Kurzfassung auf Deutsch)
 
 Ausführliche Dokumentation (Englisch): [README.md](README.md).
+
+**Neu in 1.1.0 (Release Candidate `v1.1.0-rc.1`):** **Website-Anbieter.**
+Unter *Anime -> Add Streaming Provider* genügt jetzt die Adresse einer
+unterstützten Webseite: PeerTube-Instanzen (z. B. `video.blender.org`) und
+Webseiten, die ihren Katalog mit schema.org-Strukturdaten beschreiben, werden
+automatisch erkannt; Katalog, Suche, Serien, Staffeln und Folgen erscheinen in
+AKENO, DRM-freie Folgen laufen im eigenen Player – ohne JSON-Katalog. Jeder
+Anbieter hat eine eigene Startseite. Eine schon eingetragene Adresse öffnet
+diese Startseite statt eines Hinweises. Aniworld, AnikotoTV, Crunchyroll und
+ähnliche Seiten werden **nicht** unterstützt und bleiben unter *Websites*.
+Automatisch auf dem PC getestet und für die PS5 gebaut; bitte Abschnitt 13
+der [Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) durchgehen. Details:
+[docs/WEBSITE_PROVIDERS.md](docs/WEBSITE_PROVIDERS.md).
 
 **Stand (1.0.0, Release Candidate):** Auf einer PS5 mit Firmware 12.20
 (Jailbreak) liefen mit der Version vor 1.0.0: Start, DualSense-Steuerung,
@@ -20,13 +33,16 @@ Abschnitt 12. Änderungen: [CHANGELOG.md](CHANGELOG.md). Ausführliche
 Installationsanleitung (Englisch): [docs/INSTALL.md](docs/INSTALL.md).
 
 > **Rückweg:** Vor dem Update eine Kopie des alten Ordners
-> `/data/homebrew/PPSA99276/` behalten. Startet 1.0.0 nicht, den alten Ordner
-> zurückkopieren – Webseiten, Verlauf und Einstellungen liegen im
-> Datenordner der App und bleiben erhalten.
+> `/data/homebrew/PPSA99276/` behalten. Startet die neue Version nicht, den
+> alten Ordner zurückkopieren – Webseiten, Verlauf und Einstellungen liegen
+> im Datenordner der App und bleiben erhalten. Von 1.1.0 zurück auf 1.0.0:
+> Kataloge und PeerTube-Kanäle bleiben; Website-Anbieter liegen in der eigenen
+> Datei `anime-website-providers.json`, die 1.0.0 nie anfasst, und sind nach
+> dem erneuten Update auf 1.1.0 unverändert wieder da.
 
 ## Herunterladen
 
-**Release:** Auf GitHub unter **Releases** `AKENO-STREAM-PS5-v1.0.0-rc.1.zip`
+**Release:** Auf GitHub unter **Releases** `AKENO-STREAM-PS5-v1.1.0-rc.1.zip`
 und `SHA256SUMS` herunterladen, die Prüfsumme vergleichen
 (`sha256sum -c SHA256SUMS`) und die ZIP entpacken: darin liegt der Ordner
 `PPSA99276/`.
@@ -58,7 +74,7 @@ ShadowMountPlus übernimmt Name und Bilder nur bei der **ersten** Registrierung
 (damals 0.1–0.3: „Akeno Anime Preview“, oranges Symbol). Neue Dateien
 darüberkopieren ändert das nicht. Einmalig neu registrieren:
 
-1. Version 1.0.0 installieren und **einmal starten** – sie sichert deine
+1. Version 1.0.0 oder neuer installieren und **einmal starten** – sie sichert deine
    Daten nach `/data/akeno-backup/` (*Settings -> Back up my data* zeigt
    „N files in the backup“). Zusätzlich, während AKENO läuft, per FTP
    `/mnt/sandbox/PPSA99276_000/download0/akeno/` auf den PC kopieren.

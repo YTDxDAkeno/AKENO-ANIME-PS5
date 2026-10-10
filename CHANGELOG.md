@@ -3,6 +3,87 @@
 AKENO STREAM for PS5 (`PPSA99276`). Versions are `MAJOR.MINOR.PATCH`; release
 candidates are tagged `vX.Y.Z-rc.N` and published as GitHub pre-releases.
 
+## 1.1.0 (release candidate 1: `v1.1.0-rc.1`)
+
+`contentVersion` 01.110.000. Host-tested (fixture website, controller-driven
+end to end, rollback against 1.0.0's own storage code) and built for the PS5;
+awaiting the console run of the [hardware checklist](docs/HARDWARE_ACCEPTANCE.md)
+(section 13) before the stable `v1.1.0`.
+
+### New
+
+- **Website providers** ([docs/WEBSITE_PROVIDERS.md](docs/WEBSITE_PROVIDERS.md)):
+  *Add Streaming Provider* takes a website's address and, when an adapter
+  recognises the site, lists its catalogue, series, seasons and episodes in
+  AKENO STREAM and plays DRM-free episodes in the native player - no JSON
+  catalogue needed. Two adapters:
+  - **PeerTube instance**: recognised by `/api/v1/config` (instance name and
+    server version); its own channels are the catalogue, channel search on
+    the instance, playlists as seasons, HLS/MP4 playback with captions.
+  - **Structured data (schema.org)**: JSON-LD `ItemList`, `TVSeries`,
+    `TVSeason`, `TVEpisode`, `Movie` and `VideoObject`; `SearchAction` for
+    search, `rel="next"` for more pages. Only a `contentUrl` is played -
+    never an `embedUrl` (web player) or a film's trailer; subscriber-only
+    episodes (`isAccessibleForFree: false`, `requiresSubscription`) are never
+    requested; `regionsAllowed` is honoured.
+  A site that only answers HTTP 200, or that no adapter recognises, is not a
+  provider and stays in Websites. Catalogue pages are read from the
+  provider's own site only; every request is bounded.
+- **New Add Streaming Provider flow**: address -> automatic detection ->
+  *Recognised: <site>* with the adapter, capabilities, checked episodes,
+  evidence and the first series' posters -> *Add Provider* -> the provider's
+  home. Steps 1-4 show where the flow is. An empty address field shows *e.g.
+  https://video.blender.org* with an EXAMPLE tag instead of looking filled
+  in.
+- **Provider home** for every provider: catalogue in rows, *Available to
+  Watch*, search (on the site, or among the listed titles), *Load More*,
+  *Check Again*, *Open Website*, *Turn Off/On*, *Details*, *Remove*. Reached
+  from *Streaming Providers* (Cross), from the provider's card in *Anime ->
+  Your Anime Sources*, and right after adding.
+- A website series loads its seasons and episodes when it is opened (and
+  checks a few); *Try Again* when the site cannot be read.
+
+### Changed
+
+- An address that is already a provider (typed differently, or redirecting
+  to it) opens that provider's home instead of the notice "already a
+  provider"; nothing is added twice.
+- *Streaming Providers*: Cross opens the provider's home, OPTIONS shows its
+  report; website providers show their adapter; entries kept but not loaded
+  are mentioned.
+- *Websites -> Check for native streaming* also recognises website providers
+  and offers *Add to Anime*.
+
+### Storage and rollback
+
+- Website providers are stored in `anime-website-providers.json`, never in
+  `anime-providers.json`. 1.0.0 maps unknown provider types in
+  `anime-providers.json` to "catalog" and writes them back; keeping website
+  providers apart means rolling back to 1.0.0 and upgrading again leaves
+  them unchanged, and adding one leaves `anime-providers.json` byte for byte
+  as it was. Website ids start with `web_`, which 1.0.0 never creates.
+- Both provider files are read defensively: entries this version cannot use
+  (unknown type or adapter, newer adapter format, missing fields, duplicate
+  ids) are kept with all their fields and reported, never reinterpreted;
+  unknown fields survive saves; a damaged file is kept as `.corrupt` and the
+  previous good copy (`.bak`, kept at every save) is restored; a file in a
+  newer format is never written.
+- The data backup includes `anime-website-providers.json`.
+
+### Fixed
+
+- The screenshot tour (and every new test) starts from an empty data folder:
+  a provider kept from an earlier run made the tour stop with "already a
+  provider".
+- CI without a dependency cache: the pinned zlib archive is fetched from
+  zlib's GitHub release when zlib.net serves different bytes (same SHA-256).
+
+### Not included
+
+- No adapter for Aniworld, AnikotoTV, Crunchyroll or other sites without a
+  readable catalogue; they stay in Websites. Crunchyroll's DRM-protected
+  playback remains unsupported ([docs/CRUNCHYROLL.md](docs/CRUNCHYROLL.md)).
+
 ## 1.0.0 (release candidate 1: `v1.0.0-rc.1`)
 
 `contentVersion` 01.100.000. Host-tested and built for the PS5; awaiting the

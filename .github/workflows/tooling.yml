@@ -182,8 +182,9 @@ jobs:
           if grep -Eq "$TITLE_ID/(sources\.(txt|json)|streams\.json|websites\.(txt|json))" <<<"$listing"; then
             echo "a source or website list is packaged" >&2; exit 1
           fi
-          # Nor the user's anime providers, watchlist or personal catalogue.
-          if grep -Eq "$TITLE_ID/(anime-providers|anime-library|anime-catalog)\.json" <<<"$listing"; then
+          # Nor the user's anime providers (website providers included), watchlist
+          # or personal catalogue.
+          if grep -Eq "$TITLE_ID/(anime-providers|anime-website-providers|anime-library|anime-catalog)\.json" <<<"$listing"; then
             echo "a user anime list is packaged" >&2; exit 1
           fi
           # Nor a data backup, which a restore would apply to the user's data.
