@@ -7,8 +7,10 @@
 // writes each screen to build/screenshots/*.png for visual review.
 #include "app/app.hpp"
 #include "app/store.hpp"
+#include "app/screens.hpp"
 #include "canned_api.hpp"
 #include "core/fs.hpp"
+#include "fixture_site.hpp"
 #include "host_web_view.hpp"
 #include "net/http.hpp"
 #include "platform/platform.hpp"
@@ -18,6 +20,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -79,13 +82,23 @@ int main()
 {
     fs::make_directory("build");
     fs::make_directory("build/screenshots");
+    // Every run starts from an empty data folder: providers, watch history or
+    // anything else a previous run saved must not change what is shown (a
+    // provider kept from an earlier run made "Add" say "already a provider").
     const std::string data = "build/screenshot-data";
+    std::error_code ignored;
+    std::filesystem::remove_all(data, ignored);
     fs::make_directory(data);
-    for (const char *f : {"settings.json", "history.json", "favorites.json", "secrets.json",
-                          "sources.json", "websites.json", "web-tests.json"})
-        fs::remove_file(fs::join(data, f));
     setenv("AKENO_DATA_DIR", data.c_str(), 1);
-    net::set_test_transport(test::canned_transport);
+    // The canned services, and the offline fixture website for website providers.
+    static const std::string site = test::make_fixture_site(".");
+    net::set_test_transport(
+        [](const net::Request &request)
+        {
+            if (auto r = test::serve_fixture_site(site, request))
+                return *r;
+            return test::canned_transport(request);
+        });
     net::Client::global_init();
 
     // A little history so Continue Watching has content.
@@ -194,6 +207,39 @@ int main()
     press(app, input::Button::cross); // Crunchyroll: native integration status
     shot(app, "47-crunchyroll-native");
     press(app, input::Button::circle);
+    // A website provider: its address, what was detected, its home and
+    // catalogue, a series with its seasons and episodes, an episode playing.
+    app.push(make_add_provider_screen(app, test::kFixtureSite));
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "48-provider-detection");
+    press(app, input::Button::cross); // Add Provider: its home opens
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "49-provider-home");
+    press(app, input::Button::down);
+    press(app, input::Button::right);
+    shot(app, "50-provider-catalogue");
+    press(app, input::Button::left);
+    press(app, input::Button::cross); // The Signal: seasons and episodes load from the site
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "51-provider-series");
+    press(app, input::Button::down, 2); // seasons, episodes
+    press(app, input::Button::down);
+    shot(app, "52-provider-episodes");
+    press(app, input::Button::up);
+    press(app, input::Button::cross); // S1 E1 in the native player
+    for (int i = 0; i < 400 && app.player().status().position < 1.2; ++i)
+    {
+        app.update(g_now += 16);
+        platform::sleep_us(10000);
+    }
+    app.render(g_surface, g_now);
+    shot(app, "53-provider-playback");
+    press(app, input::Button::circle); // stop
+    press(app, input::Button::circle); // the provider's home
+    press(app, input::Button::circle); // Anime
     press(app, input::Button::left, 3);
     press(app, input::Button::down); // AniList: Trending Anime
     press(app, input::Button::right, 2);
