@@ -43,7 +43,9 @@ constexpr std::uint32_t kMagic = 0xC0D1A109u;
 constexpr int kAlreadyInitialized = static_cast<int>(0x80B80002u);
 constexpr int kModeDefault = 1;
 constexpr int kModeCustom = 2;
+constexpr int kStatusInitialized = 1;
 constexpr int kStatusRunning = 2;
+constexpr int kStartGraceFrames = 30;
 constexpr int kCloseTimeoutFrames = 600; // ~10 s for the dialog to go away
 
 struct CommonDialogBaseParam
@@ -201,6 +203,7 @@ class SystemWebView final : public WebView
         closing_ = false;
         closed_by_app_ = false;
         close_frames_ = 0;
+        open_frames_ = 0;
         last_status_ = -1000;
         return true;
     }
@@ -215,7 +218,12 @@ class SystemWebView final : public WebView
             step("sceWebBrowserDialogUpdateStatus", status);
             last_status_ = status;
         }
+        ++open_frames_;
         bool gone = status != kStatusRunning;
+        // Right after Open the dialog may still report "initialized" for a
+        // moment before it runs; only a lasting non-running status ends it.
+        if (gone && status == kStatusInitialized && !closing_ && open_frames_ < kStartGraceFrames)
+            return WebStatus::running;
         if (closing_ && !gone && ++close_frames_ >= kCloseTimeoutFrames)
         {
             step("close timeout: the dialog still reports running", status);
@@ -272,6 +280,7 @@ class SystemWebView final : public WebView
     bool closing_ = false;
     bool closed_by_app_ = false;
     int close_frames_ = 0;
+    int open_frames_ = 0;
     int last_status_ = -1000;
     int result_ = 0;
 };

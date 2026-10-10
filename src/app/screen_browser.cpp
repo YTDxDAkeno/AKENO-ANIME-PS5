@@ -166,8 +166,11 @@ class BrowserScreen final : public Screen
                th::kCaptionStrong, accent);
         p.text(th::kMarginX, 116, s_.title.empty() ? host_ : s_.title, th::kTitle, th::kText,
                th::kWidth - 2 * th::kMarginX);
-        if (s_.kind == WebSession::Kind::website)
-            p.text(th::kMarginX, 186, host_, th::kBody, th::kTextSecondary, 1400);
+        const char *subtitle = s_.kind == WebSession::Kind::youtube
+                                   ? "YouTube's official embedded player"
+                                   : "Browser capability test page";
+        p.text(th::kMarginX, 186, s_.kind == WebSession::Kind::website ? host_ : subtitle,
+               th::kBody, th::kTextSecondary, 1400);
 
         const Rect panel{th::kMarginX, 300, th::kWidth - 2 * th::kMarginX, 560};
         p.panel(panel, th::kPanelRadius, gfx::with_alpha(th::kSurface, 235));
