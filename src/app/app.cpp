@@ -29,6 +29,8 @@ const char *mode_stage(Mode mode) noexcept
         return "Anime mode";
     case Mode::youtube:
         return "YouTube mode";
+    case Mode::websites:
+        return "Websites";
     case Mode::discover:
         return "Discover";
     case Mode::library:
@@ -52,6 +54,8 @@ const char *mode_name(Mode mode) noexcept
         return "Anime";
     case Mode::youtube:
         return "YouTube";
+    case Mode::websites:
+        return "Websites";
     case Mode::discover:
         return "Discover";
     case Mode::library:
@@ -74,6 +78,8 @@ const char *mode_id(Mode mode) noexcept
         return "anime";
     case Mode::youtube:
         return "youtube";
+    case Mode::websites:
+        return "websites";
     case Mode::discover:
         return "discover";
     case Mode::library:
@@ -96,6 +102,8 @@ ui::Pixel mode_accent(Mode mode) noexcept
         return th::kAccentAnime;
     case Mode::youtube:
         return th::kAccentYouTube;
+    case Mode::websites:
+        return th::kAccentWebsites;
     case Mode::discover:
         return th::kAccentDiscover;
     case Mode::library:
@@ -112,7 +120,8 @@ App::App(AppConfig config, gfx::FontEngine &fonts)
     : config_{std::move(config)}, fonts_{fonts}, jobs_{3}, store_{platform::data_dir()},
       images_{jobs_}, frames_{std::make_shared<media::FrameStore>(th::kWidth, th::kHeight)},
       open_{platform::app_dir(), platform::data_dir()},
-      youtube_{[this] { return store_.youtube_api_key(); }}
+      youtube_{[this] { return store_.youtube_api_key(); }}, web_{platform::make_web_view()},
+      websites_{platform::data_dir()}, web_tests_{platform::data_dir()}
 {
     media::PlayerConfig pc;
     pc.frames = frames_;
@@ -122,6 +131,9 @@ App::App(AppConfig config, gfx::FontEngine &fonts)
 
 App::~App()
 {
+    if (web_ && web_->is_open())
+        web_->close();
+    pages_.stop();
     if (player_)
         player_->stop();
     jobs_.shutdown();
@@ -158,10 +170,28 @@ void App::start(std::uint64_t now_ms)
         (void)fs::write_atomic(fs::join(platform::data_dir(), "crash-previous.txt"), *text);
         (void)fs::remove_file(crash_path);
     }
+    // Saved websites; websites.txt in the install folder (written from a PC)
+    // adds its addresses once.
+    websites_.load();
+    if (auto text = fs::read_text(fs::join(platform::app_dir(), "websites.txt"), 256 * 1024))
+    {
+        std::string problem;
+        const int added = websites_.import_text(*text, &problem);
+        if (added > 0)
+            toast(std::to_string(added) + (added == 1 ? " website" : " websites") +
+                      " added from websites.txt",
+                  th::kSuccess);
+        if (!problem.empty())
+            report_error("websites.txt", problem);
+    }
+    if (!websites_.last_error().empty())
+        report_error("websites", websites_.last_error());
+    web_tests_.load();
     apply_settings();
     stacks_[static_cast<int>(Mode::home)].push_back(make_home_screen(*this));
     stacks_[static_cast<int>(Mode::anime)].push_back(make_anime_screen(*this));
     stacks_[static_cast<int>(Mode::youtube)].push_back(make_youtube_screen(*this));
+    stacks_[static_cast<int>(Mode::websites)].push_back(make_websites_screen(*this));
     stacks_[static_cast<int>(Mode::discover)].push_back(make_discover_screen(*this));
     stacks_[static_cast<int>(Mode::library)].push_back(make_library_screen(*this));
     stacks_[static_cast<int>(Mode::sources)].push_back(make_sources_screen(*this));
@@ -283,8 +313,21 @@ void App::open_item(const MediaItem &item)
         }
         if (item.id == "crunchyroll")
         {
-            show_provider_status(crunchyroll_);
+            push(make_crunchyroll_screen(*this));
             return;
+        }
+        return;
+    }
+    if (item.provider == "website")
+    {
+        // A saved website (Home's pinned row, Websites mode).
+        if (const web::Website *site = websites_.find(item.id))
+        {
+            WebSession session;
+            session.url = site->url;
+            session.title = site->name;
+            session.site_id = site->id;
+            open_web(std::move(session));
         }
         return;
     }
@@ -402,16 +445,69 @@ void App::open_youtube_app()
     report_error("YouTube app", error);
 }
 
-void App::open_in_browser(const std::string &url)
+void App::open_web(WebSession session)
 {
-    std::string error;
-    if (platform::open_web_browser(url, &error))
+    if (browser_active_)
     {
-        toast("Opening the web browser", th::kSuccess);
+        toast("The browser is already open", th::kInfo);
         return;
     }
-    toast("Could not open the web browser: " + error, th::kWarning);
-    report_error("web browser", error);
+    // The browser plays its own sound: AKENO's player stops first.
+    if (player_ && player_->active())
+    {
+        player_->stop();
+        finish_playback_record();
+    }
+    if (session.kind != WebSession::Kind::website)
+        session.check_first = false;
+    else if (!store_.settings().web_check_first)
+        session.check_first = false;
+    push(make_browser_screen(*this, std::move(session)));
+}
+
+void App::open_address(const std::string &typed)
+{
+    const web::Destination d =
+        web::interpret(typed, web::engine_from_id(store_.settings().web_search));
+    if (!d.ok)
+    {
+        toast(d.error, th::kWarning);
+        return;
+    }
+    if (d.insecure)
+        toast("This address is not encrypted (http)", th::kWarning);
+    WebSession session;
+    session.url = d.url;
+    session.title = d.is_search ? "Search: " + typed : web::display_host(d.url);
+    if (const web::Website *site = websites_.find_by_url(d.url))
+    {
+        session.site_id = site->id;
+        session.title = site->name;
+    }
+    session.check_first = !d.is_search;
+    open_web(std::move(session));
+}
+
+void App::play_youtube(const web::YouTubeTarget &target, const std::string &title)
+{
+    if (target.video_id.empty() && target.list_id.empty())
+    {
+        toast("That is not a YouTube video or playlist", th::kWarning);
+        return;
+    }
+    WebSession session;
+    session.kind = WebSession::Kind::youtube;
+    session.youtube = target;
+    session.title = title.empty() ? std::string{"YouTube"} : title;
+    open_web(std::move(session));
+}
+
+void App::run_browser_test()
+{
+    WebSession session;
+    session.kind = WebSession::Kind::capability_test;
+    session.title = "Browser capability test";
+    open_web(std::move(session));
 }
 
 void App::show_provider_status(const Provider &provider)
@@ -486,7 +582,17 @@ void App::update(std::uint64_t now_ms)
     for (auto &screen : overlay_)
         screen->update(now_ms);
     stack().back()->update(now_ms);
-    platform::set_stage(player_ && player_->active() ? "playback" : mode_stage(mode_));
+    // Screens that finished during their update (the browser session).
+    const auto finished = [](const std::unique_ptr<Screen> &screen) { return screen->closing(); };
+    if (std::any_of(overlay_.begin(), overlay_.end(), finished))
+    {
+        overlay_.erase(std::remove_if(overlay_.begin(), overlay_.end(), finished), overlay_.end());
+        top().resumed();
+        dirty_ = true;
+    }
+    platform::set_stage(browser_active_                ? "browser"
+                        : player_ && player_->active() ? "playback"
+                                                       : mode_stage(mode_));
 }
 
 bool App::needs_redraw() const
@@ -508,17 +614,28 @@ void App::render_chrome(ui::Painter &p, Screen &screen)
     p.text(th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10, 50, "STREAM",
            th::kCaptionStrong, th::kTextSecondary);
 
-    // Mode tabs, centred.
+    // Mode tabs, centred between the brand and the clock; the padding shrinks
+    // when all modes would not fit otherwise.
+    const int brand_right = th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10 +
+                            p.measure("STREAM", th::kCaptionStrong);
+    const int clock_left = th::kWidth - th::kMarginX - 110;
+    const int glyph_space = 66;
     int total = 0;
     std::array<int, kModeCount> widths{};
-    for (int m = 0; m < kModeCount; ++m)
+    for (int padding = 40; padding >= 16; padding -= 4)
     {
-        widths[static_cast<std::size_t>(m)] =
-            p.measure(mode_name(static_cast<Mode>(m)), th::kBodyStrong) + 40;
-        total += widths[static_cast<std::size_t>(m)] + 8;
+        total = 0;
+        for (int m = 0; m < kModeCount; ++m)
+        {
+            widths[static_cast<std::size_t>(m)] =
+                p.measure(mode_name(static_cast<Mode>(m)), th::kBodyStrong) + padding;
+            total += widths[static_cast<std::size_t>(m)] + 8;
+        }
+        if (total <= clock_left - brand_right - 2 * glyph_space - 16)
+            break;
     }
-    const int glyph_space = 66;
-    int x = (th::kWidth - total) / 2;
+    const int lowest = brand_right + glyph_space + 8;
+    int x = std::max(lowest, std::min((th::kWidth - total) / 2, clock_left - glyph_space - total));
     p.glyph(ui::Glyph::l1, x - glyph_space + 18, 62, 34);
     for (int m = 0; m < kModeCount; ++m)
     {
@@ -628,6 +745,29 @@ DiagnosticSnapshot App::snapshot() const
     s.image_bytes = stats.bytes;
     s.controller_connected = controller_connected_;
     s.player = player_->status();
+    const platform::WebEngineInfo engine = web_->info();
+    s.browser.push_back("Engine: " +
+                        (engine.engine.empty() ? std::string{"not started yet"} : engine.engine));
+    if (engine.attempted)
+        s.browser.push_back(std::string{"Available: "} + (engine.available ? "yes" : "no") +
+                            (engine.error.empty() ? "" : " (" + engine.error + ")"));
+    for (const auto &step : engine.steps)
+        s.browser.push_back("  " + step);
+    s.browser.push_back("Saved websites: " + std::to_string(websites_.sites().size()));
+    for (const auto &site : websites_.sites())
+    {
+        // Host names only: paths and queries may carry personal data.
+        std::string line =
+            "  " + web::display_host(site.url) + ": loads " + web::mark_id(site.checks.loads) +
+            ", sign-in " + web::mark_id(site.checks.signin) + ", video " +
+            web::mark_id(site.checks.video) + ", sound " + web::mark_id(site.checks.sound);
+        if (!site.last_result.empty())
+            line += " - last: " + site.last_result;
+        s.browser.push_back(line);
+    }
+    for (const auto &r : web_tests_.records())
+        s.browser.push_back("  [" + std::string{web::outcome_id(r.outcome)} + "] " + r.id + " - " +
+                            r.name + (r.detail.empty() ? "" : ": " + r.detail));
     return s;
 }
 } // namespace akeno

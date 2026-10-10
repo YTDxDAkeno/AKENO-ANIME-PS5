@@ -1,4 +1,4 @@
-# Hardware acceptance checklist (AKENO STREAM 0.6.x)
+# Hardware acceptance checklist (AKENO STREAM 0.7.x)
 
 Run this on the console before calling a build "working". Note the result of
 each step (pass / fail / not tested) and, when anything fails, export a
@@ -13,9 +13,13 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
       `sce_module/libc.prx` and `assets/` (fonts and `selftest/`)
 - [ ] No old `/data/homebrew/PPSA99999/` remains
 - [ ] The tile is named **AKENO STREAM** and shows the icon
-- [ ] Notifications "AKENO STREAM 0.6.0 starting" and, within ~5 s,
-      "AKENO STREAM 0.6.0 ready" appear; the splash screen shows the startup
+- [ ] Notifications "AKENO STREAM 0.7.0 starting" and, within ~5 s,
+      "AKENO STREAM 0.7.0 ready" appear; the splash screen shows the startup
       steps in between
+- [ ] **0.7.0 imports two more system modules (the browser dialog). If the
+      app no longer starts at all (an error code like CE-108255-1 and no
+      "starting" notification), note it: it means this firmware lacks one of
+      them. Go back to 0.6.0 and report the firmware version.**
 - [ ] If it crashes instead: note the "crashed: ..." notification text
       (signal, `eboot+0x…`, stage) and the last splash message
 - [ ] Home shows the AKENO STREAM header, mode tabs and shelves; text is
@@ -25,8 +29,8 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
 ## 2. Navigation
 
 - [ ] D-pad and left stick move focus; holding repeats
-- [ ] L1/R1 cycle Home -> Anime -> YouTube -> Discover -> Library -> Sources ->
-      Settings and wrap
+- [ ] L1/R1 cycle Home -> Anime -> YouTube -> Websites -> Discover -> Library ->
+      Sources -> Settings and wrap
 - [ ] Cross opens, Circle goes back; the last mode is restored after restart
 - [ ] PS button / home menu and returning to the app do not freeze it
 
@@ -116,14 +120,11 @@ Use only lists and streams you are allowed to watch; public test streams
 - [ ] An Internet Archive feature film plays with sound; seeking works
 - [ ] Triangle in Discover finds results from both
 
-## 8b. YouTube hand-off (experimental, new in 0.6.0)
+## 8b. YouTube app hand-off (experimental, secondary since 0.7.0)
 
-- [ ] YouTube mode -> *Open the YouTube App* starts the official YouTube
-      app (or note the message shown: ______)
-- [ ] A video's details -> *YouTube app*: does the app open, and does it
-      open that video?
-- [ ] A video's details -> *Browser*: does the PS5 web browser open the
-      video page, and does it play?
+- [ ] YouTube mode -> *YouTube App* card: does the official YouTube app start
+      (or note the message shown: ______)? 0.6.0's lookup of this system
+      function is expected to fail in a homebrew title; a failure is fine.
 
 ## 7. Export a report
 
@@ -143,11 +144,108 @@ Use only lists and streams you are allowed to watch; public test streams
       code that opens the video on a phone
 - [ ] The Crunchyroll card explains why there is no Crunchyroll playback
 
+## 10. Websites and the embedded browser (new in 0.7.0)
+
+Record each item separately (pass / fail / not tested). Rendering a page is
+not the same as playing a video, and signing in is not the same as playing.
+After this section, export a report (step 7): it contains every result
+AKENO recorded (Settings -> Diagnostics -> Browser shows them too).
+
+**Main acceptance test**
+
+1. [ ] Open AKENO STREAM, press R1 until **Websites**
+2. [ ] *Add Website*: type an address with the on-screen keyboard (R1 =
+       symbols for `:/.`), then a name. It appears under *Your Websites* with
+       its icon (or a coloured letter tile): ______
+3. [ ] Cross on it: the screen says "Opening the browser...", then the
+       **PS5 browser appears over AKENO STREAM** with the page
+       - if instead "The browser could not open" appears: note the code shown
+         and the lines under Settings -> Diagnostics -> Browser -> Engine: ______
+4. [ ] Navigate with the DualSense: note what moves the cursor, scrolls,
+       selects, goes back, and what closes the browser: ______
+5. [ ] Select a video on the site
+6. [ ] Press Play: picture ______ sound ______ (the site's own player)
+7. [ ] Close the browser **with its own controls** (not the PS button):
+       AKENO STREAM is back, no crash; a toast says "Back from <site>"
+8. [ ] Square on the website -> *Record what works*: mark page / sign-in /
+       video / sound as you saw them
+
+**Browser details**
+
+- [ ] Triangle in Websites: typing `example.com` opens the page; typing
+      words opens a search (DuckDuckGo)
+- [ ] A text field on a page opens the system keyboard; typing works
+- [ ] The browser's back / forward / reload work: ______
+- [ ] A video's full-screen button works: ______
+- [ ] Do L3 + R3 together close the browser? (emergency exit; fine if not): ______
+- [ ] Website check: `https://no-such-site.invalid/` shows "The site's name
+      could not be found (DNS)" before opening; Cross opens it anyway
+- [ ] Square -> Show on Home: the site appears on Home under *Your Websites*;
+      Private: on -> it leaves Home and Recently Visited
+- [ ] Rename, Change address, Remove work and survive an app restart
+- [ ] `websites.txt` in `/data/homebrew/PPSA99276/` (lines `Name = https://…`):
+      the sites appear after a restart, once
+- [ ] Copy the new build over the old one: your websites are still there
+
+**Browser test** (Websites -> *Browser Test*). Wait for "Done", press
+*Back to AKENO*, then note from Settings -> Diagnostics -> Browser:
+
+- [ ] Secure context: ______ ; user agent: ______
+- [ ] H.264 ___ HEVC ___ VP9 ___ AV1 ___ AAC ___ Opus ___ native HLS ___
+- [ ] MediaSource ___ ManagedMediaSource ___
+- [ ] EME ___ Widevine ___ PlayReady ___ FairPlay ___ Clear Key ___
+- [ ] HTML5 playback: video plays ___ audio decoded ___ (you should hear a
+      2-second tone) starts with sound without a click ___
+- [ ] Controller keys pages receive: ______
+- [ ] Run the test again after closing the browser, and again after
+      restarting AKENO: "Local storage kept" ___ "Cookies kept" ___
+
+## 10b. YouTube official embedded player (new in 0.7.0)
+
+Without an API key: YouTube mode -> *Play a link*, type `aqz-KE-bpKQ` (Big
+Buck Bunny on the Blender channel). With a key: a video's details -> *Play*.
+
+- [ ] The player page loads (AKENO's page with large buttons)
+- [ ] The YouTube player appears (note any "error 153": the console's origin
+      was refused) ______
+- [ ] The video starts by itself, or after pressing Play ______
+- [ ] Sound ______
+- [ ] Pause and Play work
+- [ ] *Full screen* works ______
+- [ ] Controller: the buttons can be reached with the D-pad or the cursor ______
+- [ ] Playlist: a channel's *Play uploads* (or a playlist link) - Next and
+      Previous change the video ______
+- [ ] *Back to AKENO* returns to AKENO STREAM without a crash; the toast says
+      "YouTube: played for ..." or names the error
+- [ ] Optional: Settings -> *Player pages without browser controls* On, play
+      again: the player fills the screen; Back to AKENO still works
+- [ ] A video whose owner forbids embedding shows error 101/150 with that
+      explanation (not a crash)
+- [ ] YouTube mode -> *youtube.com*: the full site in the browser; a video
+      plays? ______
+
+## 10c. Crunchyroll website (new in 0.7.0)
+
+Home -> *Crunchyroll* -> *Open crunchyroll.com*. Record each separately in
+*Record results*:
+
+- [ ] Website renders ______
+- [ ] Sign-in on Crunchyroll's own page works ______ (AKENO never asks for it)
+- [ ] Close the browser, open Crunchyroll again: still signed in? ______
+- [ ] An episode page shows the player ______
+- [ ] The episode plays with picture and sound ______ (expected to fail if
+      the browser test found no Widevine/PlayReady/FairPlay; note any error
+      message the player shows: ______)
+- [ ] The verdict line in the Crunchyroll section matches what you saw
+
 ## 9. Stability
 
 - [ ] Play, stop and reopen videos 10 times in a row without a crash
 - [ ] 30 minutes of continuous playback without dropped audio or growing delay
 - [ ] Switching modes rapidly while artwork loads does not crash
+- [ ] Open and close the browser 10 times (websites, the YouTube player)
+      without a crash; play a local video afterwards (the hardware player
+      still works after the browser was used)
 
 Result: ______ passed, ______ failed, ______ not tested.
 

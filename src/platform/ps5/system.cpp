@@ -184,28 +184,6 @@ bool launch_app(const std::vector<std::string> &title_ids, std::string *error)
     return false;
 }
 
-bool open_web_browser(const std::string &url, std::string *error)
-{
-    using Browser = int (*)(const char *, void *);
-    const auto browser =
-        reinterpret_cast<Browser>(system_service("sceSystemServiceLaunchWebBrowser"));
-    if (!browser)
-    {
-        if (error)
-            *error = "this firmware does not let the app open the web browser";
-        return false;
-    }
-    const int result = browser(url.c_str(), nullptr);
-    if (result != 0 && error)
-    {
-        char text[64];
-        std::snprintf(text, sizeof(text), "the system refused (0x%08x)",
-                      static_cast<unsigned>(result));
-        *error = text;
-    }
-    return result == 0;
-}
-
 void configure_curl(void *curl_easy) noexcept
 {
     if (curl_easy)

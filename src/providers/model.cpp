@@ -112,6 +112,8 @@ json::Value MediaItem::to_json() const
         v.set("attribution", attribution);
     if (accent)
         v.set("accent", static_cast<long long>(accent));
+    if (!playlist.empty())
+        v.set("playlist", playlist);
     if (!genres.empty())
     {
         json::Value g = json::Value::array();
@@ -144,6 +146,7 @@ MediaItem MediaItem::from_json(const json::Value &v)
     item.external_label = v["external_label"].str();
     item.attribution = v["attribution"].str();
     item.accent = static_cast<std::uint32_t>(v["accent"].integer());
+    item.playlist = v["playlist"].str();
     for (const auto &g : v["genres"].items())
         item.genres.push_back(g.str());
     return item;

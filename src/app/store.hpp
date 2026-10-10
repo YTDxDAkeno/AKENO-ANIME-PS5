@@ -34,6 +34,11 @@ struct Settings
     std::string youtube_safe_search = "moderate";
     bool reduce_motion = false;
     bool sources_notice_accepted = false; // the responsibility note was confirmed
+    // Websites and the embedded browser.
+    std::string web_search = "duckduckgo"; // web::SearchEngine id for the address bar
+    bool web_check_first = true;           // look at a site before the browser opens it
+    bool web_full_screen_pages = false;    // AKENO's own pages without browser controls
+    bool websites_notice_accepted = false; // the browser explanation was confirmed
 };
 
 struct HistoryEntry

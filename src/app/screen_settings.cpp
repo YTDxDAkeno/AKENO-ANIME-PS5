@@ -52,12 +52,16 @@ class SettingsScreen final : public Screen
         youtube_region,
         safe_search,
         adult,
+        web_search,
+        web_check,
+        web_pages,
         services,
         diagnostics,
         clear_history,
+        clear_recent,
         about,
     };
-    static constexpr int kRows = 12;
+    static constexpr int kRows = 16;
 
     void handle(input::Button b) override
     {
@@ -114,8 +118,8 @@ class SettingsScreen final : public Screen
             const std::string v = value(static_cast<Row>(i));
             if (!v.empty())
             {
-                const bool adjustable =
-                    i <= static_cast<int>(Row::adult) && static_cast<Row>(i) != Row::youtube_key;
+                const bool adjustable = i <= static_cast<int>(Row::web_pages) &&
+                                        static_cast<Row>(i) != Row::youtube_key;
                 const std::string shown = adjustable && focused ? "<  " + v + "  >" : v;
                 p.text_right(r.right() - 28, r.y + (r.h - p.line_height(th::kBody)) / 2, shown,
                              th::kBody, dim);
@@ -163,12 +167,20 @@ class SettingsScreen final : public Screen
             return "YouTube SafeSearch";
         case Row::adult:
             return "Show adult anime";
+        case Row::web_search:
+            return "Web search engine";
+        case Row::web_check:
+            return "Check websites before opening";
+        case Row::web_pages:
+            return "Player pages without browser controls";
         case Row::services:
             return "Service status";
         case Row::diagnostics:
             return "Diagnostics";
         case Row::clear_history:
             return "Clear watch history";
+        case Row::clear_recent:
+            return "Clear recently visited websites";
         case Row::about:
             return "About & licences";
         }
@@ -196,6 +208,14 @@ class SettingsScreen final : public Screen
             return s.youtube_safe_search;
         case Row::adult:
             return s.show_adult_anime ? "On" : "Off";
+        case Row::web_search:
+            return web::engine_name(web::engine_from_id(s.web_search));
+        case Row::web_check:
+            return s.web_check_first ? "On" : "Off";
+        case Row::web_pages:
+            return s.web_full_screen_pages ? "On (experimental)" : "Off";
+        case Row::clear_recent:
+            return std::to_string(app_.websites().recent().size()) + " entries";
         case Row::clear_history:
             return confirm_clear_ ? "Press X again to confirm"
                                   : std::to_string(app_.store().history().size()) + " entries";
@@ -232,6 +252,21 @@ class SettingsScreen final : public Screen
             return "YouTube's SafeSearch filter for search results.";
         case Row::adult:
             return "Include titles AniList marks as adult (18+). Off by default.";
+        case Row::web_search:
+            return "Used when the text typed in Websites' address bar is not an address.";
+        case Row::web_check:
+            return "Before the browser opens a site, AKENO STREAM checks that it answers and "
+                   "explains network problems (name not found, no connection, certificate) in "
+                   "plain words. It also finds the site's icon. Nothing is sent but a normal "
+                   "request for the start page.";
+        case Row::web_pages:
+            return "Experimental: AKENO STREAM's own pages (the YouTube player, the browser "
+                   "test) fill the screen without the browser's own bar. They carry a Back to "
+                   "AKENO button, and AKENO closes the browser if such a page stops answering. "
+                   "Off: the browser's normal presentation with its own controls.";
+        case Row::clear_recent:
+            return "Removes the Recently Visited row in Websites. Your saved websites and "
+                   "anything you are signed in to inside the browser stay.";
         case Row::services:
             return "What each streaming service can and cannot do in AKENO, and why.";
         case Row::diagnostics:
@@ -276,6 +311,20 @@ class SettingsScreen final : public Screen
         case Row::adult:
             s.show_adult_anime = !s.show_adult_anime;
             break;
+        case Row::web_search:
+        {
+            const int count = web::kSearchEngineCount;
+            const int index = static_cast<int>(web::engine_from_id(s.web_search));
+            s.web_search = web::engine_id(
+                static_cast<web::SearchEngine>((index + count + (direction > 0 ? 1 : -1)) % count));
+            break;
+        }
+        case Row::web_check:
+            s.web_check_first = !s.web_check_first;
+            break;
+        case Row::web_pages:
+            s.web_full_screen_pages = !s.web_full_screen_pages;
+            break;
         default:
             return;
         }
@@ -290,7 +339,13 @@ class SettingsScreen final : public Screen
         case Row::resume:
         case Row::motion:
         case Row::adult:
+        case Row::web_check:
+        case Row::web_pages:
             change(1);
+            return;
+        case Row::clear_recent:
+            app_.websites().clear_recent();
+            app_.toast("Recently visited websites cleared", th::kInfo);
             return;
         case Row::youtube_key:
             app_.open_keyboard(
@@ -322,7 +377,7 @@ class SettingsScreen final : public Screen
                 app_.show_provider_status(app_.youtube());
                 break;
             default:
-                app_.show_provider_status(app_.crunchyroll());
+                app_.push(make_crunchyroll_screen(app_));
                 break;
             }
             return;
@@ -373,7 +428,7 @@ class DiagnosticsScreen final : public Screen
             action_ = std::max(0, action_ - 1);
             return;
         case input::Button::right:
-            action_ = std::min(3, action_ + 1);
+            action_ = std::min(4, action_ + 1);
             return;
         case input::Button::cross:
             run(action_);
@@ -471,10 +526,11 @@ class DiagnosticsScreen final : public Screen
 
         // Actions.
         static const char *labels[] = {"Run network test", "Run media self-test",
-                                       "Play hardware test clip", "Export report"};
-        static const Icon icons[] = {Icon::refresh, Icon::film, Icon::play, Icon::check};
+                                       "Play hardware test clip", "Browser", "Export report"};
+        static const Icon icons[] = {Icon::refresh, Icon::film, Icon::play, Icon::spark,
+                                     Icon::check};
         int x = th::kMarginX;
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 5; ++i)
             x += p.button(x, 860, labels[i], i == action_, th::kAccentSettings, icons[i]) + 18;
         if (!exported_.empty())
             p.text(th::kMarginX, 950, exported_, th::kCaption, th::kSuccess,
@@ -560,6 +616,9 @@ class DiagnosticsScreen final : public Screen
                 app_.play(clips.front(), 0.0);
             return;
         }
+        case 3:
+            app_.push(make_browser_tests_screen(app_));
+            return;
         default:
         {
             std::string path, error;

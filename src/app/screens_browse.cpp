@@ -104,9 +104,19 @@ class HomeScreen final : public BrowseScreen
     [[nodiscard]] std::vector<Hint> hints() const override
     {
         std::vector<Hint> h{{Glyph::cross, "Select"}};
-        if (shelves_.focused() && shelves_.focused()->provider != "mode")
+        if (shelves_.focused() && shelves_.focused()->provider != "mode" &&
+            shelves_.focused()->provider != "website")
             h.push_back({Glyph::square, "Favorite"});
         return h;
+    }
+
+    void handle(input::Button b) override
+    {
+        // Website cards are managed in Websites mode, not in Favorites.
+        if (b == input::Button::square && shelves_.focused() &&
+            shelves_.focused()->provider == "website")
+            return;
+        BrowseScreen::handle(b);
     }
 
   protected:
@@ -126,8 +136,13 @@ class HomeScreen final : public BrowseScreen
                       0xff7a3d));
         modes.items.push_back(
             mode_card("youtube", "YouTube", "Mode",
-                      "Search and browse YouTube with the official Data API and your own API key.",
+                      "YouTube's official embedded player inside AKENO STREAM; browse and search "
+                      "with the Data API and your own key.",
                       0xff3d5a));
+        modes.items.push_back(mode_card("websites", "Websites", "Mode",
+                                        "Your own websites in the PS5 browser inside AKENO "
+                                        "STREAM: add, open, search.",
+                                        0xf5b83d));
         modes.items.push_back(mode_card("discover", "Discover", "Mode",
                                         "PeerTube videos and public-domain films from the "
                                         "Internet Archive, played right here.",
@@ -143,9 +158,29 @@ class HomeScreen final : public BrowseScreen
             "open", "Open Streams", "DRM-free",
             "Public test streams, open movies and the HLS links in your streams.json.", 0x4f8cff));
         modes.items.push_back(mode_card(
-            "crunchyroll", "Crunchyroll", "Status",
-            "Why Crunchyroll cannot be integrated, and how to watch it legitimately.", 0xf47521));
+            "crunchyroll", "Crunchyroll", "Website",
+            "crunchyroll.com in the browser with its own sign-in, and what this console can play.",
+            0xf47521));
         out.push_back(std::move(modes));
+        // Websites the user chose to show on Home.
+        Shelf sites{"Your Websites", {}, false};
+        for (const web::Website &w : app_.websites().sites())
+            if (w.pinned && !w.private_site)
+            {
+                MediaItem m;
+                m.provider = "website";
+                m.id = w.id;
+                m.kind = ItemKind::info;
+                m.title = w.name;
+                m.subtitle = web::display_host(w.url);
+                m.description = w.url;
+                m.image_url = w.icon_url;
+                m.icon_art = true;
+                m.accent = ui::accent_for(m.subtitle);
+                sites.items.push_back(std::move(m));
+            }
+        if (!sites.items.empty())
+            out.push_back(std::move(sites));
         return out;
     }
 
@@ -197,9 +232,10 @@ class AnimeScreen final : public BrowseScreen
                 open.items.push_back(m);
         Shelf services{"Streaming Services", {}, false};
         services.items.push_back(
-            mode_card("crunchyroll", "Crunchyroll", "Not integrated - see why",
-                      "Crunchyroll offers no API or sign-in for independent apps and protects "
-                      "video with DRM. Select to see the details and legal alternatives.",
+            mode_card("crunchyroll", "Crunchyroll", "Website in the browser",
+                      "Open crunchyroll.com in the PS5 browser inside AKENO STREAM and sign in on "
+                      "Crunchyroll's own page. Its episodes use DRM: the section shows whether "
+                      "this console's browser can play them.",
                       0xf47521));
         return {open, services};
     }
@@ -241,14 +277,29 @@ class YouTubeScreen final : public BrowseScreen
     {
         if (!app_.youtube().configured())
         {
-            if (b == input::Button::cross)
-                enter_key();
-            else if (b == input::Button::square)
+            switch (b)
+            {
+            case input::Button::left:
+                setup_action_ = std::max(0, setup_action_ - 1);
+                break;
+            case input::Button::right:
+                setup_action_ = std::min(kSetupActions - 1, setup_action_ + 1);
+                break;
+            case input::Button::cross:
+                run_setup(setup_action_);
+                break;
+            case input::Button::square:
                 load_key_file();
-            else if (b == input::Button::triangle)
-                app_.open_youtube_app();
-            else if (b == input::Button::options)
+                break;
+            case input::Button::triangle:
+                ask_link();
+                break;
+            case input::Button::options:
                 app_.show_provider_status(app_.youtube());
+                break;
+            default:
+                break;
+            }
             return;
         }
         if (b == input::Button::cross && !error_.empty() && shelves_.empty())
@@ -274,17 +325,17 @@ class YouTubeScreen final : public BrowseScreen
             BrowseScreen::render(p, now_ms);
             return;
         }
-        // Setup guide.
+        // Without a key: play links in the official player, or set up browsing.
         p.text(th::kMarginX, kHeroTop + 10, "YouTube", th::kDisplay, th::kText);
         p.wrapped(th::kMarginX, kHeroTop + 110,
-                  "Browse and search YouTube with Google's official YouTube Data API. It needs "
-                  "your own free API "
-                  "key - AKENO does not ship one, and never asks for your Google password.",
-                  th::kBody, th::kTextSecondary, 1100, 3);
-        const Rect steps{th::kMarginX, 340, 1110, 600};
+                  "Videos play in YouTube's own embedded player inside AKENO STREAM: paste a link "
+                  "or open youtube.com. Browsing and search use the official YouTube Data API with "
+                  "your own free key - AKENO never asks for your Google password.",
+                  th::kBody, th::kTextSecondary, th::kWidth - 2 * th::kMarginX, 2);
+        const Rect steps{th::kMarginX, 360, 1110, 480};
         p.panel(steps);
-        p.text(steps.x + 40, steps.y + 30, "Get a key in about five minutes", th::kHeading,
-               th::kText);
+        p.text(steps.x + 40, steps.y + 30, "Browsing: get a key in about five minutes",
+               th::kHeading, th::kText);
         const char *lines[] = {
             "1.  On a computer, open console.cloud.google.com and create a project.",
             "2.  Enable \"YouTube Data API v3\" for it (APIs & Services > Library).",
@@ -299,14 +350,16 @@ class YouTubeScreen final : public BrowseScreen
             p.text(steps.x + 40, y, line, th::kBody, th::kTextSecondary, steps.w - 80);
             y += 50;
         }
-        int x = steps.x + 40;
-        const int button_y = steps.bottom() - 100;
-        x += p.button(x, button_y, "Enter API key", true, th::kAccentYouTube, Icon::key) + 20;
-        x += p.button(x, button_y, "Load key file", false, th::kAccentYouTube, Icon::folder) + 20;
-        p.button(x, button_y, "YouTube app", false, th::kAccentYouTube, Icon::tv);
+        static const char *labels[kSetupActions] = {"Play a link", "youtube.com", "Enter API key",
+                                                    "Load key file", "YouTube app"};
+        static const Icon icons[kSetupActions] = {Icon::play, Icon::spark, Icon::key, Icon::folder,
+                                                  Icon::tv};
+        int x = th::kMarginX;
+        for (int i = 0; i < kSetupActions; ++i)
+            x += p.button(x, 880, labels[i], i == setup_action_, th::kAccentYouTube, icons[i]) + 18;
         // Capability summary on the right.
-        const Rect info{steps.right() + 34, 340, th::kWidth - th::kMarginX - steps.right() - 34,
-                        600};
+        const Rect info{steps.right() + 34, 360, th::kWidth - th::kMarginX - steps.right() - 34,
+                        480};
         p.panel(info);
         p.text(info.x + 32, info.y + 30, "What works", th::kHeading, th::kText);
         int iy = info.y + 92;
@@ -329,29 +382,43 @@ class YouTubeScreen final : public BrowseScreen
     [[nodiscard]] std::vector<Hint> hints() const override
     {
         if (!app_.youtube().configured())
-            return {{Glyph::cross, "Enter API key"},
+            return {{Glyph::cross, "Select"},
+                    {Glyph::dpad, "Choose"},
+                    {Glyph::triangle, "Play a link"},
                     {Glyph::square, "Load key file"},
-                    {Glyph::triangle, "Open YouTube app"},
                     {Glyph::options, "Service info"}};
         return BrowseScreen::hints();
     }
 
   protected:
-    // Playback happens in YouTube's own app: offer it first.
+    // Videos play in YouTube's official embedded player inside AKENO STREAM.
     std::vector<Shelf> local_before() override
     {
-        MediaItem app = mode_card("youtube-app", "Open the YouTube App", "Watch on this PS5",
-                                  "Starts the official YouTube app on this console. Videos open "
-                                  "there, in the YouTube app, or in the web browser from their "
-                                  "details page.",
-                                  0xff3d5a);
+        MediaItem link = mode_card("yt-link", "Play a YouTube Link", "Video or playlist",
+                                   "Type or paste a YouTube link (or video ID). It plays in "
+                                   "YouTube's official embedded player inside AKENO STREAM.",
+                                   0xff3d5a);
+        link.provider = "action";
+        MediaItem site = mode_card("yt-site", "youtube.com", "In the browser",
+                                   "The full YouTube website in the PS5 browser inside AKENO "
+                                   "STREAM, with your YouTube sign-in on Google's own page.",
+                                   0xff6b5a);
+        site.provider = "action";
+        MediaItem app = mode_card("youtube-app", "YouTube App", "Official app (experimental)",
+                                  "Tries to start the separately installed YouTube app. Whether "
+                                  "the firmware allows this from a homebrew title is unconfirmed.",
+                                  0x9b3d4a);
         app.provider = "action";
-        return {{"Watch", {app}, false}};
+        return {{"Watch", {link, site, app}, false}};
     }
     void activate(const MediaItem &item) override
     {
         if (item.provider == "action" && item.id == "youtube-app")
             app_.open_youtube_app();
+        else if (item.provider == "action" && item.id == "yt-link")
+            ask_link();
+        else if (item.provider == "action" && item.id == "yt-site")
+            open_site();
         else
             BrowseScreen::activate(item);
     }
@@ -364,6 +431,56 @@ class YouTubeScreen final : public BrowseScreen
     }
 
   private:
+    static constexpr int kSetupActions = 5;
+
+    void run_setup(int action)
+    {
+        switch (action)
+        {
+        case 0:
+            ask_link();
+            break;
+        case 1:
+            open_site();
+            break;
+        case 2:
+            enter_key();
+            break;
+        case 3:
+            load_key_file();
+            break;
+        default:
+            app_.open_youtube_app();
+            break;
+        }
+    }
+
+    void ask_link()
+    {
+        app_.open_keyboard("YouTube link or video ID", "", 300, false,
+                           [this, alive = alive_](bool ok, const std::string &text)
+                           {
+                               if (!ok || !*alive || text.empty())
+                                   return;
+                               const auto target = web::parse_youtube(text);
+                               if (!target)
+                               {
+                                   app_.toast("That is not a YouTube video or playlist link",
+                                              th::kWarning);
+                                   return;
+                               }
+                               app_.play_youtube(*target, "YouTube");
+                           });
+    }
+
+    void open_site()
+    {
+        WebSession session;
+        session.url = "https://www.youtube.com/";
+        session.title = "youtube.com";
+        app_.open_web(std::move(session));
+    }
+
     void enter_key()
     {
         app_.open_keyboard("YouTube Data API key", "", 39, true,
@@ -420,6 +537,8 @@ class YouTubeScreen final : public BrowseScreen
         error_.clear();
         load();
     }
+
+    int setup_action_ = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -763,8 +882,9 @@ class DetailsScreen final : public Screen
         favorite,
         qr,
         status,
+        youtube_play,
+        youtube_site,
         youtube_app,
-        browser,
     };
     struct Action
     {
@@ -776,6 +896,11 @@ class DetailsScreen final : public Screen
     void build_actions()
     {
         actions_.clear();
+        // YouTube plays in its official embedded player inside AKENO STREAM.
+        if (item_.provider == "youtube" && item_.kind == ItemKind::video)
+            actions_.push_back({ActionKind::youtube_play, "Play", Icon::play});
+        else if (item_.provider == "youtube" && !item_.playlist.empty())
+            actions_.push_back({ActionKind::youtube_play, "Play uploads", Icon::play});
         if (item_.playable)
         {
             const double resume = app_.store().resume_position(item_.key());
@@ -801,8 +926,8 @@ class DetailsScreen final : public Screen
                  app_.store().is_favorite(item_.key()) ? Icon::star : Icon::star_outline});
         if (item_.provider == "youtube")
         {
+            actions_.push_back({ActionKind::youtube_site, "youtube.com", Icon::spark});
             actions_.push_back({ActionKind::youtube_app, "YouTube app", Icon::tv});
-            actions_.push_back({ActionKind::browser, "Browser", Icon::spark});
         }
         if (item_.provider == "anilist")
             actions_.push_back({ActionKind::status, "Why no playback?", Icon::info});
@@ -834,11 +959,22 @@ class DetailsScreen final : public Screen
             if (provider_)
                 app_.show_provider_status(*provider_);
             break;
+        case ActionKind::youtube_play:
+            if (item_.kind == ItemKind::video)
+                app_.play_youtube({item_.id, {}, 0}, item_.title);
+            else
+                app_.play_youtube({{}, item_.playlist, 0}, item_.title);
+            break;
+        case ActionKind::youtube_site:
+        {
+            WebSession session;
+            session.url = item_.external_url;
+            session.title = item_.title;
+            app_.open_web(std::move(session));
+            break;
+        }
         case ActionKind::youtube_app:
             app_.open_youtube_app();
-            break;
-        case ActionKind::browser:
-            app_.open_in_browser(item_.external_url);
             break;
         }
     }

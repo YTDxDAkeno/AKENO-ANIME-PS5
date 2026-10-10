@@ -497,11 +497,24 @@ void Painter::placeholder(const Rect &r, const std::string &title, std::uint32_t
 }
 
 void Painter::media_card(const Rect &image, const MediaItem &item, const gfx::Image *art,
-                         bool focused, double progress_fraction, bool show_text)
+                         bool focused, double progress_fraction, bool show_text,
+                         const gfx::Image *icon)
 {
     const int radius = theme::kCardRadius;
     if (art && art->valid())
         s.draw_image(*art, image.x, image.y, 255, radius);
+    else if (icon && icon->valid())
+    {
+        // A site icon on a tile in the site's colour.
+        const std::uint32_t base = item.accent ? item.accent : accent_for(item.title);
+        s.fill_rounded_gradient(image, radius, gfx::mix(gfx::hex(base), theme::kSurface, 120),
+                                gfx::mix(gfx::hex(base), theme::kBackgroundTop, 200));
+        const int tile = icon->height + 36;
+        s.fill_rounded({image.x + (image.w - tile) / 2, image.y + (image.h - tile) / 2, tile, tile},
+                       24, gfx::rgba(255, 255, 255, 235));
+        s.draw_image(*icon, image.x + (image.w - icon->width) / 2,
+                     image.y + (image.h - icon->height) / 2, 255, 10);
+    }
     else
         placeholder(image, item.title, item.accent, radius);
 

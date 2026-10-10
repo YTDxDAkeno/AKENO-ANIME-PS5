@@ -60,8 +60,12 @@ AKENO_INCLUDE_PATHS := src third_party third_party/prosperotv/include third_part
 	$(FFMPEG_PS5)/include
 AKENO_EXTRA_SOURCES := $(sort $(wildcard third_party/prosperotv/src/*.c third_party/prosperotv/src/*.cpp)) \
 	third_party/qrcodegen/qrcodegen.c
+# The system browser dialog (Websites, YouTube player) and the common-dialog
+# service it needs have no stub in the SDK either: tooling/stubs provides them.
 AKENO_LINK_STUBS := libSceVideodec2.prx=third_party/prosperotv/stubs/videodec2_link_stub.c \
-	libSceAudiodec.sprx=third_party/prosperotv/stubs/audiodec_link_stub.cpp
+	libSceAudiodec.sprx=third_party/prosperotv/stubs/audiodec_link_stub.cpp \
+	libSceCommonDialog.sprx=tooling/stubs/common_dialog_link_stub.c \
+	libSceWebBrowserDialog.sprx=tooling/stubs/web_browser_dialog_link_stub.c
 # The payload SDK's C++ runtime, as linked by ProsperoTV: std::string,
 # std::mutex, std::function and friends need more than the headers.
 SDK_LIB := .deps/native/ps5-payload-sdk/target/lib

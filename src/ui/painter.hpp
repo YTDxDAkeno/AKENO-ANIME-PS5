@@ -105,8 +105,9 @@ class Painter final
     void icon(Icon icon, int cx, int cy, int size, Pixel color);
 
     // Artwork card. art may be null (placeholder drawn from the item's accent).
+    // icon (optional) is a small site icon drawn centred on the placeholder.
     void media_card(const Rect &image, const MediaItem &item, const gfx::Image *art, bool focused,
-                    double progress, bool show_text = true);
+                    double progress, bool show_text = true, const gfx::Image *icon = nullptr);
     // Placeholder artwork for items without images.
     void placeholder(const Rect &r, const std::string &title, std::uint32_t accent, int radius);
 

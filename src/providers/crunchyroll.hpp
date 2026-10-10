@@ -2,10 +2,10 @@
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Crunchyroll offers no public API, no third-party sign-in and streams its
-// catalogue with DRM. This adapter exists so the interface can state exactly
-// that, list what would be required, and point to legitimate options. It never
-// shows a login form and never contacts Crunchyroll's private endpoints.
+// Crunchyroll offers no public API and streams its catalogue with DRM. Its
+// own website runs in the embedded browser (screen_websites.cpp); this adapter
+// states what that can and cannot do. It never shows a login form and never
+// contacts Crunchyroll's private endpoints.
 #pragma once
 
 #include "providers/provider.hpp"

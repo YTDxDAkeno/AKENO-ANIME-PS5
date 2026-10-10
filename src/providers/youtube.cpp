@@ -89,13 +89,11 @@ ProviderInfo YouTube::info() const
                     "quota units."
                   : "Needs your own free YouTube Data API v3 key (Google Cloud Console). Add it in "
                     "Settings."},
-        {"Video playback", Support::unavailable,
-         "YouTube allows playback only in its official players (embedded web player or official "
-         "apps). This "
-         "native app has no compliant player and does not extract streams, so each video offers a "
-         "QR code to "
-         "watch it on your phone, and buttons that hand it to the official YouTube app or the "
-         "web browser on the PS5 (experimental)."},
+        {"Video playback", Support::available,
+         "In YouTube's official embedded player (IFrame Player API), shown in the PS5 browser "
+         "inside AKENO STREAM - no API key needed for that. Nothing is extracted. Videos whose "
+         "owners do not allow embedding (errors 101/150) play only on youtube.com. New in 0.7.0 "
+         "and still to be confirmed on a console."},
         {"Sign-in & subscriptions", Support::unavailable,
          "Requires Google OAuth for TV devices with a registered client ID. Not configured in this "
          "build."},
@@ -305,6 +303,7 @@ DetailsResult YouTube::details(const MediaItem &item, const net::CancelFlag &can
         if (!subs.empty())
             result.item.meta = format_count(std::atoll(subs.c_str())) + " subscribers";
         const std::string uploads = ch["contentDetails"]["relatedPlaylists"]["uploads"].str();
+        result.item.playlist = uploads; // "Play uploads" in the embedded player
         if (!uploads.empty())
         {
             const Fetch list =

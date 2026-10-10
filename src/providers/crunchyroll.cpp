@@ -10,23 +10,21 @@ ProviderInfo Crunchyroll::info() const
     ProviderInfo info;
     info.id = "crunchyroll";
     info.name = "Crunchyroll";
-    info.tagline = "Not integrated: no authorized interface exists for independent apps.";
+    info.tagline = "Crunchyroll's own website in the PS5 browser inside AKENO STREAM.";
     info.capabilities = {
+        {"Website", Support::available,
+         "crunchyroll.com opens in the console's browser inside AKENO STREAM (Home or Anime > "
+         "Crunchyroll). Whether every page renders is recorded per console."},
+        {"Sign-in", Support::available,
+         "Only on Crunchyroll's own page inside the browser. AKENO STREAM never shows a login "
+         "form and never sees your password or session."},
+        {"Playback", Support::needs_setup,
+         "Episodes are DRM-protected. They can play only if the console's browser offers a "
+         "licensed DRM system (Widevine, PlayReady or FairPlay) to web pages - the browser test "
+         "measures this. DRM is never bypassed."},
         {"Catalogue API", Support::unavailable,
-         "Crunchyroll publishes no developer API. Its apps use private endpoints that require "
-         "Crunchyroll-issued "
-         "client credentials; using them without permission would breach Crunchyroll's terms."},
-        {"Sign-in", Support::unavailable,
-         "No OAuth or device-code sign-in is offered to third parties. AKENO will not ask for your "
-         "Crunchyroll "
-         "password."},
-        {"Playback", Support::unavailable,
-         "Episodes are protected with DRM (Widevine/PlayReady). Licences are issued only to "
-         "certified players; a "
-         "homebrew app cannot obtain them, and bypassing DRM is illegal."},
-        {"Discovery", Support::available,
-         "Anime mode shows which titles are on Crunchyroll (via AniList) with QR links to the "
-         "official pages."},
+         "Crunchyroll publishes no developer API; AKENO STREAM does not use its private "
+         "endpoints. Anime mode lists which titles Crunchyroll streams (via AniList)."},
     };
     return info;
 }

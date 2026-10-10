@@ -148,7 +148,11 @@ TEST(YouTube, RequiresAKeyAndNeverSendsOneElsewhere)
     EXPECT_FALSE(none.ok);
     EXPECT_NE(none.error.find("API key"), std::string::npos);
     EXPECT_EQ(yt.info().capabilities[0].support, Support::needs_setup);
-    EXPECT_EQ(yt.info().capabilities[1].support, Support::unavailable);
+    // Playback is YouTube's own embedded player, with or without a key; no
+    // stream is ever extracted.
+    EXPECT_EQ(yt.info().capabilities[1].support, Support::available);
+    EXPECT_NE(yt.info().capabilities[1].detail.find("official embedded player"), std::string::npos);
+    EXPECT_NE(yt.info().capabilities[1].detail.find("Nothing is extracted"), std::string::npos);
     key = "AIzaSyD-test-key-0123456789abcdefghijkl";
     std::string seen_url;
     net::set_test_transport(
@@ -169,9 +173,18 @@ TEST(Crunchyroll, StatesItsLimitsWithoutALoginForm)
     Crunchyroll cr;
     const auto info = cr.info();
     int unavailable = 0;
+    bool playback_claimed = true;
     for (const auto &c : info.capabilities)
+    {
         unavailable += c.support == Support::unavailable;
-    EXPECT_GE(unavailable, 3);
+        if (c.name == "Playback")
+            playback_claimed = c.support == Support::available;
+        // Sign-in is Crunchyroll's own page; AKENO never collects credentials.
+        if (c.name == "Sign-in")
+            EXPECT_NE(c.detail.find("never"), std::string::npos);
+    }
+    EXPECT_GE(unavailable, 1);      // no private API use
+    EXPECT_FALSE(playback_claimed); // DRM playback is measured, never assumed
     const auto home = cr.home({});
     ASSERT_TRUE(home.ok);
     for (const auto &item : home.shelves[0].items)

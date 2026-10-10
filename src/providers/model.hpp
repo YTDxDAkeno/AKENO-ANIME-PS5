@@ -49,6 +49,8 @@ struct MediaItem
     std::string attribution;    // licence / source credit
     std::vector<std::string> genres;
     std::uint32_t accent = 0; // optional 0xRRGGBB colour from the source
+    std::string playlist;     // YouTube: a channel's uploads playlist
+    bool icon_art = false;    // image_url is a small site icon, drawn centred
 
     [[nodiscard]] std::string key() const
     {

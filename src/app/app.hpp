@@ -13,6 +13,7 @@
 #include "core/jobs.hpp"
 #include "gfx/font.hpp"
 #include "media/player.hpp"
+#include "platform/web_view.hpp"
 #include "providers/anilist.hpp"
 #include "providers/crunchyroll.hpp"
 #include "providers/discover.hpp"
@@ -21,6 +22,10 @@
 #include "ui/image_cache.hpp"
 #include "ui/keyboard.hpp"
 #include "ui/painter.hpp"
+#include "web/address.hpp"
+#include "web/local_pages.hpp"
+#include "web/web_tests.hpp"
+#include "web/websites.hpp"
 
 #include <array>
 #include <functional>
@@ -35,12 +40,13 @@ enum class Mode : std::uint8_t
     home,
     anime,
     youtube,
+    websites,
     discover,
     library,
     sources,
     settings,
 };
-inline constexpr int kModeCount = 7;
+inline constexpr int kModeCount = 8;
 const char *mode_name(Mode mode) noexcept;
 const char *mode_id(Mode mode) noexcept;
 ui::Pixel mode_accent(Mode mode) noexcept;
@@ -89,9 +95,22 @@ class Screen
     virtual void resumed()
     {
     }
+    // Asks the app to remove this screen once the current update is done
+    // (a screen cannot pop itself from inside update()).
+    void close_later() noexcept
+    {
+        closing_ = true;
+    }
+    [[nodiscard]] bool closing() const noexcept
+    {
+        return closing_;
+    }
 
   protected:
     App &app_;
+
+  private:
+    bool closing_ = false;
 };
 
 struct AppConfig
@@ -102,6 +121,23 @@ struct AppConfig
     std::function<void(const std::string &)> log;
     // Applies the playback volume (0..100) to the audio output.
     std::function<void(int)> set_volume;
+};
+
+// One visit to the embedded browser (platform/web_view.hpp).
+struct WebSession
+{
+    enum class Kind : std::uint8_t
+    {
+        website,         // a site the user chose: opened as is, nothing added to it
+        youtube,         // AKENO STREAM's page with the official YouTube player
+        capability_test, // AKENO STREAM's browser capability test page
+    };
+    Kind kind = Kind::website;
+    std::string url;     // Kind::website: the address
+    std::string title;   // shown while it opens
+    std::string site_id; // the saved website, if it is one
+    web::YouTubeTarget youtube;
+    bool check_first = true; // look at the site before opening (Settings)
 };
 
 class App final
@@ -137,9 +173,23 @@ class App final
     void play(const MediaItem &item, double start_seconds = -1.0);
     void show_qr(const MediaItem &item);
     void show_provider_status(const Provider &provider);
-    // Hand-offs to the console's own apps (experimental: firmware-dependent).
+    // The embedded browser: websites, the official YouTube player and the
+    // browser capability test open inside AKENO STREAM (screen_browser.cpp).
+    void open_web(WebSession session);
+    // Address bar: an address opens, other text is searched for.
+    void open_address(const std::string &typed);
+    void play_youtube(const web::YouTubeTarget &target, const std::string &title);
+    void run_browser_test();
+    [[nodiscard]] bool browser_active() const noexcept
+    {
+        return browser_active_;
+    }
+    void set_browser_active(bool active) noexcept
+    {
+        browser_active_ = active;
+    }
+    // Hand-off to the official YouTube app (experimental: firmware-dependent).
     void open_youtube_app();
-    void open_in_browser(const std::string &url);
     void toast(const std::string &message, ui::Pixel color = ui::theme::kInfo);
     void report_error(const std::string &where, const std::string &message);
     void open_keyboard(std::string title, std::string initial, std::size_t max_length, bool secret,
@@ -202,6 +252,22 @@ class App final
     {
         return diagnostics_;
     }
+    platform::WebView &web_view()
+    {
+        return *web_;
+    }
+    web::WebsiteStore &websites()
+    {
+        return websites_;
+    }
+    web::WebTestLog &web_tests()
+    {
+        return web_tests_;
+    }
+    web::LocalPages &local_pages()
+    {
+        return pages_;
+    }
     [[nodiscard]] const AppConfig &config() const
     {
         return config_;
@@ -242,6 +308,11 @@ class App final
     InternetArchive archive_;
     Discover discover_{peertube_, archive_};
     Diagnostics diagnostics_;
+    std::unique_ptr<platform::WebView> web_;
+    web::WebsiteStore websites_;
+    web::WebTestLog web_tests_;
+    web::LocalPages pages_;
+    bool browser_active_ = false;
 
     Mode mode_ = Mode::home;
     std::array<std::vector<std::unique_ptr<Screen>>, kModeCount> stacks_;

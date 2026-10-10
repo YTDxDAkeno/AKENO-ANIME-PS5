@@ -140,15 +140,22 @@ jobs:
           set -euo pipefail
           listing=$(python3 -m zipfile -l "dist/$TITLE_ID.zip")
           for entry in eboot.bin sce_sys/param.json sce_sys/icon0.png sce_module/libc.prx \
-              assets/fonts/Inter-Regular.ttf assets/selftest/av-sync-720p.ts LICENSE THIRD_PARTY_NOTICES.md \
+              assets/fonts/Inter-Regular.ttf assets/selftest/av-sync-720p.ts \
+              assets/selftest/h264-aac-360p.mp4 LICENSE THIRD_PARTY_NOTICES.md \
               sources-example.txt; do
             grep -Fq "$TITLE_ID/$entry" <<<"$listing" || { echo "missing $entry" >&2; exit 1; }
           done
           if grep -q PPSA99999 <<<"$listing"; then echo "obsolete PPSA99999 packaged" >&2; exit 1; fi
-          # The app ships no sources and must never overwrite the user's.
-          if grep -Eq "$TITLE_ID/(sources\.(txt|json)|streams\.json)" <<<"$listing"; then
-            echo "a source list is packaged" >&2; exit 1
+          # The app ships no sources or websites and must never overwrite the user's.
+          if grep -Eq "$TITLE_ID/(sources\.(txt|json)|streams\.json|websites\.(txt|json))" <<<"$listing"; then
+            echo "a source or website list is packaged" >&2; exit 1
           fi
+          # The system browser dialog and the common-dialog service are imported
+          # from the system (positional imports), never packaged.
+          grep -Eq '^sceWebBrowserDialogOpen libSceWebBrowserDialog$' build/imports.txt ||
+            { echo "the browser dialog import is missing" >&2; exit 1; }
+          grep -Eq '^sceCommonDialogInitialize libSceCommonDialog$' build/imports.txt ||
+            { echo "the common dialog import is missing" >&2; exit 1; }
 
       - name: Render interface screenshots
         run: make screenshots

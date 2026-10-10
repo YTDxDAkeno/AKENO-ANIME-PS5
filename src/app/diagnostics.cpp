@@ -225,6 +225,12 @@ std::string Diagnostics::build_report(const DiagnosticSnapshot &s) const
     if (!p.demux_error.empty())
         out += "Demuxer: " + p.demux_error + "\n";
 
+    out += "\nBrowser (Websites, YouTube player)\n----------------------------------\n";
+    if (s.browser.empty())
+        out += "(no information)\n";
+    for (const auto &l : s.browser)
+        out += l + "\n";
+
     out += "\nRecent errors\n-------------\n";
     if (errors_.empty())
         out += "(none)\n";

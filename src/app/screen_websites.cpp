@@ -1,0 +1,748 @@
+// AKENO STREAM PS5 - Websites mode and the Crunchyroll section.
+// Copyright (C) 2026 AKENO STREAM contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Websites is a TV front page for the embedded browser: an address bar
+// (address or search), the user's saved websites with their icons, the
+// services AKENO STREAM has sections for, and recently visited sites. The
+// list starts empty and has no allow-list: any http(s) site the user adds
+// opens as it is, in the console's own browser, with nothing added to it.
+#include "app/browse.hpp"
+#include "core/fs.hpp"
+#include "platform/platform.hpp"
+#include "web/site_probe.hpp"
+
+#include <algorithm>
+
+namespace akeno
+{
+namespace th = ui::theme;
+using ui::Glyph;
+using ui::Icon;
+using ui::Pixel;
+using ui::Rect;
+
+namespace
+{
+constexpr char kCrunchyrollUrl[] = "https://www.crunchyroll.com/";
+
+constexpr char kBrowserNotice[] =
+    "Websites open in the PS5's own web browser, shown inside AKENO STREAM. Use the "
+    "browser's controls to move the cursor, scroll, type and play; close the browser to come "
+    "back.\n\n"
+    "Sign-ins happen on the websites' own pages and stay inside the browser: AKENO STREAM "
+    "never sees passwords, cookies or what you type there. Whether a video plays depends on "
+    "the site and on what the console's browser supports - DRM-protected video needs a DRM "
+    "system the browser may not offer.\n\n"
+    "You decide which websites to open and are responsible for using them lawfully. Avoid the "
+    "PS button while the browser is open; if the browser offers no way out, press L3 and R3 "
+    "together.";
+
+MediaItem action_card(const char *id, const char *title, const char *subtitle,
+                      std::string description, std::uint32_t accent)
+{
+    MediaItem m;
+    m.provider = "action";
+    m.id = id;
+    m.kind = ItemKind::info;
+    m.title = title;
+    m.subtitle = subtitle;
+    m.description = std::move(description);
+    m.accent = accent;
+    return m;
+}
+
+std::string checks_line(const web::SiteChecks &c)
+{
+    std::string out;
+    const auto part = [&](const char *name, web::Mark m)
+    {
+        if (m == web::Mark::untested)
+            return;
+        out += (out.empty() ? "" : ", ") + std::string{name} +
+               (m == web::Mark::works ? " works" : " does not work");
+    };
+    part("page", c.loads);
+    part("sign-in", c.signin);
+    part("video", c.video);
+    part("sound", c.sound);
+    return out;
+}
+
+MediaItem site_card(const web::Website &w)
+{
+    MediaItem m;
+    m.provider = "website";
+    m.id = w.id;
+    m.kind = ItemKind::info;
+    m.title = w.name;
+    m.subtitle = web::display_host(w.url);
+    m.image_url = w.icon_url;
+    m.icon_art = true;
+    m.accent = ui::accent_for(m.subtitle);
+    m.badge = w.private_site ? "PRIVATE" : (w.pinned ? "HOME" : "");
+    std::string description = w.url;
+    if (!w.last_result.empty())
+        description += " - last time: " + w.last_result;
+    const std::string checks = checks_line(w.checks);
+    if (!checks.empty())
+        description += ". Your test: " + checks;
+    m.description = description + ". Square: options.";
+    if (w.visits > 0)
+        m.meta = std::to_string(w.visits) + (w.visits == 1 ? " visit" : " visits");
+    return m;
+}
+
+// ---------------------------------------------------------------------------
+class WebsitesScreen final : public BrowseScreen
+{
+  public:
+    explicit WebsitesScreen(App &app) : BrowseScreen{app, th::kAccentWebsites, nullptr, nullptr, ""}
+    {
+        loaded_ = true;
+        rebuild(false);
+    }
+
+    void handle(input::Button b) override
+    {
+        const MediaItem *item = shelves_.focused();
+        switch (b)
+        {
+        case input::Button::triangle:
+            with_notice([this] { ask_address(); });
+            return;
+        case input::Button::square:
+            if (item && item->provider == "website")
+                site_menu(item->id);
+            else if (item && item->provider == "recent")
+                recent_menu(item->id, item->title);
+            return;
+        case input::Button::options:
+            app_.push(make_confirm_screen(app_, "How Websites work", kBrowserNotice, "", nullptr));
+            return;
+        default:
+            BrowseScreen::handle(b);
+        }
+    }
+
+    [[nodiscard]] std::vector<Hint> hints() const override
+    {
+        std::vector<Hint> h{{Glyph::cross, "Open"}, {Glyph::triangle, "Address or search"}};
+        const MediaItem *item = shelves_.focused();
+        if (item && (item->provider == "website" || item->provider == "recent"))
+            h.push_back({Glyph::square, "Options"});
+        h.push_back({Glyph::options, "How it works"});
+        return h;
+    }
+
+  protected:
+    void activate(const MediaItem &item) override
+    {
+        if (item.provider == "website")
+            with_notice([this, id = item.id] { app_.open_item(site_item(id)); });
+        else if (item.provider == "recent")
+            with_notice([this, url = item.id, title = item.title] { open_url(url, title); });
+        else if (item.id == "open-address")
+            with_notice([this] { ask_address(); });
+        else if (item.id == "add-website")
+            add_website();
+        else if (item.id == "browser-test")
+            with_notice([this] { app_.run_browser_test(); });
+        else if (item.provider == "mode")
+            app_.open_item(item);
+    }
+
+    std::vector<Shelf> local_before() override
+    {
+        std::vector<Shelf> out;
+        Shelf start{"Browse", {}, false};
+        start.items.push_back(action_card(
+            "open-address", "Search or Enter Address", "Any website",
+            std::string{"Type an address (youtube.com) or words to search with "} +
+                web::engine_name(web::engine_from_id(app_.store().settings().web_search)) +
+                ". The page opens in the PS5 browser inside AKENO STREAM.",
+            0xf5b83d));
+        start.items.push_back(action_card(
+            "add-website", "Add Website", "Save a site with its name",
+            "Type the address and a name. The site appears below with its icon; Square edits, "
+            "pins it to Home or removes it. From a PC: websites.txt in the install folder.",
+            0x35c79a));
+        start.items.push_back(action_card(
+            "browser-test", "Browser Test", "What plays here?",
+            "Checks what the console's browser supports - video and audio formats, streaming, "
+            "DRM, storage and playback with sound - and saves the results item by item.",
+            0x5aa9ff));
+        out.push_back(std::move(start));
+
+        Shelf mine{"Your Websites", {}, false};
+        for (const web::Website &w : app_.websites().sites())
+            mine.items.push_back(site_card(w));
+        if (!mine.items.empty())
+            out.push_back(std::move(mine));
+
+        Shelf services{"Sections", {}, false};
+        services.items.push_back(mode_card("youtube", "YouTube", "Official embedded player",
+                                           "YouTube's own embedded player inside AKENO STREAM, "
+                                           "with browsing through the Data API.",
+                                           0xff3d5a));
+        services.items.push_back(mode_card("crunchyroll", "Crunchyroll", "Website test",
+                                           "crunchyroll.com in the browser, its own sign-in, and "
+                                           "what the console's browser can and cannot play.",
+                                           0xf47521));
+        out.push_back(std::move(services));
+
+        Shelf recent{"Recently Visited", {}, false};
+        for (const web::RecentVisit &r : app_.websites().recent())
+        {
+            MediaItem m;
+            m.provider = "recent";
+            m.id = r.url;
+            m.kind = ItemKind::info;
+            m.title = r.title.empty() ? web::display_host(r.url) : r.title;
+            m.subtitle = web::display_host(r.url);
+            m.description = r.url + ". Square: options.";
+            m.accent = ui::accent_for(m.subtitle);
+            if (const web::Website *w = app_.websites().find_by_url(r.url))
+            {
+                m.image_url = w->icon_url;
+                m.icon_art = true;
+            }
+            recent.items.push_back(std::move(m));
+        }
+        if (!recent.items.empty())
+            out.push_back(std::move(recent));
+        return out;
+    }
+
+    void render_empty_hero(ui::Painter &p) override
+    {
+        p.text(th::kMarginX, kHeroTop + 20, "WEBSITES", th::kCaptionStrong, accent_);
+        p.text(th::kMarginX, kHeroTop + 56, "Your web, on the TV", th::kDisplay, th::kText);
+    }
+
+  private:
+    MediaItem site_item(const std::string &id) const
+    {
+        MediaItem m;
+        m.provider = "website";
+        m.id = id;
+        return m;
+    }
+
+    void open_url(const std::string &url, const std::string &title)
+    {
+        WebSession session;
+        session.url = url;
+        session.title = title;
+        if (const web::Website *w = app_.websites().find_by_url(url))
+        {
+            session.site_id = w->id;
+            session.title = w->name;
+        }
+        app_.open_web(std::move(session));
+    }
+
+    // The explanation of the browser is confirmed once before its first use.
+    void with_notice(std::function<void()> next)
+    {
+        if (app_.store().settings().websites_notice_accepted)
+        {
+            next();
+            return;
+        }
+        auto alive = alive_;
+        app_.push(make_confirm_screen(app_, "Before the first website", kBrowserNotice, "Continue",
+                                      [this, alive, next = std::move(next)]
+                                      {
+                                          if (!*alive)
+                                              return;
+                                          Settings s = app_.store().settings();
+                                          s.websites_notice_accepted = true;
+                                          app_.store().update_settings(s);
+                                          next();
+                                      }));
+    }
+
+    void ask_address()
+    {
+        auto alive = alive_;
+        app_.open_keyboard("Address or search", "", 2048, false,
+                           [this, alive](bool ok, const std::string &text)
+                           {
+                               if (ok && *alive && !text.empty())
+                                   app_.open_address(text);
+                           });
+    }
+
+    // Looks at a site in the background for its icon (and reports problems).
+    void fetch_icon(const std::string &id, const std::string &url, bool announce)
+    {
+        auto alive = alive_;
+        App &app = app_;
+        app_.jobs().run(
+            [id, url, alive, announce, &app, this]
+            {
+                web::SiteProbe probe = web::probe_site(url, net::make_cancel_flag());
+                app.jobs().post(
+                    [probe = std::move(probe), id, alive, announce, this]
+                    {
+                        if (!*alive)
+                            return;
+                        if (!probe.icon_url.empty())
+                            app_.websites().set_icon(id, probe.icon_url);
+                        if (announce && !probe.problem.empty())
+                            app_.toast("Saved. Note: " + probe.problem, th::kWarning);
+                        rebuild(true);
+                    });
+            });
+    }
+
+    void add_website()
+    {
+        auto alive = alive_;
+        app_.open_keyboard(
+            "Website address", "https://", 2048, false,
+            [this, alive](bool ok, const std::string &text)
+            {
+                if (!ok || !*alive)
+                    return;
+                const web::Destination d = web::check_address(text);
+                if (!d.ok)
+                {
+                    app_.toast(d.error, th::kWarning);
+                    return;
+                }
+                if (app_.websites().find_by_url(d.url))
+                {
+                    app_.toast("This address is already in your websites", th::kInfo);
+                    return;
+                }
+                const std::string host = web::display_host(d.url);
+                app_.open_keyboard(
+                    "Name for this website", host, web::WebsiteStore::kMaxName, false,
+                    [this, alive, url = d.url, host, insecure = d.insecure](bool named,
+                                                                            const std::string &name)
+                    {
+                        if (!*alive)
+                            return;
+                        std::string why, id;
+                        if (!app_.websites().add(named ? name : host, url, &why, &id))
+                        {
+                            app_.toast(why, th::kWarning);
+                            return;
+                        }
+                        app_.toast(insecure ? "Website added (not encrypted: http)"
+                                            : "Website added",
+                                   insecure ? th::kWarning : th::kSuccess);
+                        rebuild(true);
+                        fetch_icon(id, url, true);
+                    });
+            });
+    }
+
+    void site_menu(const std::string &id)
+    {
+        const web::Website *found = app_.websites().find(id);
+        if (!found)
+            return;
+        const web::Website site = *found;
+        auto alive = alive_;
+        std::vector<MenuOption> options;
+        options.push_back({"Open", site.url, [this, alive, id]
+                           {
+                               if (*alive)
+                                   with_notice([this, id] { app_.open_item(site_item(id)); });
+                           }});
+        options.push_back({"Rename", "Now: " + site.name, [this, alive, id, name = site.name]
+                           {
+                               app_.open_keyboard(
+                                   "Name for this website", name, web::WebsiteStore::kMaxName,
+                                   false, [this, alive, id](bool ok, const std::string &text)
+                                   { edit(alive, id, ok, text, false); });
+                           }});
+        options.push_back({"Change address", site.url, [this, alive, id, url = site.url]
+                           {
+                               app_.open_keyboard(
+                                   "Website address", url, 2048, false,
+                                   [this, alive, id](bool ok, const std::string &text)
+                                   { edit(alive, id, ok, text, true); });
+                           }});
+        options.push_back({site.pinned ? "Remove from Home" : "Show on Home",
+                           site.pinned ? "It stays in Websites" : "Adds it to Home's Websites row",
+                           [this, alive, id]
+                           { toggle(alive, id, [](web::Website &w) { w.pinned = !w.pinned; }); }});
+        options.push_back(
+            {site.private_site ? "Private: on" : "Private: off",
+             "Private sites stay out of Recently Visited and Home", [this, alive, id]
+             { toggle(alive, id, [](web::Website &w) { w.private_site = !w.private_site; }); }});
+        options.push_back({"Record what works", "Page, sign-in, video and sound, for test reports",
+                           [this, alive, id] { record(alive, id); }});
+        options.push_back({"Refresh icon", "Looks at the site again for its icon",
+                           [this, alive, id, url = site.url]
+                           {
+                               if (*alive)
+                                   fetch_icon(id, url, true);
+                           }});
+        options.push_back({"Remove", "Removes it from Websites", [this, alive, id, name = site.name]
+                           {
+                               if (!*alive)
+                                   return;
+                               app_.push(make_confirm_screen(
+                                   app_, "Remove \"" + name + "\"?",
+                                   "The website is removed from your list. Sign-ins inside the "
+                                   "browser are not affected.",
+                                   "Remove",
+                                   [this, alive, id]
+                                   {
+                                       if (!*alive)
+                                           return;
+                                       app_.websites().remove(id);
+                                       app_.toast("Website removed", th::kInfo);
+                                       rebuild(true);
+                                   }));
+                           }});
+        app_.push(
+            make_menu_screen(app_, site.name, web::display_host(site.url), std::move(options)));
+    }
+
+    void recent_menu(const std::string &url, const std::string &title)
+    {
+        auto alive = alive_;
+        std::vector<MenuOption> options;
+        options.push_back({"Open", url, [this, alive, url, title]
+                           {
+                               if (*alive)
+                                   with_notice([this, url, title] { open_url(url, title); });
+                           }});
+        if (!app_.websites().find_by_url(url))
+            options.push_back({"Save to Websites", "Keeps it in Your Websites",
+                               [this, alive, url, title]
+                               {
+                                   if (!*alive)
+                                       return;
+                                   std::string why, id;
+                                   if (app_.websites().add(title, url, &why, &id))
+                                   {
+                                       app_.toast("Website added", th::kSuccess);
+                                       fetch_icon(id, url, false);
+                                   }
+                                   else
+                                       app_.toast(why, th::kWarning);
+                                   rebuild(true);
+                               }});
+        options.push_back({"Remove from Recently Visited", "", [this, alive, url]
+                           {
+                               if (!*alive)
+                                   return;
+                               app_.websites().remove_recent(url);
+                               rebuild(true);
+                           }});
+        options.push_back({"Clear Recently Visited", "Removes every entry of this row",
+                           [this, alive]
+                           {
+                               if (!*alive)
+                                   return;
+                               app_.websites().clear_recent();
+                               app_.toast("Recently Visited cleared", th::kInfo);
+                               rebuild(true);
+                           }});
+        app_.push(make_menu_screen(app_, title, web::display_host(url), std::move(options)));
+    }
+
+    void edit(const std::shared_ptr<bool> &alive, const std::string &id, bool ok,
+              const std::string &text, bool address)
+    {
+        if (!ok || !*alive)
+            return;
+        const web::Website *found = app_.websites().find(id);
+        if (!found)
+            return;
+        web::Website site = *found;
+        if (address)
+        {
+            const web::Destination d = web::check_address(text);
+            if (!d.ok)
+            {
+                app_.toast(d.error, th::kWarning);
+                return;
+            }
+            site.url = d.url;
+        }
+        else
+        {
+            site.name = text;
+        }
+        std::string why;
+        if (!app_.websites().update(site, &why))
+        {
+            app_.toast(why, th::kWarning);
+            return;
+        }
+        app_.toast(address ? "Address changed" : "Name changed", th::kSuccess);
+        if (address)
+            fetch_icon(id, site.url, true);
+        rebuild(true);
+    }
+
+    void toggle(const std::shared_ptr<bool> &alive, const std::string &id,
+                const std::function<void(web::Website &)> &change)
+    {
+        if (!*alive)
+            return;
+        const web::Website *found = app_.websites().find(id);
+        if (!found)
+            return;
+        web::Website site = *found;
+        change(site);
+        app_.websites().update(site);
+        rebuild(true);
+    }
+
+    void record(const std::shared_ptr<bool> &alive, const std::string &id)
+    {
+        if (!*alive)
+            return;
+        const web::Website *found = app_.websites().find(id);
+        if (!found)
+            return;
+        std::vector<RecordRow> rows = {
+            {"The page loads", "Text and pictures appear", found->checks.loads},
+            {"Sign-in works", "Only if the site has accounts", found->checks.signin},
+            {"A video plays", "Picture moves", found->checks.video},
+            {"With sound", "You hear the video", found->checks.sound},
+        };
+        app_.push(make_record_screen(
+            app_, "What works on " + web::display_host(found->url),
+            "Record what you saw on this console. It goes into the diagnostics report (host name "
+            "only) and helps others know what to expect.",
+            std::move(rows),
+            [this, alive, id](const std::vector<RecordRow> &r)
+            {
+                if (!*alive || r.size() != 4)
+                    return;
+                const web::Website *w = app_.websites().find(id);
+                if (!w)
+                    return;
+                web::Website site = *w;
+                site.checks = {r[0].mark, r[1].mark, r[2].mark, r[3].mark};
+                app_.websites().update(site);
+                rebuild(true);
+            }));
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Crunchyroll: the real website in the browser, its own sign-in, and the
+// evidence of whether its DRM-protected episodes can play on this console.
+class CrunchyrollScreen final : public Screen
+{
+  public:
+    explicit CrunchyrollScreen(App &app) : Screen{app}
+    {
+    }
+
+    void handle(input::Button b) override
+    {
+        switch (b)
+        {
+        case input::Button::left:
+            action_ = std::max(0, action_ - 1);
+            return;
+        case input::Button::right:
+            action_ = std::min(3, action_ + 1);
+            return;
+        case input::Button::cross:
+            run(action_);
+            return;
+        case input::Button::circle:
+            app_.pop();
+            return;
+        default:
+            return;
+        }
+    }
+
+    void render(ui::Painter &p, std::uint64_t) override
+    {
+        const Pixel accent = gfx::hex(0xf47521);
+        p.text(th::kMarginX, 150, "CRUNCHYROLL", th::kCaptionStrong, accent);
+        p.text(th::kMarginX, 186, "crunchyroll.com in AKENO STREAM", th::kTitle, th::kText);
+        const int lw = 820;
+        int y = 270;
+        y += p.wrapped(th::kMarginX, y,
+                       "Opens Crunchyroll's own website in the PS5 browser inside AKENO STREAM. "
+                       "Sign in on Crunchyroll's own page there - AKENO STREAM never asks for "
+                       "and never sees your Crunchyroll password.",
+                       th::kBody, th::kTextSecondary, lw, 5) +
+             24;
+        y += p.wrapped(th::kMarginX, y,
+                       "Crunchyroll protects its episodes with DRM. In a browser they play only "
+                       "if the browser offers a licensed DRM system (Widevine, PlayReady or "
+                       "FairPlay) to the page. AKENO STREAM does not and will not work around "
+                       "DRM. The browser test shows what this console's browser offers.",
+                       th::kBody, th::kTextSecondary, lw, 7) +
+             24;
+        p.wrapped(th::kMarginX, y, verdict(), th::kBodyStrong, verdict_color(), lw, 5);
+
+        static const char *labels[] = {"Open crunchyroll.com", "Run browser test", "Record results",
+                                       "Back"};
+        static const Icon icons[] = {Icon::spark, Icon::refresh, Icon::check, Icon::home};
+        int x = th::kMarginX;
+        for (int i = 0; i < 4; ++i)
+            x += p.button(x, 900, labels[i], i == action_, accent, icons[i]) + 18;
+
+        const Rect panel{th::kMarginX + lw + 60, 150, th::kWidth - 2 * th::kMarginX - lw - 60, 720};
+        p.panel(panel, th::kPanelRadius, gfx::with_alpha(th::kSurface, 235));
+        p.text(panel.x + 30, panel.y + 24, "On this console", th::kHeading, th::kText);
+        int ry = panel.y + 84;
+        for (const Row &r : rows())
+        {
+            const web::TestRecord *rec = app_.web_tests().get(r.id);
+            const web::Outcome o = rec ? rec->outcome : web::Outcome::unknown;
+            const Pixel color = o == web::Outcome::yes       ? th::kSuccess
+                                : o == web::Outcome::no      ? th::kError
+                                : o == web::Outcome::partial ? th::kWarning
+                                                             : th::kTextMuted;
+            p.s.fill_circle(panel.x + 40, ry + 15, 8, color);
+            p.text(panel.x + 62, ry, r.label, th::kCaptionStrong, th::kText, panel.w - 260);
+            p.text_right(panel.right() - 30, ry, rec ? web::outcome_label(o) : "Not tested",
+                         th::kCaption, color);
+            if (rec && !rec->detail.empty())
+                p.text(panel.x + 62, ry + 27, rec->detail, th::kSmall, th::kTextMuted,
+                       panel.w - 100);
+            ry += 52;
+        }
+    }
+
+    [[nodiscard]] std::vector<Hint> hints() const override
+    {
+        return {{Glyph::cross, "Select"}, {Glyph::dpad, "Choose"}, {Glyph::circle, "Back"}};
+    }
+
+  private:
+    struct Row
+    {
+        const char *id;
+        const char *label;
+    };
+    static const std::vector<Row> &rows()
+    {
+        static const std::vector<Row> list = {
+            {"crunchyroll.render", "Website renders (your test)"},
+            {"crunchyroll.login", "Sign-in on Crunchyroll's page (your test)"},
+            {"crunchyroll.session", "Still signed in next time (your test)"},
+            {"crunchyroll.player", "Video player starts (your test)"},
+            {"crunchyroll.playback", "Episode plays with sound (your test)"},
+            {"drm.eme", "DRM interface (EME) for pages"},
+            {"drm.widevine", "Widevine"},
+            {"drm.playready", "PlayReady"},
+            {"drm.fairplay", "FairPlay"},
+            {"mse.available", "Streaming (Media Source Extensions)"},
+            {"codec.h264", "H.264 video"},
+            {"codec.aac", "AAC audio"},
+        };
+        return list;
+    }
+
+    web::Outcome outcome(const char *id) const
+    {
+        const web::TestRecord *r = app_.web_tests().get(id);
+        return r ? r->outcome : web::Outcome::unknown;
+    }
+
+    std::string verdict() const
+    {
+        return web::drm_verdict(app_.web_tests(), "crunchyroll.playback").text;
+    }
+
+    Pixel verdict_color() const
+    {
+        switch (web::drm_verdict(app_.web_tests(), "crunchyroll.playback").level)
+        {
+        case web::DrmVerdict::Level::unavailable:
+            return th::kError;
+        case web::DrmVerdict::Level::possible:
+        case web::DrmVerdict::Level::confirmed:
+            return th::kSuccess;
+        default:
+            return th::kWarning;
+        }
+    }
+
+    void run(int action)
+    {
+        switch (action)
+        {
+        case 0:
+        {
+            WebSession session;
+            session.url = kCrunchyrollUrl;
+            session.title = "Crunchyroll";
+            if (const web::Website *w = app_.websites().find_by_url(kCrunchyrollUrl))
+                session.site_id = w->id;
+            app_.open_web(std::move(session));
+            return;
+        }
+        case 1:
+            app_.run_browser_test();
+            return;
+        case 2:
+        {
+            std::vector<RecordRow> marks;
+            for (std::size_t i = 0; i < 5; ++i)
+            {
+                const web::Outcome o = outcome(rows()[i].id);
+                marks.push_back({rows()[i].label, "",
+                                 o == web::Outcome::yes  ? web::Mark::works
+                                 : o == web::Outcome::no ? web::Mark::fails
+                                                         : web::Mark::untested});
+            }
+            marks[0].hint = "Crunchyroll's pages appear and can be navigated";
+            marks[1].hint = "With Crunchyroll's own sign-in page";
+            marks[2].hint = "Close the browser, open Crunchyroll again";
+            marks[3].hint = "The episode page shows the player";
+            marks[4].hint = "Picture and sound play";
+            App &app = app_;
+            app_.push(make_record_screen(
+                app_, "Crunchyroll on this console",
+                "Record what you saw. Website rendering or a successful sign-in alone does not "
+                "mean episodes play - record each item separately.",
+                std::move(marks),
+                [&app](const std::vector<RecordRow> &r)
+                {
+                    for (std::size_t i = 0; i < r.size() && i < 5; ++i)
+                    {
+                        web::TestRecord rec;
+                        rec.id = rows()[i].id;
+                        rec.group = "Crunchyroll (your test)";
+                        rec.name = rows()[i].label;
+                        rec.outcome = r[i].mark == web::Mark::works   ? web::Outcome::yes
+                                      : r[i].mark == web::Mark::fails ? web::Outcome::no
+                                                                      : web::Outcome::unknown;
+                        rec.at = platform::wall_clock_seconds();
+                        rec.source = "your test";
+                        app.web_tests().set(std::move(rec));
+                    }
+                }));
+            return;
+        }
+        default:
+            app_.pop();
+            return;
+        }
+    }
+
+    int action_ = 0;
+};
+} // namespace
+
+std::unique_ptr<Screen> make_websites_screen(App &app)
+{
+    return std::make_unique<WebsitesScreen>(app);
+}
+
+std::unique_ptr<Screen> make_crunchyroll_screen(App &app)
+{
+    return std::make_unique<CrunchyrollScreen>(app);
+}
+} // namespace akeno

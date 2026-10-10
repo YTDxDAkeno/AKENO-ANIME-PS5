@@ -5,6 +5,7 @@
 
 #include "core/fs.hpp"
 #include "platform/platform.hpp"
+#include "web/address.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -97,6 +98,10 @@ void Store::load()
         settings_.youtube_safe_search = s["youtube_safe_search"].str("moderate");
         settings_.reduce_motion = s["reduce_motion"].boolean(false);
         settings_.sources_notice_accepted = s["sources_notice_accepted"].boolean(false);
+        settings_.web_search = web::engine_id(web::engine_from_id(s["web_search"].str()));
+        settings_.web_check_first = s["web_check_first"].boolean(true);
+        settings_.web_full_screen_pages = s["web_full_screen_pages"].boolean(false);
+        settings_.websites_notice_accepted = s["websites_notice_accepted"].boolean(false);
     }
     const json::Value h = load_json("history.json");
     history_.clear();
@@ -162,6 +167,10 @@ void Store::save_settings()
     s.set("youtube_safe_search", settings_.youtube_safe_search);
     s.set("reduce_motion", settings_.reduce_motion);
     s.set("sources_notice_accepted", settings_.sources_notice_accepted);
+    s.set("web_search", settings_.web_search);
+    s.set("web_check_first", settings_.web_check_first);
+    s.set("web_full_screen_pages", settings_.web_full_screen_pages);
+    s.set("websites_notice_accepted", settings_.websites_notice_accepted);
     save_json("settings.json", s);
 }
 

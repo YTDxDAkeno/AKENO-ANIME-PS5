@@ -22,7 +22,7 @@ common=(-O2 -g -pthread -DAKENO_HOST=1 -I"$root/src" -I"$root/third_party" -I"$r
 mapfile -t sources < <(find src -type f \( -name '*.cpp' -o -name '*.c' \) \
     ! -path 'src/platform/ps5/*' ! -path 'src/media/native/*' ! -name 'main.cpp' | sort)
 sources+=(third_party/prosperotv/src/iptv_stream.cpp third_party/qrcodegen/qrcodegen.c
-    tests/host/host_platform.cpp tests/host/software_sink.cpp tests/host/canned_api.cpp
+    tests/host/host_platform.cpp tests/host/host_web_view.cpp tests/host/software_sink.cpp tests/host/canned_api.cpp
     tools/screenshots/screenshots.cpp)
 objects=()
 for source in "${sources[@]}"; do

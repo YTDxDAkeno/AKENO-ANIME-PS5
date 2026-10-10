@@ -1,4 +1,4 @@
-// AKENO STREAM PS5 - Bounded JPEG/PNG/GIF/BMP decoding for artwork.
+// AKENO STREAM PS5 - Bounded JPEG/PNG/GIF/BMP/ICO decoding for artwork.
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once

@@ -4,9 +4,9 @@
 //
 // Uses only documented API endpoints with the user's own API key (Google Cloud
 // Console, "YouTube Data API v3"). YouTube's terms allow video playback only
-// through its official players; this native app has none and does not extract
-// stream URLs, so videos open on the user's phone through a QR link or in the
-// official YouTube app.
+// through its official players, so AKENO STREAM never extracts stream URLs:
+// videos play in YouTube's official embedded player (IFrame Player API),
+// which the console's browser shows inside the app (src/web/pages.cpp).
 #pragma once
 
 #include "providers/provider.hpp"

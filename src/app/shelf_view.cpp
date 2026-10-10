@@ -183,8 +183,11 @@ void ShelfView::render(ui::Painter &p, const ui::Rect &area, ui::ImageCache &ima
             if (x >= th::kWidth)
                 break;
             const MediaItem &item = shelf.items[c];
+            const bool icon = item.icon_art && !item.image_url.empty();
             const gfx::Image *art =
-                item.image_url.empty() ? nullptr : images.get(item.image_url, cw, ch);
+                item.image_url.empty() || icon ? nullptr : images.get(item.image_url, cw, ch);
+            const gfx::Image *icon_image =
+                icon ? images.get(item.image_url, ch * 2 / 5, ch * 2 / 5) : nullptr;
             double progress = 0.0;
             if (store && item.playable)
                 for (const auto &e : store->history())
@@ -194,7 +197,7 @@ void ShelfView::render(ui::Painter &p, const ui::Rect &area, ui::ImageCache &ima
                         break;
                     }
             const bool focused = row_focused && static_cast<int>(c) == columns_[r];
-            p.media_card({x, card_y, cw, ch}, item, art, focused, progress);
+            p.media_card({x, card_y, cw, ch}, item, art, focused, progress, true, icon_image);
         }
         y += h;
     }

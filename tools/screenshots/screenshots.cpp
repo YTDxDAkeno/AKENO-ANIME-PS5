@@ -9,6 +9,7 @@
 #include "app/store.hpp"
 #include "canned_api.hpp"
 #include "core/fs.hpp"
+#include "host_web_view.hpp"
 #include "net/http.hpp"
 #include "platform/platform.hpp"
 #include "software_sink.hpp"
@@ -81,7 +82,7 @@ int main()
     const std::string data = "build/screenshot-data";
     fs::make_directory(data);
     for (const char *f : {"settings.json", "history.json", "favorites.json", "secrets.json",
-                          "sources.json"})
+                          "sources.json", "websites.json", "web-tests.json"})
         fs::remove_file(fs::join(data, f));
     setenv("AKENO_DATA_DIR", data.c_str(), 1);
     net::set_test_transport(test::canned_transport);
@@ -96,7 +97,34 @@ int main()
         store.record_progress(streams[2], 405.0, 888.0);
         store.toggle_favorite(streams[1]);
         store.add_source({"Example List", "https://lists.example/demo.m3u", false});
+        Settings s = store.settings();
+        s.web_check_first = false; // the canned network has no websites
+        s.websites_notice_accepted = true;
+        store.update_settings(s);
+        web::WebsiteStore sites(data);
+        sites.load();
+        std::string why, id;
+        sites.add("Crunchyroll", "https://www.crunchyroll.com/", &why, &id);
+        sites.add("PeerTube", "https://framatube.org/", &why, &id);
+        web::Website pinned = *sites.find(id);
+        pinned.pinned = true;
+        pinned.checks.loads = web::Mark::works;
+        pinned.checks.video = web::Mark::works;
+        sites.update(pinned);
+        sites.add("Example Video Site", "https://video.example/", &why, &id);
+        sites.record_visit("https://framatube.org/", "PeerTube", 1760000000);
+        web::WebTestLog tests(data);
+        tests.load();
+        const std::string report =
+            R"j({"results":[{"id":"drm.eme","group":"DRM (Encrypted Media Extensions)","name":"EME","status":"yes","detail":"present"},
+            {"id":"drm.widevine","group":"DRM (Encrypted Media Extensions)","name":"Widevine","status":"no","detail":"NotSupportedError (example data)"},
+            {"id":"codec.h264","group":"Video formats (canPlayType)","name":"H.264 High","status":"yes","detail":"probably"},
+            {"id":"codec.vp9","group":"Video formats (canPlayType)","name":"VP9 (WebM)","status":"no","detail":"no answer"},
+            {"id":"mse.available","group":"Streaming (Media Source Extensions)","name":"MediaSource","status":"yes"},
+            {"id":"playback.video","group":"HTML5 playback","name":"Video plays","status":"yes","detail":"example data"}]})j";
+        tests.accept_report(report, 1760000000, &why);
     }
+    test::web_view_script().finish_after_updates = -1; // stays open for its screenshot
 
     gfx::FontEngine fonts;
     for (const auto &[weight, file] : {std::pair{gfx::Weight::regular, "Inter-Regular.ttf"},
@@ -146,8 +174,34 @@ int main()
     shot(app, "11-youtube-search");
     press(app, input::Button::cross);
     shot(app, "12-youtube-details");
+    press(app, input::Button::left, 6);
+    press(app, input::Button::cross); // Play: the official embedded player
+    shot(app, "34-youtube-player-opening");
+    press(app, input::Button::l3);
+    press(app, input::Button::r3); // emergency close
+    settle(app, 20);
     press(app, input::Button::circle);
     press(app, input::Button::circle);
+    press(app, input::Button::r1);
+    shot(app, "28-websites");
+    press(app, input::Button::triangle);
+    shot(app, "29-websites-address");
+    press(app, input::Button::circle); // cancel the keyboard
+    press(app, input::Button::down);
+    press(app, input::Button::square);
+    shot(app, "30-website-options");
+    press(app, input::Button::circle);
+    press(app, input::Button::cross);
+    shot(app, "31-browser-open");
+    press(app, input::Button::l3);
+    press(app, input::Button::r3);
+    settle(app, 20);
+    press(app, input::Button::down);
+    press(app, input::Button::right);
+    press(app, input::Button::cross);
+    shot(app, "32-crunchyroll");
+    press(app, input::Button::circle);
+    press(app, input::Button::up, 3);
     press(app, input::Button::r1);
     shot(app, "13-discover");
     press(app, input::Button::cross);
@@ -174,19 +228,16 @@ int main()
     press(app, input::Button::circle);
     press(app, input::Button::r1);
     shot(app, "22-settings");
-    press(app, input::Button::down, 9);
+    press(app, input::Button::down, 12);
     press(app, input::Button::cross);
     press(app, input::Button::right);
     press(app, input::Button::cross);
     settle(app, 120);
     shot(app, "23-diagnostics");
+    press(app, input::Button::right, 2);
+    press(app, input::Button::cross);
+    shot(app, "33-browser-tests");
     press(app, input::Button::circle);
-    press(app, input::Button::up);
-    press(app, input::Button::cross);
-    press(app, input::Button::cross);
-    press(app, input::Button::cross);
-    press(app, input::Button::cross);
-    shot(app, "24-crunchyroll-status");
     press(app, input::Button::circle);
     // Play the bundled clip through the software decoder.
     press(app, input::Button::r1); // home, focus still on the Explore row

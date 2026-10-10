@@ -54,6 +54,9 @@ struct DiagnosticSnapshot
     std::size_t image_bytes = 0;
     bool controller_connected = false;
     media::PlayerStatus player;
+    // The embedded browser: engine start-up steps, saved sites' test marks
+    // (host names only) and the browser test results.
+    std::vector<std::string> browser;
 };
 
 class Diagnostics final
