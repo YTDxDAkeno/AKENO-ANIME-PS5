@@ -66,6 +66,20 @@ void notify(std::string_view) noexcept
 {
 }
 
+bool launch_app(const std::vector<std::string> &, std::string *error)
+{
+    if (error)
+        *error = "starting other apps works only on the console";
+    return false;
+}
+
+bool open_web_browser(const std::string &, std::string *error)
+{
+    if (error)
+        *error = "the system web browser is available only on the console";
+    return false;
+}
+
 namespace
 {
 std::atomic<const char *> g_stage{"startup"};

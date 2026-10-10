@@ -15,6 +15,7 @@
 #include "media/player.hpp"
 #include "providers/anilist.hpp"
 #include "providers/crunchyroll.hpp"
+#include "providers/discover.hpp"
 #include "providers/open_catalog.hpp"
 #include "providers/youtube.hpp"
 #include "ui/image_cache.hpp"
@@ -34,11 +35,12 @@ enum class Mode : std::uint8_t
     home,
     anime,
     youtube,
+    discover,
     library,
     sources,
     settings,
 };
-inline constexpr int kModeCount = 6;
+inline constexpr int kModeCount = 7;
 const char *mode_name(Mode mode) noexcept;
 const char *mode_id(Mode mode) noexcept;
 ui::Pixel mode_accent(Mode mode) noexcept;
@@ -135,6 +137,9 @@ class App final
     void play(const MediaItem &item, double start_seconds = -1.0);
     void show_qr(const MediaItem &item);
     void show_provider_status(const Provider &provider);
+    // Hand-offs to the console's own apps (experimental: firmware-dependent).
+    void open_youtube_app();
+    void open_in_browser(const std::string &url);
     void toast(const std::string &message, ui::Pixel color = ui::theme::kInfo);
     void report_error(const std::string &where, const std::string &message);
     void open_keyboard(std::string title, std::string initial, std::size_t max_length, bool secret,
@@ -181,6 +186,18 @@ class App final
     {
         return crunchyroll_;
     }
+    PeerTube &peertube()
+    {
+        return peertube_;
+    }
+    InternetArchive &archive()
+    {
+        return archive_;
+    }
+    Discover &discover()
+    {
+        return discover_;
+    }
     Diagnostics &diagnostics()
     {
         return diagnostics_;
@@ -221,6 +238,9 @@ class App final
     AniList anilist_;
     YouTube youtube_;
     Crunchyroll crunchyroll_;
+    PeerTube peertube_;
+    InternetArchive archive_;
+    Discover discover_{peertube_, archive_};
     Diagnostics diagnostics_;
 
     Mode mode_ = Mode::home;

@@ -144,52 +144,64 @@ int main()
     press(app, input::Button::cross, 3);
     press(app, input::Button::options);
     shot(app, "11-youtube-search");
+    press(app, input::Button::cross);
+    shot(app, "12-youtube-details");
+    press(app, input::Button::circle);
     press(app, input::Button::circle);
     press(app, input::Button::r1);
-    shot(app, "12-library");
+    shot(app, "13-discover");
     press(app, input::Button::cross);
-    shot(app, "13-library-files");
+    shot(app, "14-discover-details");
+    press(app, input::Button::circle);
     press(app, input::Button::r1);
-    shot(app, "14-sources");
+    shot(app, "15-library");
     press(app, input::Button::cross);
-    shot(app, "15-source-list");
+    shot(app, "16-library-files");
+    press(app, input::Button::r1);
+    shot(app, "17-sources");
+    press(app, input::Button::cross);
+    shot(app, "18-source-list");
     press(app, input::Button::circle);
     press(app, input::Button::down);
     press(app, input::Button::cross);
-    shot(app, "16-sources-notice");
+    shot(app, "19-sources-notice");
     press(app, input::Button::cross);
-    shot(app, "17-sources-keyboard");
+    shot(app, "20-sources-keyboard");
     press(app, input::Button::circle); // cancel the keyboard
+    press(app, input::Button::right);
+    press(app, input::Button::cross);
+    shot(app, "21-sources-phone");
+    press(app, input::Button::circle);
     press(app, input::Button::r1);
-    shot(app, "18-settings");
+    shot(app, "22-settings");
     press(app, input::Button::down, 9);
     press(app, input::Button::cross);
     press(app, input::Button::right);
     press(app, input::Button::cross);
     settle(app, 120);
-    shot(app, "19-diagnostics");
+    shot(app, "23-diagnostics");
     press(app, input::Button::circle);
     press(app, input::Button::up);
     press(app, input::Button::cross);
     press(app, input::Button::cross);
     press(app, input::Button::cross);
     press(app, input::Button::cross);
-    shot(app, "20-crunchyroll-status");
+    shot(app, "24-crunchyroll-status");
     press(app, input::Button::circle);
     // Play the bundled clip through the software decoder.
     press(app, input::Button::r1); // home, focus still on the Explore row
     press(app, input::Button::down, 2);
     press(app, input::Button::cross);
-    shot(app, "21-details-offline-clip");
+    shot(app, "25-details-offline-clip");
     press(app, input::Button::cross);
     for (int i = 0; i < 60; ++i)
     {
         settle(app, 2);
         platform::sleep_us(5000);
     }
-    shot(app, "22-player");
+    shot(app, "26-player");
     press(app, input::Button::options);
-    shot(app, "23-player-info");
+    shot(app, "27-player-info");
     press(app, input::Button::circle);
     press(app, input::Button::circle);
     net::set_test_transport({});

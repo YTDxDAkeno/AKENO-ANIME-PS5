@@ -14,6 +14,10 @@
 
 extern "C"
 {
+    int sceKernelLoadStartModule(const char *path, std::size_t argc, const void *argv,
+                                 std::uint32_t flags, void *option, int *result);
+    int sceKernelDlsym(int handle, const char *symbol, void **address);
+    int sceUserServiceGetInitialUser(int *user);
     int sceKernelUsleep(std::uint32_t microseconds);
     int sceKernelSendNotificationRequest(std::uint32_t device, void *request, std::size_t size,
                                          int blocking);
@@ -39,6 +43,29 @@ struct SwVersion
     std::uint32_t number;
 };
 static_assert(sizeof(SwVersion) == 0x28);
+
+// A libSceSystemService function looked up when first needed: a firmware
+// without it then only fails that feature, never the app's start.
+void *system_service(const char *name)
+{
+    static int handle = -1;
+    if (handle < 0)
+        handle = sceKernelLoadStartModule("/system/common/lib/libSceSystemService.sprx", 0, nullptr,
+                                          0, nullptr, nullptr);
+    void *address = nullptr;
+    if (handle < 0 || sceKernelDlsym(handle, name, &address) != 0)
+        return nullptr;
+    return address;
+}
+
+struct LaunchAppParam
+{
+    std::uint32_t size;
+    std::int32_t user_id;
+    std::int32_t app_attribute;
+    std::int32_t enable_crash_report;
+    std::uint64_t check_flag;
+};
 
 std::string format_firmware(std::uint32_t number, const char *text)
 {
@@ -125,6 +152,58 @@ void notify(std::string_view message) noexcept
     std::memcpy(request.message, message.data(), count);
     request.message[count] = '\0';
     (void)sceKernelSendNotificationRequest(0, &request, sizeof(request), 0);
+}
+
+bool launch_app(const std::vector<std::string> &title_ids, std::string *error)
+{
+    using Launch = int (*)(const char *, const char **, LaunchAppParam *);
+    const auto launch = reinterpret_cast<Launch>(system_service("sceSystemServiceLaunchApp"));
+    if (!launch)
+    {
+        if (error)
+            *error = "this firmware does not let the app start other apps";
+        return false;
+    }
+    int user = -1;
+    (void)sceUserServiceGetInitialUser(&user);
+    int last = 0;
+    for (const std::string &id : title_ids)
+    {
+        LaunchAppParam param{sizeof(LaunchAppParam), user, 0, 0, 0};
+        last = launch(id.c_str(), nullptr, &param);
+        if (last == 0)
+            return true;
+    }
+    if (error)
+    {
+        char text[96];
+        std::snprintf(text, sizeof(text), "the system refused (0x%08x) - is the app installed?",
+                      static_cast<unsigned>(last));
+        *error = text;
+    }
+    return false;
+}
+
+bool open_web_browser(const std::string &url, std::string *error)
+{
+    using Browser = int (*)(const char *, void *);
+    const auto browser =
+        reinterpret_cast<Browser>(system_service("sceSystemServiceLaunchWebBrowser"));
+    if (!browser)
+    {
+        if (error)
+            *error = "this firmware does not let the app open the web browser";
+        return false;
+    }
+    const int result = browser(url.c_str(), nullptr);
+    if (result != 0 && error)
+    {
+        char text[64];
+        std::snprintf(text, sizeof(text), "the system refused (0x%08x)",
+                      static_cast<unsigned>(result));
+        *error = text;
+    }
+    return result == 0;
 }
 
 void configure_curl(void *curl_easy) noexcept

@@ -61,7 +61,7 @@ MediaItem video_item(const std::string &id, const json::Value &snippet, std::uin
     m.description = snippet["description"].str();
     m.image_url = best_thumbnail(snippet["thumbnails"]);
     m.external_url = "https://www.youtube.com/watch?v=" + id;
-    m.external_label = "Watch on YouTube";
+    m.external_label = "On phone";
     m.attribution = "YouTube";
     m.meta = YouTube::relative_age(snippet["publishedAt"].str(), now);
     if (snippet["liveBroadcastContent"].str() == "live")
@@ -94,7 +94,8 @@ ProviderInfo YouTube::info() const
          "apps). This "
          "native app has no compliant player and does not extract streams, so each video offers a "
          "QR code to "
-         "watch it on your phone, or open the official YouTube app on PS5."},
+         "watch it on your phone, and buttons that hand it to the official YouTube app or the "
+         "web browser on the PS5 (experimental)."},
         {"Sign-in & subscriptions", Support::unavailable,
          "Requires Google OAuth for TV devices with a registered client ID. Not configured in this "
          "build."},

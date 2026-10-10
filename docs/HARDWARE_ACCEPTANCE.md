@@ -1,4 +1,4 @@
-# Hardware acceptance checklist (AKENO STREAM 0.5.x)
+# Hardware acceptance checklist (AKENO STREAM 0.6.x)
 
 Run this on the console before calling a build "working". Note the result of
 each step (pass / fail / not tested) and, when anything fails, export a
@@ -13,8 +13,8 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
       `sce_module/libc.prx` and `assets/` (fonts and `selftest/`)
 - [ ] No old `/data/homebrew/PPSA99999/` remains
 - [ ] The tile is named **AKENO STREAM** and shows the icon
-- [ ] Notifications "AKENO STREAM 0.5.0 starting" and, within ~5 s,
-      "AKENO STREAM 0.5.0 ready" appear; the splash screen shows the startup
+- [ ] Notifications "AKENO STREAM 0.6.0 starting" and, within ~5 s,
+      "AKENO STREAM 0.6.0 ready" appear; the splash screen shows the startup
       steps in between
 - [ ] If it crashes instead: note the "crashed: ..." notification text
       (signal, `eboot+0x…`, stage) and the last splash message
@@ -25,7 +25,8 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
 ## 2. Navigation
 
 - [ ] D-pad and left stick move focus; holding repeats
-- [ ] L1/R1 cycle Home -> Anime -> YouTube -> Library -> Sources -> Settings and wrap
+- [ ] L1/R1 cycle Home -> Anime -> YouTube -> Discover -> Library -> Sources ->
+      Settings and wrap
 - [ ] Cross opens, Circle goes back; the last mode is restored after restart
 - [ ] PS button / home menu and returning to the app do not freeze it
 
@@ -100,6 +101,29 @@ Use only lists and streams you are allowed to watch; public test streams
       left/right seek within it
 - [ ] A web page address (e.g. `https://example.com/`) gives a clear message
       instead of a crash
+- [ ] *Add from Phone* (new in 0.6.0): a QR code and an address like
+      `http://192.168.x.x:8090/abcd2345` appear; the phone opens the page,
+      an added address appears in Sources; a wrong code in the address gives
+      "Not found"; after closing the screen the page no longer loads
+
+## 6c. Discover (new in 0.6.0)
+
+- [ ] Discover loads PeerTube rows (Latest, Films, Art & Animation, ...,
+      Blender Studio) and Internet Archive rows (Feature Films, Classic
+      Cartoons, ...) with artwork; note rows that stay missing: ______
+- [ ] A PeerTube video (e.g. a Blender Studio open movie): details show
+      *Play*; it plays with sound; seeking works
+- [ ] An Internet Archive feature film plays with sound; seeking works
+- [ ] Triangle in Discover finds results from both
+
+## 8b. YouTube hand-off (experimental, new in 0.6.0)
+
+- [ ] YouTube mode -> *Open the YouTube App* starts the official YouTube
+      app (or note the message shown: ______)
+- [ ] A video's details -> *YouTube app*: does the app open, and does it
+      open that video?
+- [ ] A video's details -> *Browser*: does the PS5 web browser open the
+      video page, and does it play?
 
 ## 7. Export a report
 
@@ -134,3 +158,4 @@ Result: ______ passed, ______ failed, ______ not tested.
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.0 | Crashed at launch (`CE-108255-1`): system heap returned null |
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1 | Starts; UI, controller, fonts; network test passed (HTTPS 200, HLS master with 5 variants); FFmpeg self-test passed; A/V sync clip 360/360 frames presented, 0 dropped, 0 decoder errors, 0 audio underruns/errors; Big Buck Bunny HLS played and resumed; AniList artwork loaded; report export works; a fMP4/CMAF stream was refused as designed |
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1/0.4.2 | Crash while typing a YouTube key on the on-screen keyboard (fixed in 0.4.3); `youtube-key.txt` was not read from the install folder (fixed in 0.4.2/0.4.3) |
+| 2026-10-10 | fw 13.09, ShadowMountPlus | 0.5.0 | Tester: "everything works" (not itemised); anime and YouTube videos cannot be watched in the app, as designed |

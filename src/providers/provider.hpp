@@ -83,6 +83,18 @@ class Provider
     }
 };
 
+// A GET for providers that read public JSON APIs. service names the source in
+// error messages ("Could not reach PeerTube (...)").
+struct Fetched
+{
+    bool ok = false;
+    long status = 0;
+    std::string body;
+    std::string error;
+};
+Fetched fetch_text(const std::string &url, const net::CancelFlag &cancel,
+                   const std::string &service, std::size_t max_bytes = 4u * 1024u * 1024u);
+
 const char *support_label(Support support) noexcept;
 // "Available" / "Setup needed" / "Not available"
 

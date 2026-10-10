@@ -15,6 +15,16 @@ What the app will not do, whatever the source:
 
 ## Adding a source
 
+**From your phone (easiest):** Sources -> *Add from Phone*. The app shows a
+QR code and an address such as `http://192.168.1.20:8090/abcd2345`. Open it on
+a phone or computer in the same network, paste the address of a list, feed
+or stream, optionally a name, and tap *Add to the PS5*. The page:
+
+- runs only while that screen is open on the PS5, and stops when you close it;
+- answers only at the one-time code in the address (a new code every time);
+- stops after 30 wrong requests or 20 additions;
+- accepts only `http://` and `https://` addresses up to 2,048 characters.
+
 **On the console:** Sources -> *Add a Source*. The first time, a note
 explains the above. Type the address (R1 or the `#+=` key opens `:` `/` `?`
 `=` `&` `%` and friends), then a name. Square on a source removes it (after a
@@ -127,8 +137,10 @@ address gives the message "This address is a web page, not a stream".
 
 ## Status
 
-The Sources mode and the 0.5.0 streaming additions are covered by host tests
+The Sources mode and the streaming additions are covered by host tests
 (parsers, a local HTTP server with range support, fragmented-MP4, separate
-audio, AES-128 and byte-range fixtures, random controller input) and are in
-the PS5 build. They have not been tried on a console yet; section 6b of the
+audio, AES-128 and byte-range fixtures, the phone page, random controller
+input) and are in the PS5 build. The tester reported that 0.5.0 works on the
+console (not itemised); the phone page (0.6.0) has not been tried on a
+console yet. Section 6b of the
 [hardware acceptance checklist](HARDWARE_ACCEPTANCE.md) lists what to check.

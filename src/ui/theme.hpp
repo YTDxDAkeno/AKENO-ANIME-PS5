@@ -37,6 +37,7 @@ inline constexpr Pixel kTextOnAccent = hex(0x0b0f19);
 inline constexpr Pixel kAccentHome = hex(0x4f8cff);
 inline constexpr Pixel kAccentAnime = hex(0xff7a3d);
 inline constexpr Pixel kAccentYouTube = hex(0xff3d5a);
+inline constexpr Pixel kAccentDiscover = hex(0xe56bd0);
 inline constexpr Pixel kAccentLibrary = hex(0x35c79a);
 inline constexpr Pixel kAccentSources = hex(0x2ec4d6);
 inline constexpr Pixel kAccentSettings = hex(0x9b7bff);

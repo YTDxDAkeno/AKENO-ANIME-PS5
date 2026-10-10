@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace akeno::platform
 {
@@ -37,6 +38,14 @@ SystemInfo system_info();
 
 // System notification (toast); best effort.
 void notify(std::string_view message) noexcept;
+
+// Starts another installed app, trying each title ID in order (console:
+// sceSystemServiceLaunchApp, looked up at run time so a firmware without it
+// cannot stop AKENO STREAM from starting). Experimental; false + reason.
+bool launch_app(const std::vector<std::string> &title_ids, std::string *error);
+// Opens the system web browser at an http(s) address (console:
+// sceSystemServiceLaunchWebBrowser, looked up at run time). Experimental.
+bool open_web_browser(const std::string &url, std::string *error);
 
 // Reports a crash (signal, code address, current stage) as a system
 // notification and in <data>/crash.txt before the system ends the app. Call

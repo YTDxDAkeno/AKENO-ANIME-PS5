@@ -128,6 +128,10 @@ class HomeScreen final : public BrowseScreen
             mode_card("youtube", "YouTube", "Mode",
                       "Search and browse YouTube with the official Data API and your own API key.",
                       0xff3d5a));
+        modes.items.push_back(mode_card("discover", "Discover", "Mode",
+                                        "PeerTube videos and public-domain films from the "
+                                        "Internet Archive, played right here.",
+                                        0xe56bd0));
         modes.items.push_back(mode_card("library", "My Library", "Mode",
                                         "Play your own MP4, MKV and TS files from console storage.",
                                         0x35c79a));
@@ -202,6 +206,28 @@ class AnimeScreen final : public BrowseScreen
 };
 
 // ---------------------------------------------------------------------------
+class DiscoverScreen final : public BrowseScreen
+{
+  public:
+    explicit DiscoverScreen(App &app)
+        : BrowseScreen{app, th::kAccentDiscover,
+                       [&app](const net::CancelFlag &c) { return app.discover().home(c); },
+                       &app.discover(), "Search PeerTube & Internet Archive"}
+    {
+    }
+
+  protected:
+    void render_empty_hero(ui::Painter &p) override
+    {
+        p.text(th::kMarginX, kHeroTop + 20, "DISCOVER", th::kCaptionStrong, accent_);
+        p.text(th::kMarginX, kHeroTop + 56, "Free video, played here", th::kDisplay, th::kText);
+        p.wrapped(th::kMarginX, kHeroTop + 150,
+                  "Open PeerTube channels and public-domain films from the Internet Archive.",
+                  th::kBody, th::kTextSecondary, 900, 2);
+    }
+};
+
+// ---------------------------------------------------------------------------
 class YouTubeScreen final : public BrowseScreen
 {
   public:
@@ -219,6 +245,8 @@ class YouTubeScreen final : public BrowseScreen
                 enter_key();
             else if (b == input::Button::square)
                 load_key_file();
+            else if (b == input::Button::triangle)
+                app_.open_youtube_app();
             else if (b == input::Button::options)
                 app_.show_provider_status(app_.youtube());
             return;
@@ -274,7 +302,8 @@ class YouTubeScreen final : public BrowseScreen
         int x = steps.x + 40;
         const int button_y = steps.bottom() - 100;
         x += p.button(x, button_y, "Enter API key", true, th::kAccentYouTube, Icon::key) + 20;
-        p.button(x, button_y, "Load key file", false, th::kAccentYouTube, Icon::folder);
+        x += p.button(x, button_y, "Load key file", false, th::kAccentYouTube, Icon::folder) + 20;
+        p.button(x, button_y, "YouTube app", false, th::kAccentYouTube, Icon::tv);
         // Capability summary on the right.
         const Rect info{steps.right() + 34, 340, th::kWidth - th::kMarginX - steps.right() - 34,
                         600};
@@ -302,8 +331,29 @@ class YouTubeScreen final : public BrowseScreen
         if (!app_.youtube().configured())
             return {{Glyph::cross, "Enter API key"},
                     {Glyph::square, "Load key file"},
+                    {Glyph::triangle, "Open YouTube app"},
                     {Glyph::options, "Service info"}};
         return BrowseScreen::hints();
+    }
+
+  protected:
+    // Playback happens in YouTube's own app: offer it first.
+    std::vector<Shelf> local_before() override
+    {
+        MediaItem app = mode_card("youtube-app", "Open the YouTube App", "Watch on this PS5",
+                                  "Starts the official YouTube app on this console. Videos open "
+                                  "there, in the YouTube app, or in the web browser from their "
+                                  "details page.",
+                                  0xff3d5a);
+        app.provider = "action";
+        return {{"Watch", {app}, false}};
+    }
+    void activate(const MediaItem &item) override
+    {
+        if (item.provider == "action" && item.id == "youtube-app")
+            app_.open_youtube_app();
+        else
+            BrowseScreen::activate(item);
     }
 
     void resumed() override
@@ -552,7 +602,8 @@ class DetailsScreen final : public Screen
         : Screen{app}, item_{std::move(item)}, provider_{provider}, accent_{accent}
     {
         build_actions();
-        if (provider_ && (item_.provider == "anilist" || item_.provider == "youtube"))
+        if (provider_ && (item_.provider == "anilist" || item_.provider == "youtube" ||
+                          item_.provider == "peertube" || item_.provider == "archive"))
             fetch();
     }
     ~DetailsScreen() override
@@ -712,6 +763,8 @@ class DetailsScreen final : public Screen
         favorite,
         qr,
         status,
+        youtube_app,
+        browser,
     };
     struct Action
     {
@@ -746,6 +799,11 @@ class DetailsScreen final : public Screen
                 {ActionKind::favorite,
                  app_.store().is_favorite(item_.key()) ? "In Favorites" : "Add to Favorites",
                  app_.store().is_favorite(item_.key()) ? Icon::star : Icon::star_outline});
+        if (item_.provider == "youtube")
+        {
+            actions_.push_back({ActionKind::youtube_app, "YouTube app", Icon::tv});
+            actions_.push_back({ActionKind::browser, "Browser", Icon::spark});
+        }
         if (item_.provider == "anilist")
             actions_.push_back({ActionKind::status, "Why no playback?", Icon::info});
         action_ = std::clamp(action_, 0, std::max(0, static_cast<int>(actions_.size()) - 1));
@@ -775,6 +833,12 @@ class DetailsScreen final : public Screen
         case ActionKind::status:
             if (provider_)
                 app_.show_provider_status(*provider_);
+            break;
+        case ActionKind::youtube_app:
+            app_.open_youtube_app();
+            break;
+        case ActionKind::browser:
+            app_.open_in_browser(item_.external_url);
             break;
         }
     }
@@ -948,6 +1012,10 @@ std::unique_ptr<Screen> make_anime_screen(App &app)
 std::unique_ptr<Screen> make_youtube_screen(App &app)
 {
     return std::make_unique<YouTubeScreen>(app);
+}
+std::unique_ptr<Screen> make_discover_screen(App &app)
+{
+    return std::make_unique<DiscoverScreen>(app);
 }
 std::unique_ptr<Screen> make_open_streams_screen(App &app)
 {

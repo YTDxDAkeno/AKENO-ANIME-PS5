@@ -1,15 +1,18 @@
-# AKENO STREAM 0.5.0 – Installation (Kurzfassung auf Deutsch)
+# AKENO STREAM 0.6.0 – Installation (Kurzfassung auf Deutsch)
 
 Ausführliche Dokumentation (Englisch): [README.md](README.md).
 
 **Stand:** 0.4.1 läuft auf einer PS5 mit Firmware 13.09 und ShadowMountPlus:
 Oberfläche, Controller, HTTPS, Hardware-Video (H.264) mit Ton, ein HLS-Stream,
 der Anime-Katalog und der Diagnose-Export funktionierten auf der Konsole. Was
-noch nicht auf der Konsole ausprobiert wurde, steht in der README. Neu in
-0.5.0 (bisher nur automatisch auf dem PC getestet): der Modus **Sources**
-(eigene Quellen), HLS mit fMP4/CMAF, getrennte Tonspuren, AES-128-HLS und
-MP4/MKV-Dateien von Webservern. Bitte die
-[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) weiter durchgehen.
+noch nicht auf der Konsole ausprobiert wurde, steht in der README. 0.5.0
+(Sources, fMP4-HLS, getrennte Tonspuren, Web-Dateien) lief laut Tester auf
+der Konsole. Neu in 0.6.0 (bisher nur automatisch auf dem PC getestet): der
+Modus **Discover** (PeerTube und gemeinfreie Filme aus dem Internet Archive,
+direkt in der App abspielbar), **Quellen per Handy** hinzufügen und im
+YouTube-Modus **YouTube-App starten** bzw. **im Browser öffnen**
+(experimentell). Bitte die [Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md)
+weiter durchgehen.
 
 ## Herunterladen
 
@@ -41,13 +44,14 @@ Tonausgabe.
 
 ## Steuerung
 
-- **L1/R1**: Modus wechseln (Home, Anime, YouTube, Library, Sources, Settings);
+- **L1/R1**: Modus wechseln (Home, Anime, YouTube, Discover, Library, Sources,
+  Settings);
   im Player ±60 s spulen
 - **Steuerkreuz/linker Stick**: navigieren; im Player links/rechts ±10 s,
   hoch/runter Lautstärke
 - **Kreuz**: auswählen, im Player Pause/Weiter
 - **Kreis**: zurück, im Player stoppen
-- **Dreieck**: Suche (Anime, YouTube, innerhalb einer Quelle)
+- **Dreieck**: Suche (Anime, YouTube, Discover, innerhalb einer Quelle)
 - **Quadrat**: Favorit (in Sources: Quelle entfernen); im Player maximale
   Qualität ändern
 - **OPTIONS**: Dienst-Infos, im Player Stream-Informationen
@@ -78,6 +82,10 @@ Die App bringt **keine** Quellen mit und sucht auch keine. Im Modus
 **Sources** fügt man selbst hinzu, was man ansehen darf – wer was hinzufügt,
 entscheidet und verantwortet selbst.
 
+- **Per Handy (am einfachsten):** Sources -> *Add from Phone* zeigt einen
+  QR-Code. Mit dem Handy im selben WLAN scannen, Adresse einfügen, *Add to the
+  PS5* tippen. Die Seite funktioniert nur, solange der Bildschirm offen ist,
+  und nur mit dem angezeigten Code.
 - **An der Konsole:** Sources -> *Add a Source* -> Adresse eintippen (R1 öffnet
   die Sonderzeichen `:/?=&`) -> Namen vergeben. *Play an Address* spielt einen
   Link einmalig ab.
@@ -93,12 +101,27 @@ oder udp werden mit Hinweis übersprungen. Webseiten werden **nicht** nach
 Videos durchsucht, und kein Schutz wird umgangen. Details:
 [docs/SOURCES.md](docs/SOURCES.md).
 
+## Discover (PeerTube und Internet Archive)
+
+Im Modus **Discover** laufen Videos direkt in der App:
+
+- **PeerTube** (offene, dezentrale Video-Plattform): neue Videos, Filme,
+  Kunst & Animation, Wissenschaft, Kinder sowie Kanäle von Blender Studio
+  (offene Filme), Framatube und TILvids. Heikle Inhalte sind ausgeblendet.
+- **Internet Archive**: gemeinfreie Spielfilme, klassische Zeichentrickfilme
+  bis 1963, Stummfilme und das Prelinger-Archiv.
+
+Dreieck sucht in beiden. Eintrag öffnen, dann *Play*.
+
 ## YouTube und Crunchyroll
 
 - **YouTube**: Suchen und Stöbern über die offizielle YouTube Data API mit
   einem **eigenen** kostenlosen API-Schlüssel (Anleitung in der App).
-  Videos werden **nicht** in der App abgespielt – YouTube erlaubt das nur in
-  den eigenen Playern; stattdessen zeigt die App einen QR-Code fürs Handy.
+  Videos laufen **nicht** im App-eigenen Player – YouTube erlaubt das nur in
+  den eigenen Playern. Stattdessen gibt es in den Video-Details **YouTube app**
+  (startet die offizielle YouTube-App der PS5), **Browser** (öffnet das Video
+  im PS5-Browser) und einen QR-Code fürs Handy. Beide Übergaben sind
+  experimentell und noch nicht auf der Konsole getestet.
 - **Crunchyroll**: nicht möglich. Es gibt keine öffentliche Schnittstelle,
   und die Videos sind DRM-geschützt; eine Umgehung kommt nicht in Frage. Bitte
   die offizielle Crunchyroll-App der PS5 nutzen. Der Anime-Modus zeigt
@@ -108,7 +131,7 @@ Videos durchsucht, und kein Schutz wird umgangen. Details:
 
 Die App zeigt beim Start die einzelnen Schritte auf dem Bildschirm an und
 meldet einen Absturz vor dem Fehlerdialog als Benachrichtigung, z. B. *„AKENO
-STREAM 0.5.0 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*.
+STREAM 0.6.0 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*.
 Bitte diesen Text (gern als Foto) schicken. Beim nächsten Start weist die App
 selbst auf den Absturz hin und zeigt ihn unter Settings -> Diagnostics.
 

@@ -29,6 +29,8 @@ const char *mode_stage(Mode mode) noexcept
         return "Anime mode";
     case Mode::youtube:
         return "YouTube mode";
+    case Mode::discover:
+        return "Discover";
     case Mode::library:
         return "Library";
     case Mode::sources:
@@ -50,6 +52,8 @@ const char *mode_name(Mode mode) noexcept
         return "Anime";
     case Mode::youtube:
         return "YouTube";
+    case Mode::discover:
+        return "Discover";
     case Mode::library:
         return "Library";
     case Mode::sources:
@@ -70,6 +74,8 @@ const char *mode_id(Mode mode) noexcept
         return "anime";
     case Mode::youtube:
         return "youtube";
+    case Mode::discover:
+        return "discover";
     case Mode::library:
         return "library";
     case Mode::sources:
@@ -90,6 +96,8 @@ ui::Pixel mode_accent(Mode mode) noexcept
         return th::kAccentAnime;
     case Mode::youtube:
         return th::kAccentYouTube;
+    case Mode::discover:
+        return th::kAccentDiscover;
     case Mode::library:
         return th::kAccentLibrary;
     case Mode::sources:
@@ -154,6 +162,7 @@ void App::start(std::uint64_t now_ms)
     stacks_[static_cast<int>(Mode::home)].push_back(make_home_screen(*this));
     stacks_[static_cast<int>(Mode::anime)].push_back(make_anime_screen(*this));
     stacks_[static_cast<int>(Mode::youtube)].push_back(make_youtube_screen(*this));
+    stacks_[static_cast<int>(Mode::discover)].push_back(make_discover_screen(*this));
     stacks_[static_cast<int>(Mode::library)].push_back(make_library_screen(*this));
     stacks_[static_cast<int>(Mode::sources)].push_back(make_sources_screen(*this));
     stacks_[static_cast<int>(Mode::settings)].push_back(make_settings_screen(*this));
@@ -172,6 +181,8 @@ void App::apply_settings()
         config_.set_volume(s.volume);
     youtube_.set_region(s.youtube_region);
     youtube_.set_safe_search(s.youtube_safe_search);
+    peertube_.set_max_height(s.max_height);
+    archive_.set_max_height(s.max_height);
 }
 
 std::vector<std::unique_ptr<Screen>> &App::stack()
@@ -293,6 +304,10 @@ void App::open_item(const MediaItem &item)
         provider = &youtube_;
     else if (item.provider == "crunchyroll")
         provider = &crunchyroll_;
+    else if (item.provider == "peertube")
+        provider = &peertube_;
+    else if (item.provider == "archive")
+        provider = &archive_;
     push(make_details_screen(*this, item, provider, mode_accent(mode_)));
 }
 
@@ -372,6 +387,31 @@ void App::record_hardware_test(const media::PlayerStatus &s)
 void App::show_qr(const MediaItem &item)
 {
     push(make_qr_screen(*this, item));
+}
+
+void App::open_youtube_app()
+{
+    // The PS5 YouTube app's title IDs (regional editions).
+    std::string error;
+    if (platform::launch_app({"PPSA01650", "PPSA01651", "PPSA01652"}, &error))
+    {
+        toast("Starting the YouTube app", th::kSuccess);
+        return;
+    }
+    toast("Could not start the YouTube app: " + error, th::kWarning);
+    report_error("YouTube app", error);
+}
+
+void App::open_in_browser(const std::string &url)
+{
+    std::string error;
+    if (platform::open_web_browser(url, &error))
+    {
+        toast("Opening the web browser", th::kSuccess);
+        return;
+    }
+    toast("Could not open the web browser: " + error, th::kWarning);
+    report_error("web browser", error);
 }
 
 void App::show_provider_status(const Provider &provider)
@@ -474,7 +514,7 @@ void App::render_chrome(ui::Painter &p, Screen &screen)
     for (int m = 0; m < kModeCount; ++m)
     {
         widths[static_cast<std::size_t>(m)] =
-            p.measure(mode_name(static_cast<Mode>(m)), th::kBodyStrong) + 56;
+            p.measure(mode_name(static_cast<Mode>(m)), th::kBodyStrong) + 40;
         total += widths[static_cast<std::size_t>(m)] + 8;
     }
     const int glyph_space = 66;

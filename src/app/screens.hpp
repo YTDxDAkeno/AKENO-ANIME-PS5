@@ -14,6 +14,7 @@ namespace akeno
 std::unique_ptr<Screen> make_home_screen(App &app);
 std::unique_ptr<Screen> make_anime_screen(App &app);
 std::unique_ptr<Screen> make_youtube_screen(App &app);
+std::unique_ptr<Screen> make_discover_screen(App &app);
 std::unique_ptr<Screen> make_library_screen(App &app);
 std::unique_ptr<Screen> make_settings_screen(App &app);
 std::unique_ptr<Screen> make_details_screen(App &app, MediaItem item, Provider *provider,

@@ -8,6 +8,27 @@
 
 namespace akeno
 {
+Fetched fetch_text(const std::string &url, const net::CancelFlag &cancel,
+                   const std::string &service, std::size_t max_bytes)
+{
+    Fetched out;
+    net::Client client;
+    net::Request request;
+    request.url = url;
+    request.headers = {"Accept: application/json"};
+    request.cancel = cancel;
+    request.max_bytes = max_bytes;
+    const net::Response r = client.perform(request);
+    out.status = r.status;
+    out.body = r.body;
+    out.ok = r.ok();
+    if (!out.ok)
+        out.error = r.outcome == net::Outcome::http_error
+                        ? service + " answered HTTP " + std::to_string(r.status)
+                        : "Could not reach " + service + " (" + r.describe() + ")";
+    return out;
+}
+
 const char *support_label(Support support) noexcept
 {
     switch (support)

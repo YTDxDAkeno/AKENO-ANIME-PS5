@@ -8,6 +8,8 @@
 #include "app/browse.hpp"
 #include "core/fs.hpp"
 #include "core/url.hpp"
+#include "gfx/qr.hpp"
+#include "net/form_server.hpp"
 #include "platform/platform.hpp"
 
 #include <algorithm>
@@ -98,6 +100,108 @@ class ConfirmScreen final : public Screen
 };
 
 // ---------------------------------------------------------------------------
+// Add sources from a phone: a QR code leads to a one-page form served by the
+// app on the local network for as long as this screen is open.
+class PhoneScreen final : public Screen
+{
+  public:
+    explicit PhoneScreen(App &app) : Screen{app}
+    {
+        const std::string ip = net::local_ipv4();
+        std::string why;
+        if (ip.empty())
+            error_ = "No local network connection. Connect the PS5 to your Wi-Fi or LAN first.";
+        else if (!server_.start(8090, &why))
+            error_ = "The page could not be started: " + why;
+        else
+        {
+            address_ = "http://" + ip + ":" + std::to_string(server_.port()) + "/" + server_.pin();
+            qr_ = gfx::make_qr(address_, 420);
+        }
+    }
+    [[nodiscard]] bool modal() const override
+    {
+        return true;
+    }
+    void handle(input::Button b) override
+    {
+        if (b == input::Button::circle || b == input::Button::cross)
+            app_.pop(); // stops the server
+    }
+    void update(std::uint64_t) override
+    {
+        for (const auto &s : server_.take())
+        {
+            SourceEntry entry{s.name, s.url, false};
+            if (app_.store().add_source(entry))
+            {
+                added_.push_back(s.name);
+                app_.toast("Source added from your phone: " + s.name, th::kSuccess);
+            }
+            else
+                app_.toast(s.name + " is already in your sources", th::kInfo);
+        }
+        if (!server_.running() && error_.empty() && !address_.empty())
+            error_ = "The page was closed (limit reached). Reopen this screen to add more.";
+    }
+    void render(ui::Painter &p, std::uint64_t) override
+    {
+        p.s.dim(p.s.bounds(), 175);
+        const Rect panel{260, 170, 1400, 740};
+        p.panel(panel, 32, th::kSurface);
+        if (qr_.valid())
+        {
+            const int qx = panel.x + 60, qy = panel.y + (panel.h - qr_.height) / 2;
+            p.s.fill_rounded({qx - 16, qy - 16, qr_.width + 32, qr_.height + 32}, 20,
+                             gfx::rgba(255, 255, 255));
+            p.s.draw_image(qr_, qx, qy);
+        }
+        const int tx = panel.x + (qr_.valid() ? 580 : 60);
+        const int tw = panel.right() - tx - 50;
+        int y = panel.y + 60;
+        p.text(tx, y, "ADD FROM YOUR PHONE", th::kCaptionStrong, th::kAccentSources, tw);
+        y += 40;
+        p.text(tx, y, "Scan, paste, done", th::kTitle, th::kText, tw);
+        y += 76;
+        if (!error_.empty())
+        {
+            p.wrapped(tx, y, error_, th::kBody, th::kWarning, tw, 4);
+            return;
+        }
+        y += p.wrapped(tx, y,
+                       "Scan the code with a phone on the same network, paste a playlist, feed "
+                       "or stream address and tap \"Add to the PS5\". It appears in Sources right "
+                       "away.",
+                       th::kBody, th::kTextSecondary, tw, 4) +
+             16;
+        p.text(tx, y, "Or open on any device:", th::kCaption, th::kTextMuted, tw);
+        y += 36;
+        p.text(tx, y, address_, th::kBodyStrong, th::kText, tw);
+        y += 64;
+        p.text(tx, y,
+               added_.empty()
+                   ? std::string{"Waiting for your phone..."}
+                   : "Added: " + std::to_string(added_.size()) + " - last: " + added_.back(),
+               th::kBody, added_.empty() ? th::kTextMuted : th::kSuccess, tw);
+        p.wrapped(tx, panel.bottom() - 140,
+                  "The page works only while this screen is open and only with the code above. " +
+                      std::string{kSourcesNotice},
+                  th::kSmall, th::kTextMuted, tw, 4);
+    }
+    [[nodiscard]] std::vector<Hint> hints() const override
+    {
+        return {{Glyph::circle, "Done"}};
+    }
+
+  private:
+    net::FormServer server_;
+    std::string address_;
+    std::string error_;
+    gfx::Image qr_;
+    std::vector<std::string> added_;
+};
+
+// ---------------------------------------------------------------------------
 // One source, browsed like a catalogue: groups become shelves.
 class SourceScreen final : public BrowseScreen
 {
@@ -182,6 +286,8 @@ class SourcesScreen final : public BrowseScreen
             app_.push(make_source_screen(app_, SourceEntry{item.title, item.id, false}));
         else if (item.id == "add-source")
             add_source();
+        else if (item.id == "add-phone")
+            with_notice([this] { app_.push(std::make_unique<PhoneScreen>(app_)); });
         else if (item.id == "play-address")
             play_address();
         else if (item.id == "help")
@@ -207,6 +313,11 @@ class SourcesScreen final : public BrowseScreen
             std::string{"Type the address of an M3U list, an AKENO JSON feed or a stream. "} +
                 "Easier from a PC: put sources.txt in the install folder. " + kSourcesNotice,
             0x2ec4d6));
+        actions.items.push_back(action_card(
+            "add-phone", "Add from Phone", "Scan a QR code, paste a link",
+            "Opens a small page for your phone on the local network: paste an address there "
+            "instead of typing it with the controller.",
+            0x22a06b));
         actions.items.push_back(
             action_card("play-address", "Play an Address", "Without saving it",
                         "Plays an HLS, MPEG-TS, MP4 or MKV address once. The type is detected "
@@ -271,9 +382,15 @@ class SourcesScreen final : public BrowseScreen
 
     void add_source()
     {
+        with_notice([this] { ask_address(); });
+    }
+
+    // Runs next once the responsibility note has been confirmed (once).
+    void with_notice(std::function<void()> next)
+    {
         if (app_.store().settings().sources_notice_accepted)
         {
-            ask_address();
+            next();
             return;
         }
         auto alive = alive_;
@@ -282,14 +399,14 @@ class SourcesScreen final : public BrowseScreen
             std::string{kSourcesNotice} + "\n\n" + kFormats +
                 " Nothing is read out of web pages and no protection is bypassed.",
             "I understand",
-            [this, alive]
+            [this, alive, next = std::move(next)]
             {
                 if (!*alive)
                     return;
                 Settings s = app_.store().settings();
                 s.sources_notice_accepted = true;
                 app_.store().update_settings(s);
-                ask_address();
+                next();
             }));
     }
 

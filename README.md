@@ -6,15 +6,17 @@
 AKENO STREAM is a native, controller-operated media app for jailbroken PS5
 consoles. It plays DRM-free video with audio - HLS streams (MPEG-TS or
 fragmented MP4), MPEG-TS over HTTP, MP4/MKV files on web servers and your own
-MP4, MKV, MOV and TS files - through the console's hardware video decoder. You
-can add your own sources (M3U lists, JSON feeds, stream addresses), and the
-app adds an anime discovery mode, a YouTube browser, a local library, watch
-history, favourites and a diagnostics screen.
+MP4, MKV, MOV and TS files - through the console's hardware video decoder.
+**Discover** plays free video from PeerTube and public-domain films from the
+Internet Archive; **Sources** takes your own M3U lists, JSON feeds and stream
+addresses (also from your phone); the app adds an anime discovery mode, a
+YouTube browser that hands videos to the official YouTube app, a local
+library, watch history, favourites and a diagnostics screen.
 
 | | |
 | --- | --- |
 | Title ID | `PPSA99276` (unchanged since v0.1) |
-| Version | 0.5.0 (`contentVersion` 01.005.000) |
+| Version | 0.6.0 (`contentVersion` 01.006.000) |
 | Tested on | PS5 firmware 13.09 with ShadowMountPlus (0.4.1); no PSN account, no PC needed after install |
 | Install path | `/data/homebrew/PPSA99276/` |
 | Licence | GPL-3.0-or-later |
@@ -26,9 +28,12 @@ history, favourites and a diagnostics screen.
 > diagnostics export all worked on the console. Earlier, 0.4.0 crashed at
 > launch because the system heap returns null for real allocations; 0.4.1
 > brought its own heap. Features not yet tried on the console are marked
-> below. 0.5.0 adds the Sources mode, fragmented-MP4 HLS, separate audio
-> tracks, AES-128 HLS and web files; these are host-tested and still need a
-> console run. Please keep reporting with the
+> below. 0.5.0 added the Sources mode, fragmented-MP4 HLS, separate audio
+> tracks, AES-128 HLS and web files; the tester reported that 0.5.0 works on
+> the console (not itemised). 0.6.0 adds Discover (PeerTube, Internet
+> Archive), adding sources from a phone and hand-offs to the YouTube app and
+> the web browser; these are host-tested and still need a console run.
+> Please keep reporting with the
 > [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md).
 
 German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
@@ -36,8 +41,9 @@ German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
 | | |
 | --- | --- |
 | ![Home](docs/screenshots/01-home.jpg) | ![Anime](docs/screenshots/03-anime.jpg) |
-| ![Sources](docs/screenshots/14-sources.jpg) | ![A source's entries](docs/screenshots/15-source-list.jpg) |
-| ![Player with stream information](docs/screenshots/23-player-info.jpg) | ![Diagnostics](docs/screenshots/19-diagnostics.jpg) |
+| ![Discover: PeerTube and Internet Archive](docs/screenshots/13-discover.jpg) | ![Add sources from a phone](docs/screenshots/21-sources-phone.jpg) |
+| ![Sources](docs/screenshots/17-sources.jpg) | ![A source's entries](docs/screenshots/18-source-list.jpg) |
+| ![Player with stream information](docs/screenshots/27-player-info.jpg) | ![Diagnostics](docs/screenshots/23-diagnostics.jpg) |
 
 *Rendered by the real interface code on the build machine (`make screenshots`)
 with recorded API responses and generated placeholder artwork; more in
@@ -54,14 +60,17 @@ into `eboot.bin`, not yet tried on the console.
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Launch, 1080p interface, Inter fonts, DualSense navigation | **Console** | |
-| Mode switching with L1/R1 (Home, Anime, YouTube, Library, Sources, Settings) | **Console** (Sources tab new in 0.5.0) | The last mode is restored at the next start |
+| Mode switching with L1/R1 (Home, Anime, YouTube, Discover, Library, Sources, Settings) | **Console** (Discover tab new in 0.6.0) | The last mode is restored at the next start |
 | HTTPS with certificate verification | **Console** | Console CA list; example.com and mux.dev answered |
 | HLS playback (MPEG-TS segments) | **Console** | Big Buck Bunny played; resume position saved |
 | HLS with fMP4/CMAF segments (`EXT-X-MAP`) | Host-tested, PS5 build | New in 0.5.0; remuxed by FFmpeg to MPEG-TS for the hardware pipeline |
 | HLS with a separate audio rendition (`EXT-X-MEDIA`) | Host-tested, PS5 build | New in 0.5.0; video and audio playlists are merged by time |
 | HLS with AES-128 segment encryption, byte ranges | Host-tested, PS5 build | New in 0.5.0; the standard HLS method, not DRM. SAMPLE-AES/FairPlay/Widevine/PlayReady are refused |
 | MP4, MKV, MOV and TS files on web servers | Host-tested, PS5 build | New in 0.5.0; seeking with HTTP range requests (also works, slower, without them) |
-| Sources: M3U/M3U8 lists, AKENO JSON feeds, stream addresses you add | Host-tested, PS5 build | New in 0.5.0; see [docs/SOURCES.md](docs/SOURCES.md). The app ships no sources |
+| Sources: M3U/M3U8 lists, AKENO JSON feeds, stream addresses you add | Host-tested, PS5 build; tester reports 0.5.0 works | See [docs/SOURCES.md](docs/SOURCES.md). The app ships no sources |
+| Add sources from a phone (QR code, page on the local network) | Host-tested, PS5 build | New in 0.6.0; works only while the screen is open, with a one-time code |
+| Discover: PeerTube (Sepia Search, instance API) with in-app playback | Host-tested (recorded responses), PS5 build | New in 0.6.0; the live services were not reachable from the build machine, so their real answers are untested |
+| Discover: Internet Archive public-domain films and cartoons with in-app playback | Host-tested (recorded responses, local playback test), PS5 build | New in 0.6.0; curated collections only |
 | Hardware H.264 decoding (Videodec2) | **Console** | 720p30 clip: 360/360 frames presented, 0 dropped, 0 decoder errors |
 | Hardware HEVC decoding | PS5 build | |
 | AAC audio (Audiodec + AudioOut) | **Console** | 0 underruns, 0 output errors; A/V sync by eye not yet reported |
@@ -73,7 +82,8 @@ into `eboot.bin`, not yet tried on the console.
 | Public DRM-free test streams | Big Buck Bunny **Console** | Third-party streams may go offline |
 | Your own streams (`streams.json`) | Host-tested, PS5 build | Still read; Sources is the more flexible way |
 | Anime mode: AniList catalogue, search, details, official links (QR) | **Console** (catalogue and artwork loaded) | Discovery only - AniList has no video |
-| YouTube: trending, search, channels (Data API v3, your key) | Host-tested, PS5 build | **No YouTube playback** - see below |
+| YouTube: trending, search, channels (Data API v3, your key) | Host-tested, PS5 build | **No playback inside AKENO STREAM** - see below |
+| YouTube: open the official YouTube app, open a video in the web browser | PS5 build (experimental) | New in 0.6.0; uses system functions looked up at run time; untested on the console |
 | Crunchyroll | **Unsupported** | Status page explains why and lists legitimate options |
 | Diagnostics: network test, FFmpeg self-test, report export | **Console** | Reports exclude keys and tokens |
 | Crash reporter, previous-crash notice | PS5 build | No crash since 0.4.1 to test it with |
@@ -106,7 +116,7 @@ The folder contains `eboot.bin`, `sce_sys/` (param.json, icon, backgrounds),
 | D-pad, left stick | Move | Left/right: seek -10 s / +10 s; up/down: volume |
 | Cross | Select | Pause / play (replay at the end, retry after an error) |
 | Circle | Back | Stop and close the player |
-| Triangle | Search (Anime, YouTube, inside a source) | Subtitles (shows "not available") |
+| Triangle | Search (Anime, YouTube, Discover, inside a source) | Subtitles (shows "not available") |
 | Square | Add / remove favourite (Sources: remove a source) | Change maximum quality (HLS) |
 | OPTIONS | Service information | Stream information panel |
 
@@ -167,6 +177,10 @@ The **Sources** mode lets you add what you want to watch; the app itself ships
 no sources and does not look for any. You decide what to add and you are
 responsible for having the right to watch it.
 
+- **From your phone:** Sources -> *Add from Phone* shows a QR code. Scan it
+  with a phone on the same network, paste the address, tap *Add to the PS5*.
+  The page works only while that screen is open and only with its one-time
+  code.
 - **On the console:** Sources -> *Add a Source*, type the address (the keyboard
   has a symbols page on R1 for `:/?=&`), then a name. *Play an Address* plays a
   link once without saving it.
@@ -189,6 +203,23 @@ inside it. DRM-protected entries, MPEG-DASH (`.mpd`) and non-HTTP protocols
 site protection is bypassed. Details and the feed format:
 [docs/SOURCES.md](docs/SOURCES.md).
 
+### Discover: PeerTube and the Internet Archive
+
+**Discover** shows free video that plays right in the app:
+
+- **PeerTube**, the open, federated video platform: latest videos, films,
+  art & animation, science and kids' rows from
+  [Sepia Search](https://sepiasearch.org) (the PeerTube search index, with
+  sensitive content excluded) and channels of a few well-known instances
+  (Blender Studio's open movies, Framatube, TILvids). Videos stream from
+  their instance as HLS or MP4 without DRM.
+- **Internet Archive**: Feature Films (films the archive believes to be in
+  the public domain), classic cartoons up to 1963, silent films and the
+  Prelinger Archives, through the archive's documented search and metadata
+  APIs. Only curated collections are listed, not arbitrary uploads.
+
+Triangle searches both at once. Open an entry for details, then *Play*.
+
 ### YouTube
 
 YouTube mode uses the official YouTube Data API v3 with **your own free API
@@ -201,9 +232,14 @@ shown in logs or diagnostics reports. A search costs 100 of the default 10,000
 daily quota units, a trending page 1 unit.
 
 YouTube's terms allow playback only in YouTube's own players. AKENO STREAM
-does not extract stream URLs; each video shows a QR code to open it on your
-phone. Sign-in (Google OAuth for TV devices) would need a registered client ID
-and is not part of this build.
+does not extract stream URLs. Instead, a video's details offer **YouTube app**
+(starts the official PS5 YouTube app), **Browser** (opens the video page in
+the PS5 web browser) and a QR code for your phone; YouTube mode itself starts
+with an *Open the YouTube App* card. The two hand-offs are experimental:
+whether the firmware lets a homebrew title start other apps, and whether the
+YouTube app opens the exact video, has not been tested on a console yet.
+Sign-in (Google OAuth for TV devices) would need a registered client ID and is
+not part of this build.
 
 ### Anime mode and Crunchyroll
 
@@ -223,7 +259,7 @@ Anime mode.
 
 The app shows its startup steps on screen ("Loading fonts...", "Starting
 network...") and catches crashes: before the system's error dialog appears,
-a notification reads for example *"AKENO STREAM 0.5.0 crashed: SIGSEGV (invalid
+a notification reads for example *"AKENO STREAM 0.6.0 crashed: SIGSEGV (invalid
 memory access) at eboot+0x1a2b3c, address 0x0, during startup: fonts"*. A
 photo of it is the most useful bug report. At the next start the app says that
 the last session crashed, lists the first line under Settings -> Diagnostics
@@ -251,7 +287,11 @@ redacted.
   (default > autoselect > first) is used; there is no audio-track menu yet.
 - MPEG-DASH (`.mpd`) is not supported.
 - Web pages are never searched for videos: a source must be a list, feed,
-  playlist or media address.
+  playlist or media address. Sites that only show videos inside their own web
+  player (including unlicensed anime sites) are not supported, and no
+  site-specific extractors will be added.
+- No anime streaming service is integrated: the legal services use DRM or
+  closed APIs. Anime mode is for discovery with links to official services.
 - MP3 audio inside MPEG-TS is not supported (the stream plays without audio
   with a notice); MP2 is.
 - Video: H.264 and HEVC (8/10-bit 4:2:0). VP9/AV1 are not supported.

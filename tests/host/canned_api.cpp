@@ -430,6 +430,99 @@ std::string generated_png(int width, int height, unsigned seed)
     return png;
 }
 
+// PeerTube search index / instance listing (shape of GET /api/v1/search/videos).
+std::string peertube_videos_response()
+{
+    struct Video
+    {
+        const char *uuid, *name, *channel, *host, *date;
+        int duration, views;
+    };
+    static constexpr Video kVideos[] = {
+        {"1f0e7a52-0b6c-4b0f-9d2c-6f1b0d2a3c01", "Sprite Fright", "Blender Studio",
+         "video.blender.org", "2021-11-25", 629, 120345},
+        {"1f0e7a52-0b6c-4b0f-9d2c-6f1b0d2a3c02", "Coffee Run", "Blender Studio",
+         "video.blender.org", "2020-05-29", 184, 90210},
+        {"1f0e7a52-0b6c-4b0f-9d2c-6f1b0d2a3c03", "Introduction to free software", "Framasoft",
+         "framatube.org", "2025-03-11", 1312, 4410},
+        {"1f0e7a52-0b6c-4b0f-9d2c-6f1b0d2a3c04", "How rockets reach orbit", "Science Explained",
+         "tilvids.com", "2025-08-02", 845, 15022},
+        {"1f0e7a52-0b6c-4b0f-9d2c-6f1b0d2a3c05", "Watercolour basics", "Open Art School",
+         "tube.example", "2026-01-20", 1503, 3204},
+    };
+    std::string out = R"({"total": 5, "data": [)";
+    bool first = true;
+    for (const Video &v : kVideos)
+    {
+        out +=
+            std::string{first ? "" : ","} + R"({"uuid": ")" + v.uuid + R"(", "name": ")" + v.name +
+            R"(", "duration": )" + std::to_string(v.duration) + R"(, "views": )" +
+            std::to_string(v.views) + R"(, "nsfw": false, "isLive": false, "publishedAt": ")" +
+            v.date + R"(T10:00:00.000Z", "url": "https://)" + v.host + "/w/" + v.uuid +
+            R"(", "thumbnailUrl": "https://)" + v.host + "/lazy-static/thumbnails/" + v.uuid +
+            R"(.jpg", "description": "A video on the PeerTube network.", "account": {"displayName": ")" +
+            v.channel + R"(", "host": ")" + v.host + R"("}, "channel": {"displayName": ")" +
+            v.channel + R"(", "host": ")" + v.host + R"("}})";
+        first = false;
+    }
+    return out + "]}";
+}
+
+std::string peertube_video_response(const std::string &uuid)
+{
+    return R"({"uuid": ")" + uuid + R"(", "name": "Sprite Fright", "duration": 629,
+      "description": "A group of rowdy teenagers on a trip to the countryside meet a forest of mushroom folk in Blender Studio's open movie (CC BY 4.0).",
+      "nsfw": false, "views": 120345, "publishedAt": "2021-11-25T10:00:00.000Z",
+      "url": "https://video.blender.org/w/)" +
+           uuid + R"(", "category": {"label": "Films"}, "language": {"label": "English"},
+      "licence": {"label": "Attribution"},
+      "account": {"displayName": "Blender", "host": "video.blender.org"},
+      "channel": {"displayName": "Blender Studio", "host": "video.blender.org"},
+      "streamingPlaylists": [{"type": 1, "playlistUrl": "https://video.blender.org/static/streaming-playlists/hls/)" +
+           uuid + R"(/master.m3u8"}], "files": []})";
+}
+
+// Internet Archive advanced search and metadata (public-domain films).
+std::string archive_search_response()
+{
+    struct Film
+    {
+        const char *id, *title, *year, *creator;
+        int downloads;
+    };
+    static constexpr Film kFilms[] = {
+        {"night_of_the_living_dead", "Night of the Living Dead", "1968", "George A. Romero",
+         2345678},
+        {"nosferatu_1922", "Nosferatu", "1922", "F. W. Murnau", 1234567},
+        {"his_girl_friday", "His Girl Friday", "1940", "Howard Hawks", 845123},
+        {"charade_1963", "Charade", "1963", "Stanley Donen", 734002},
+        {"the_general_1926", "The General", "1926", "Buster Keaton", 512300},
+        {"plan_9_from_outer_space", "Plan 9 from Outer Space", "1959", "Ed Wood", 498000},
+    };
+    std::string out =
+        R"({"responseHeader": {"status": 0}, "response": {"numFound": 6, "start": 0, "docs": [)";
+    bool first = true;
+    for (const Film &f : kFilms)
+    {
+        out +=
+            std::string{first ? "" : ","} + R"({"identifier": ")" + f.id + R"(", "title": ")" +
+            f.title + R"(", "year": ")" + f.year + R"(", "creator": ")" + f.creator +
+            R"(", "downloads": )" + std::to_string(f.downloads) +
+            R"(, "description": "A film from the Internet Archive's Feature Films collection."})";
+        first = false;
+    }
+    return out + "]}}";
+}
+
+std::string archive_metadata_response(const std::string &id)
+{
+    return R"({"metadata": {"identifier": ")" + id + R"(", "title": "Night of the Living Dead",
+      "description": "George A. Romero's 1968 horror classic, in the public domain.",
+      "year": "1968", "subject": "Horror; Feature Film", "collection": ["feature_films"],
+      "runtime": "1:35:37"},
+      "files": [{"name": "night.mp4", "format": "h.264", "height": "480", "length": "5737.4"}]})";
+}
+
 // A user source as the Sources screenshots show it (public test streams).
 std::string example_source_list()
 {
@@ -471,7 +564,17 @@ net::Response canned_transport(const net::Request &request)
             return ok(youtube_search_response());
         return ok(youtube_videos_response());
     }
-    if (url.ends_with(".jpg") || url.ends_with(".png"))
+    if (url.starts_with("https://sepiasearch.org/api/v1/search/videos") ||
+        url.find("/api/v1/videos?") != std::string::npos)
+        return ok(peertube_videos_response());
+    if (const std::size_t at = url.find("/api/v1/videos/"); at != std::string::npos)
+        return ok(peertube_video_response(url.substr(at + 15)));
+    if (url.starts_with("https://archive.org/advancedsearch.php"))
+        return ok(archive_search_response());
+    if (url.starts_with("https://archive.org/metadata/"))
+        return ok(archive_metadata_response(url.substr(29)));
+    if (url.ends_with(".jpg") || url.ends_with(".png") ||
+        url.find("archive.org/services/img/") != std::string::npos)
     {
         unsigned seed = 0;
         for (char c : url)
