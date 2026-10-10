@@ -1,0 +1,27 @@
+name: Format native media scan (temporary)
+
+on:
+  push:
+    branches:
+      - claude/native-public-media-scan
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Format only new native-video paths
+        run: |
+          clang-format-18 -i src/web/site_probe.hpp src/web/site_probe.cpp src/app/screen_websites.cpp tests/unit/test_websites.cpp
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/web/site_probe.hpp src/web/site_probe.cpp src/app/screen_websites.cpp tests/unit/test_websites.cpp
+            git commit -m "Apply clang-format to native public media scanner"
+            git push origin HEAD:claude/native-public-media-scan
+          fi
