@@ -5,16 +5,22 @@
 
 #include "gfx/font.hpp"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace akeno::ui
 {
 namespace
 {
-constexpr const char *kRows[] = {"1234567890", "qwertyuiop", "asdfghjkl-", "zxcvbnm_.@"};
+// Two pages of ten keys per row: letters, and the symbols addresses need.
+constexpr const char *kRows[2][4] = {
+    {"1234567890", "qwertyuiop", "asdfghjkl-", "zxcvbnm_.@"},
+    {"1234567890", ":/?=&%#~+-", "_.@!$*(),;", "[]{}|^'\"<>"},
+};
 constexpr int kLetterRows = 4;
-constexpr const char *kActions[] = {"Shift", "Space", "Delete", "Done"};
-constexpr int kActionCount = 4;
+constexpr const char *kActions[] = {"Shift", "#+=", "Space", "Delete", "Done"};
+constexpr int kActionCount = 5;
+constexpr int kShift = 0, kSymbols = 1, kSpace = 2, kDelete = 3, kDone = 4;
 
 // Removes the last UTF-8 code point.
 void pop_code_point(std::string &text)
@@ -29,6 +35,13 @@ void pop_code_point(std::string &text)
 }
 } // namespace
 
+std::string mask_secret(const std::string &text)
+{
+    if (text.size() <= 8)
+        return std::string(text.size(), '*');
+    return text.substr(0, 4) + std::string(text.size() - 8, '*') + text.substr(text.size() - 4);
+}
+
 void Keyboard::open(std::string title, std::string initial, std::size_t max_length, bool secret)
 {
     title_ = std::move(title);
@@ -36,6 +49,7 @@ void Keyboard::open(std::string title, std::string initial, std::size_t max_leng
     max_length_ = max_length;
     secret_ = secret;
     shift_ = false;
+    symbols_ = false;
     active_ = true;
     row_ = 1;
     column_ = 0;
@@ -52,7 +66,7 @@ void Keyboard::press()
     {
         if (text_.size() >= max_length_)
             return;
-        char c = kRows[row_][column_];
+        char c = kRows[symbols_ ? 1 : 0][row_][column_];
         if (shift_ && c >= 'a' && c <= 'z')
             c = static_cast<char>(c - 'a' + 'A');
         text_ += c;
@@ -60,14 +74,17 @@ void Keyboard::press()
     }
     switch (column_)
     {
-    case 0:
+    case kShift:
         shift_ = !shift_;
         break;
-    case 1:
+    case kSymbols:
+        symbols_ = !symbols_;
+        break;
+    case kSpace:
         if (text_.size() < max_length_ && !text_.empty() && text_.back() != ' ')
             text_ += ' ';
         break;
-    case 2:
+    case kDelete:
         pop_code_point(text_);
         break;
     default:
@@ -87,7 +104,7 @@ Keyboard::Result Keyboard::handle(input::Button button)
             const int from = row_;
             --row_;
             if (from == kLetterRows)
-                column_ = column_ * 10 / kActionCount + 1;
+                column_ = std::min(9, column_ * 10 / kActionCount + 1);
         }
         return Result::changed;
     case input::Button::down:
@@ -105,7 +122,7 @@ Keyboard::Result Keyboard::handle(input::Button button)
         column_ = (column_ + 1) % columns(row_);
         return Result::changed;
     case input::Button::cross:
-        if (row_ == kLetterRows && column_ == 3)
+        if (row_ == kLetterRows && column_ == kDone)
         {
             active_ = false;
             return Result::submitted;
@@ -119,9 +136,12 @@ Keyboard::Result Keyboard::handle(input::Button button)
         if (text_.size() < max_length_ && !text_.empty() && text_.back() != ' ')
             text_ += ' ';
         return Result::changed;
-    case input::Button::l2:
     case input::Button::l1:
         shift_ = !shift_;
+        return Result::changed;
+    case input::Button::l2:
+    case input::Button::r1:
+        symbols_ = !symbols_;
         return Result::changed;
     case input::Button::options:
     case input::Button::r2:
@@ -147,10 +167,7 @@ void Keyboard::render(Painter &p, Pixel accent)
     const Rect field{panel.x + 48, panel.y + 100, panel.w - 96, 72};
     p.s.fill_rounded(field, 14, theme::kBackgroundTop);
     p.s.stroke_rounded(field, 14, 3, accent);
-    std::string shown = text_;
-    if (secret_ && shown.size() > 6)
-        shown = shown.substr(0, 4) + std::string(shown.size() - 8, '*') +
-                shown.substr(shown.size() - 4);
+    const std::string shown = secret_ ? mask_secret(text_) : text_;
     const int tw = p.text(field.x + 24, field.y + 18, shown.empty() ? std::string{} : shown,
                           theme::kBody, theme::kText, field.w - 60);
     p.s.fill({field.x + 26 + tw, field.y + 16, 3, 40}, accent);
@@ -169,7 +186,7 @@ void Keyboard::render(Painter &p, Pixel accent)
             const Rect key{origin_x + c * (key_w + gap), y, key_w, key_h};
             const bool focused = row_ == r && column_ == c;
             p.s.fill_rounded(key, 12, focused ? theme::kText : theme::kSurfaceRaised);
-            char label[2] = {kRows[r][c], 0};
+            char label[2] = {kRows[symbols_ ? 1 : 0][r][c], 0};
             if (shift_ && label[0] >= 'a' && label[0] <= 'z')
                 label[0] = static_cast<char>(label[0] - 'a' + 'A');
             p.text_center(key.x + key.w / 2,
@@ -178,20 +195,21 @@ void Keyboard::render(Painter &p, Pixel accent)
         }
         y += key_h + gap;
     }
-    const int action_w = (10 * key_w + 9 * gap - 3 * gap) / kActionCount;
+    const int action_w = (10 * key_w + 9 * gap - (kActionCount - 1) * gap) / kActionCount;
     for (int c = 0; c < kActionCount; ++c)
     {
         const Rect key{origin_x + c * (action_w + gap), y, action_w, key_h};
         const bool focused = row_ == kLetterRows && column_ == c;
-        const bool active_shift = c == 0 && shift_;
+        const bool toggled = (c == kShift && shift_) || (c == kSymbols && symbols_);
         const Pixel bg =
             focused ? theme::kText
-                    : (c == 3 ? accent
-                              : (active_shift ? theme::kSurfaceHighlight : theme::kSurfaceRaised));
+                    : (c == kDone ? accent
+                                  : (toggled ? theme::kSurfaceHighlight : theme::kSurfaceRaised));
         p.s.fill_rounded(key, 12, bg);
-        const Pixel fg = focused || c == 3 ? theme::kTextOnAccent : theme::kText;
+        const Pixel fg = focused || c == kDone ? theme::kTextOnAccent : theme::kText;
+        const char *label = c == kSymbols && symbols_ ? "abc" : kActions[c];
         p.text_center(key.x + key.w / 2, key.y + (key.h - p.line_height(theme::kBodyStrong)) / 2,
-                      kActions[c], theme::kBodyStrong, fg);
+                      label, theme::kBodyStrong, fg);
     }
     // Hints.
     int hx = panel.x + 48;
@@ -199,6 +217,7 @@ void Keyboard::render(Painter &p, Pixel accent)
     hx += p.hint(hx, hy, Glyph::square, "Delete") + 30;
     hx += p.hint(hx, hy, Glyph::triangle, "Space") + 30;
     hx += p.hint(hx, hy, Glyph::l1, "Shift") + 30;
+    hx += p.hint(hx, hy, Glyph::r1, "Symbols") + 30;
     hx += p.hint(hx, hy, Glyph::options, "Done") + 30;
     p.hint(hx, hy, Glyph::circle, "Cancel");
 }

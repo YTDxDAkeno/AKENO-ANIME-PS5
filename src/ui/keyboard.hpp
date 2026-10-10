@@ -36,7 +36,7 @@ class Keyboard final
     }
 
     Result handle(input::Button button);
-    // Draws the keyboard panel at the bottom of the screen.
+    // Draws the keyboard panel in the middle of the screen.
     void render(Painter &p, Pixel accent);
     // Exposed for tests.
     [[nodiscard]] int row() const noexcept
@@ -48,16 +48,26 @@ class Keyboard final
         return column_;
     }
 
+    [[nodiscard]] bool symbols() const noexcept
+    {
+        return symbols_;
+    }
+
   private:
     [[nodiscard]] int columns(int row) const noexcept;
     void press();
 
     bool active_ = false;
     bool shift_ = false;
+    bool symbols_ = false;
     bool secret_ = false;
     std::string title_;
     std::string text_;
     std::size_t max_length_ = 64;
     int row_ = 1, column_ = 0;
 };
+
+// What a secret field shows: the first and last four characters of long
+// values (so a pasted key can be checked), stars for the rest.
+std::string mask_secret(const std::string &text);
 } // namespace akeno::ui

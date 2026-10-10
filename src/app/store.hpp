@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace akeno
@@ -120,4 +121,7 @@ class Store final
 
 // Validates a YouTube Data API key's shape (39 characters, "AIza" prefix).
 bool plausible_youtube_key(const std::string &key);
+// Finds a YouTube Data API key in a text file's contents: ignores a UTF-8 BOM,
+// quotes, whitespace, line breaks and surrounding text. Empty when none.
+std::string extract_youtube_key(std::string_view text);
 } // namespace akeno

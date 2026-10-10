@@ -117,7 +117,7 @@ class LibraryScreen final : public Screen
             entry_ = std::max(0, entry_ - 1);
             return;
         case input::Button::down:
-            entry_ = std::min(static_cast<int>(entries_.size()) - 1, entry_ + 1);
+            entry_ = std::clamp(entry_ + 1, 0, std::max(0, static_cast<int>(entries_.size()) - 1));
             return;
         case input::Button::left:
             pane_ = 0;
@@ -319,7 +319,7 @@ class LibraryScreen final : public Screen
 
     std::optional<MediaItem> focused_item() const
     {
-        if (entry_ >= static_cast<int>(entries_.size()))
+        if (entry_ < 0 || entry_ >= static_cast<int>(entries_.size()))
             return std::nullopt;
         const fs::Entry &e = entries_[static_cast<std::size_t>(entry_)];
         if (e.directory || !media::is_playable_extension(e.name))
@@ -338,7 +338,7 @@ class LibraryScreen final : public Screen
 
     void activate()
     {
-        if (entry_ >= static_cast<int>(entries_.size()))
+        if (entry_ < 0 || entry_ >= static_cast<int>(entries_.size()))
             return;
         const fs::Entry &e = entries_[static_cast<std::size_t>(entry_)];
         if (e.directory)

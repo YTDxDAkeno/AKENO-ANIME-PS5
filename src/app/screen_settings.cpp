@@ -596,7 +596,7 @@ class LicensesScreen final : public Screen
     void handle(input::Button b) override
     {
         if (b == input::Button::down)
-            scroll_ = std::min(scroll_ + 1, static_cast<int>(lines().size()) - 1);
+            scroll_ = std::clamp(scroll_ + 1, 0, std::max(0, static_cast<int>(lines().size()) - 1));
         else if (b == input::Button::up)
             scroll_ = std::max(0, scroll_ - 1);
         else if (b == input::Button::circle)

@@ -117,6 +117,19 @@ void App::start(std::uint64_t now_ms)
     store_.load();
     if (!store_.last_error().empty())
         report_error("storage", store_.last_error());
+    // A YouTube key file in the install folder is picked up at every start.
+    if (auto text = fs::read_text(fs::join(platform::app_dir(), "youtube-key.txt"), 4096))
+    {
+        const std::string key = extract_youtube_key(*text);
+        if (key.empty())
+            toast("youtube-key.txt does not contain a YouTube API key", th::kWarning);
+        else if (key != store_.youtube_api_key())
+        {
+            store_.set_youtube_api_key(key);
+            toast("YouTube API key imported - delete youtube-key.txt from the install folder",
+                  th::kSuccess);
+        }
+    }
     // A crash report left by the previous run (platform crash reporter):
     // show it once, keep it as crash-previous.txt for the next report.
     const std::string crash_path = fs::join(platform::data_dir(), "crash.txt");

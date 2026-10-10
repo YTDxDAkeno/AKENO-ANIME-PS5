@@ -537,9 +537,14 @@ class YouTubeScreen final : public BrowseScreen
             app_.toast("No youtube-key.txt in the app's install folder", th::kWarning);
             return;
         }
-        std::string key = *text;
-        while (!key.empty() && (key.back() == '\n' || key.back() == '\r' || key.back() == ' '))
-            key.pop_back();
+        const std::string key = extract_youtube_key(*text);
+        if (key.empty())
+        {
+            app_.toast("youtube-key.txt does not contain a YouTube API key (39 characters, "
+                       "starting with AIza)",
+                       th::kError);
+            return;
+        }
         accept_key(key);
         if (!app_.youtube().configured())
             return;
@@ -788,7 +793,8 @@ class DetailsScreen final : public Screen
                 action_ = std::max(0, action_ - 1);
                 return;
             case input::Button::right:
-                action_ = std::min(static_cast<int>(actions_.size()) - 1, action_ + 1);
+                action_ =
+                    std::clamp(action_ + 1, 0, std::max(0, static_cast<int>(actions_.size()) - 1));
                 return;
             case input::Button::down:
                 if (!related_.empty())

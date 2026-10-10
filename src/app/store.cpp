@@ -32,6 +32,25 @@ bool plausible_youtube_key(const std::string &key)
         [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_'; });
 }
 
+std::string extract_youtube_key(std::string_view text)
+{
+    const auto key_char = [](char c)
+    { return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_'; };
+    for (std::size_t at = text.find("AIza"); at != std::string_view::npos;
+         at = text.find("AIza", at + 1))
+    {
+        if (at > 0 && key_char(text[at - 1]))
+            continue; // part of a longer token
+        std::size_t end = at;
+        while (end < text.size() && key_char(text[end]))
+            ++end;
+        const std::string candidate{text.substr(at, end - at)};
+        if (plausible_youtube_key(candidate))
+            return candidate;
+    }
+    return {};
+}
+
 Store::Store(std::string directory) : directory_{std::move(directory)}
 {
 }

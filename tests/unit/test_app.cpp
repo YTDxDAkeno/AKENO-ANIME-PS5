@@ -373,3 +373,60 @@ TEST(Keyboard, TypesEditsAndSubmits)
     kb.open("Key", "abc", 39, true);
     EXPECT_EQ(kb.handle(input::Button::circle), ui::Keyboard::Result::cancelled);
 }
+
+TEST(Keyboard, TypesAddressSymbols)
+{
+    ui::Keyboard kb;
+    kb.open("Address", "https", 200);
+    kb.handle(input::Button::r1); // symbols page
+    EXPECT_TRUE(kb.symbols());
+    kb.handle(input::Button::cross); // row 1, column 0: ':'
+    kb.handle(input::Button::right);
+    kb.handle(input::Button::cross); // '/'
+    kb.handle(input::Button::cross);
+    EXPECT_EQ(kb.text(), "https://");
+    // Done is the fifth key of the action row.
+    for (int i = 0; i < 4; ++i)
+        kb.handle(input::Button::down);
+    for (int i = 0; i < 10; ++i)
+        kb.handle(input::Button::right);
+    EXPECT_EQ(kb.row(), 4);
+    EXPECT_EQ(kb.column(), 0); // ten steps right wrap around the five keys
+    for (int i = 0; i < 4; ++i)
+        kb.handle(input::Button::right);
+    EXPECT_EQ(kb.handle(input::Button::cross), ui::Keyboard::Result::submitted);
+}
+
+// 0.4.1 crashed while a key was typed: the mask underflowed at 7 characters.
+TEST(Keyboard, MasksSecretsOfEveryLength)
+{
+    std::string text;
+    for (int n = 0; n <= 45; ++n)
+    {
+        const std::string masked = ui::mask_secret(text);
+        ASSERT_EQ(masked.size(), text.size()) << n;
+        if (n > 8)
+        {
+            EXPECT_EQ(masked.substr(0, 4), text.substr(0, 4));
+            EXPECT_EQ(masked.substr(masked.size() - 4), text.substr(text.size() - 4));
+        }
+        else
+        {
+            EXPECT_EQ(masked, std::string(text.size(), '*'));
+        }
+        text += static_cast<char>('a' + n % 26);
+    }
+}
+
+TEST(Store, ExtractsYouTubeKeysFromFiles)
+{
+    const std::string key = "AIzaSyD-test-key-0123456789abcdefghijkl";
+    ASSERT_TRUE(plausible_youtube_key(key));
+    EXPECT_EQ(extract_youtube_key(key), key);
+    EXPECT_EQ(extract_youtube_key("\xEF\xBB\xBF" + key + "\r\n"), key);
+    EXPECT_EQ(extract_youtube_key("  \"" + key + "\"  "), key);
+    EXPECT_EQ(extract_youtube_key("YOUTUBE_KEY=" + key + "\n# my key"), key);
+    EXPECT_EQ(extract_youtube_key("AIzaShort"), "");
+    EXPECT_EQ(extract_youtube_key(key + "X"), ""); // 40 characters is not a key
+    EXPECT_EQ(extract_youtube_key(""), "");
+}

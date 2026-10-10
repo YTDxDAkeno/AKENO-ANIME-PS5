@@ -113,6 +113,10 @@ class App final
     void render(gfx::Surface &surface, std::uint64_t now_ms);
     // True when the next frame differs from the last one presented.
     [[nodiscard]] bool needs_redraw() const;
+    [[nodiscard]] bool keyboard_active() const noexcept
+    {
+        return keyboard_.active();
+    }
     void mark_dirty()
     {
         dirty_ = true;
