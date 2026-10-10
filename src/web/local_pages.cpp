@@ -181,6 +181,7 @@ bool LocalPages::start(const std::string &media_dir, std::string *error)
         static constexpr const char *kClips[][3] = {
             {"test.mp4", "h264-aac-360p.mp4", "video/mp4"},
             {"test-frag.mp4", "h264-aac-360p-frag.mp4", "video/mp4"},
+            {"test-cenc.mp4", "h264-aac-360p-cenc.m4s", "video/mp4"},
             {"test.ts", "h264-aac-360p.ts", "video/mp2t"},
         };
         for (const auto &clip : kClips)

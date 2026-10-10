@@ -578,6 +578,11 @@ TEST(LocalPages, ServesOnlyWithTheTokenAndTheRightHost)
     r = request(pages.page_url("test-frag.mp4"));
     EXPECT_EQ(r.status, 200);
     EXPECT_NE(r.body.find("moof"), std::string::npos);
+    // The Clear Key clip: the same samples in 'cenc' boxes.
+    r = request(pages.page_url("test-cenc.mp4"));
+    EXPECT_EQ(r.status, 200);
+    EXPECT_NE(r.body.find("encv"), std::string::npos);
+    EXPECT_NE(r.body.find("senc"), std::string::npos);
     r = request(pages.page_url("test.m3u8"));
     EXPECT_EQ(r.status, 200);
     EXPECT_NE(r.body.find("#EXT-X-ENDLIST"), std::string::npos);

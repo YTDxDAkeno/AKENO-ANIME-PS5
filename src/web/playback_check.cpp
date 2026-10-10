@@ -300,6 +300,7 @@ LabFacts lab_facts(const WebTestLog &lab)
     f.native_hls = outcome_of(lab, "playback.hls_native");
     f.iframe = outcome_of(lab, "playback.iframe");
     f.eme = outcome_of(lab, "drm.eme");
+    f.encrypted_playback = outcome_of(lab, "playback.clearkey");
     switch (drm_verdict(lab, "").level)
     {
     case DrmVerdict::Level::unavailable:
@@ -342,6 +343,10 @@ std::string lab_meaning(const LabFacts &f)
     if (f.iframe == Outcome::no)
         say("Video inside another site's frame did not play - many sites embed their player "
             "that way.");
+    if (f.encrypted_playback == Outcome::yes)
+        say("Encrypted video plays (Clear Key): the browser can decrypt video.");
+    else if (f.encrypted_playback == Outcome::no)
+        say("Even Clear Key-encrypted video did not play: the browser's decryption path fails.");
     if (f.drm == Outcome::no)
         say("No DRM system: DRM-protected services cannot play their videos here.");
     else if (f.drm == Outcome::yes)
@@ -394,6 +399,21 @@ Classification classify(const PlaybackCheck &check, bool drm_expected, const Lab
                                     : "Measured: MediaSource exists but did not play the lab's "
                                       "clip, so streaming web players cannot work here.",
                              check);
+        return c;
+    }
+    // EME present, but the lab's Clear Key clip did not play: decryption
+    // itself fails here, whatever key system a service would bring.
+    if (drm_expected && lab.drm != Outcome::yes && lab.eme == Outcome::yes &&
+        lab.encrypted_playback == Outcome::no)
+    {
+        c.state = S::drm_unavailable;
+        c.measured = true;
+        c.reason = with_code(
+            "Measured: this browser's DRM interface could not play even the lab's Clear "
+            "Key-encrypted clip, and no commercial DRM system (Widevine, PlayReady, FairPlay) "
+            "was confirmed. This service delivers its videos with DRM: the website and sign-in "
+            "can work; protected videos cannot play in this browser.",
+            check);
         return c;
     }
     if (drm_expected && no_drm)
@@ -454,9 +474,15 @@ Classification classify(const PlaybackCheck &check, bool drm_expected, const Lab
     c.state = S::undetermined;
     c.reason = with_code(
         drm_expected
-            ? "Not determined: the browser offers a DRM system, so the error has another "
-              "cause - the service may refuse this browser version, the account or region, "
-              "or it was a temporary fault. Try another episode and another time."
+            ? (lab.encrypted_playback == Outcome::yes
+                   ? "Not determined: the browser offers a DRM system and plays encrypted "
+                     "video (Clear Key), so the error has another cause - the service may "
+                     "refuse this browser or its DRM security level, the account or region, "
+                     "or it was a temporary fault. Try another episode and another time."
+                   : "Not determined: the browser offers a DRM system, so the error has "
+                     "another cause - the service may refuse this browser version, the "
+                     "account or region, or it was a temporary fault. Try another episode "
+                     "and another time.")
             : "Not determined: the player reported an error the lab cannot explain. Try "
               "another video on the same site.",
         check);

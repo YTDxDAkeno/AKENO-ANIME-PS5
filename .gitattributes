@@ -22,3 +22,5 @@ tooling/prospero-clang18 text eol=lf
 *.bin binary
 *.ttf binary
 *.ts binary
+*.mp4 binary
+*.m4s binary

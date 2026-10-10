@@ -243,7 +243,8 @@ std::string_view capability_page_html()
 <span id="progress">Testing...</span></div>
 <h1>Playback lab</h1>
 <p class="lead">What the PS5 browser inside AKENO STREAM can play: formats, streaming
-(MediaSource, HLS), video inside other sites' frames, DRM, storage and sound. Every test uses
+(MediaSource, HLS), encrypted video (Clear Key), video inside other sites' frames, DRM,
+storage and sound. Every test uses
 AKENO STREAM's own short clip on this console. The results are saved in AKENO STREAM
 (Websites &rarr; Playback Lab, and Settings &rarr; Diagnostics &rarr; Browser). Nothing else is
 sent anywhere.</p>
@@ -514,40 +515,98 @@ function progressive() {
   });
 }
 
+var MSE_TYPE = 'video/mp4; codecs="avc1.64001e,mp4a.40.2"';
+function mediaSource() { return window.MediaSource || window.WebKitMediaSource || window.ManagedMediaSource; }
+// Gives v a fragmented MP4 through MediaSource and starts it, as HLS.js,
+// DASH and Shaka players do.
+function feedMse(v, w, MS, path) {
+  var ms;
+  try { ms = new MS(); } catch (e) { w.fail('no', 'new MediaSource: ' + e.name); return; }
+  if (MS === window.ManagedMediaSource) v.disableRemotePlayback = true;
+  w.stage('sourceopen');
+  ms.addEventListener('sourceopen', function () {
+    var sb;
+    w.stage('addSourceBuffer');
+    try { sb = ms.addSourceBuffer(MSE_TYPE); } catch (e) { w.fail('no', 'addSourceBuffer: ' + e.name); return; }
+    w.stage('download');
+    getBytes(path).then(function (buffer) {
+      w.stage('appendBuffer');
+      sb.addEventListener('error', function () { w.fail('no', 'SourceBuffer error while appending'); });
+      sb.addEventListener('updateend', function () {
+        try { if (ms.readyState === 'open') ms.endOfStream(); } catch (e) {}
+        w.play();
+      });
+      try { sb.appendBuffer(buffer); } catch (e) { w.fail('no', 'appendBuffer: ' + e.name); }
+    }, function (e) { w.fail('no', 'download: ' + e.message); });
+  });
+  v.src = URL.createObjectURL(ms);
+}
+
 // 2. MediaSource with a fragmented MP4: what HLS.js, DASH and Shaka players do.
 function msePlayback() {
   var name = 'MediaSource plays fragmented MP4 (like HLS.js / DASH players)';
-  var MS = window.MediaSource || window.WebKitMediaSource || window.ManagedMediaSource;
+  var MS = mediaSource();
   if (!MS) { add('playback.mse', PG, name, 'no', 'no MediaSource in this browser'); return Promise.resolve(); }
   step('Playing through MediaSource...');
-  var type = 'video/mp4; codecs="avc1.64001e,mp4a.40.2"';
   return new Promise(function (resolve) {
     var v = makeVideo();
     var w = watch(v, 'mse', function (status, detail) { add('playback.mse', PG, name, status, detail); dispose(v); resolve(); });
-    var ms;
-    try { ms = new MS(); } catch (e) { w.fail('no', 'new MediaSource: ' + e.name); return; }
-    if (MS === window.ManagedMediaSource) v.disableRemotePlayback = true;
-    w.stage('sourceopen');
-    ms.addEventListener('sourceopen', function () {
-      var sb;
-      w.stage('addSourceBuffer');
-      try { sb = ms.addSourceBuffer(type); } catch (e) { w.fail('no', 'addSourceBuffer: ' + e.name); return; }
-      w.stage('download');
-      getBytes('test-frag.mp4').then(function (buffer) {
-        w.stage('appendBuffer');
-        sb.addEventListener('error', function () { w.fail('no', 'SourceBuffer error while appending'); });
-        sb.addEventListener('updateend', function () {
-          try { if (ms.readyState === 'open') ms.endOfStream(); } catch (e) {}
-          w.play();
-        });
-        try { sb.appendBuffer(buffer); } catch (e) { w.fail('no', 'appendBuffer: ' + e.name); }
-      }, function (e) { w.fail('no', 'download: ' + e.message); });
-    });
-    v.src = URL.createObjectURL(ms);
+    feedMse(v, w, MS, 'test-frag.mp4');
   });
 }
 
-// 3. An HLS playlist given straight to the video element (Safari-style).
+// 3. The same clip encrypted (ISO 'cenc') and played through EME with Clear
+// Key, the W3C test key system: its key is published right here and protects
+// nothing. It shows whether this browser can decrypt and play encrypted video
+// at all - what DRM-protected sites need besides their own key system.
+var CK_KID = 'ASNFZ4mrze8BI0VniavN7w', CK_KEY = '_ty6mHZUMhD-3LqYdlQyEA';
+function ascii(text) {
+  var bytes = new Uint8Array(text.length);
+  for (var i = 0; i < text.length; ++i) bytes[i] = text.charCodeAt(i) & 0x7f;
+  return bytes;
+}
+function clearKeyPlayback() {
+  var name = 'Encrypted video plays (Clear Key through EME)';
+  var MS = mediaSource();
+  if (!navigator.requestMediaKeySystemAccess) {
+    add('playback.clearkey', PG, name, 'unknown', 'no EME in this page - the decryption pipeline was not tested');
+    return Promise.resolve();
+  }
+  if (!MS) { add('playback.clearkey', PG, name, 'unknown', 'no MediaSource to give the encrypted clip to'); return Promise.resolve(); }
+  step('Playing an encrypted clip (Clear Key)...');
+  var config = [{initDataTypes: ['keyids', 'cenc'],
+                 videoCapabilities: [{contentType: 'video/mp4; codecs="avc1.64001e"'}],
+                 audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}]}];
+  return timeout(navigator.requestMediaKeySystemAccess('org.w3.clearkey', config), 5000)
+    .then(function (access) { return timeout(access.createMediaKeys(), 5000); })
+    .then(function (keys) {
+      return new Promise(function (resolve) {
+        var v = makeVideo(), licensed = false;
+        var w = watch(v, 'clearkey', function (status, detail) {
+          add('playback.clearkey', PG, name, status, detail + (status === 'yes' ? ', decrypted' : licensed ? ' (key delivered)' : ''));
+          dispose(v); resolve();
+        });
+        w.stage('setMediaKeys');
+        v.setMediaKeys(keys).then(function () {
+          var session = keys.createSession('temporary');
+          session.addEventListener('message', function () {
+            w.stage('license');
+            var license = JSON.stringify({keys: [{kty: 'oct', kid: CK_KID, k: CK_KEY}], type: 'temporary'});
+            session.update(ascii(license)).then(function () { licensed = true; },
+                                                function (e) { w.fail('no', 'session.update: ' + (e && e.name)); });
+          });
+          w.stage('generateRequest');
+          return session.generateRequest('keyids', ascii(JSON.stringify({kids: [CK_KID]})));
+        }).then(function () { feedMse(v, w, MS, 'test-cenc.mp4'); },
+                function (e) { w.fail('no', 'EME: ' + (e && e.name) + (e && e.message ? ': ' + e.message : '')); });
+      });
+    }, function (e) {
+      add('playback.clearkey', PG, name, 'unknown',
+          'Clear Key is not offered (' + ((e && e.name) || 'refused') + ') - the decryption pipeline was not tested');
+    });
+}
+
+// 4. An HLS playlist given straight to the video element (Safari-style).
 function hlsNative() {
   step('Playing an HLS playlist natively...');
   return new Promise(function (resolve) {
@@ -562,7 +621,7 @@ function hlsNative() {
   });
 }
 
-// 4. Video inside a frame from another origin, the way most sites embed their
+// 5. Video inside a frame from another origin, the way most sites embed their
 // players; the frame also reports whether it may keep cookies.
 function framePlayback() {
   step('Playing inside a frame from another site...');
@@ -631,6 +690,7 @@ storage()
   .then(webAudio)
   .then(function () { report(results, false); return progressive(); })
   .then(function () { report(results, false); return msePlayback(); })
+  .then(function () { report(results, false); return clearKeyPlayback(); })
   .then(function () { report(results, false); return hlsNative(); })
   .then(function () { report(results, false); return framePlayback(); })
   .then(function () {

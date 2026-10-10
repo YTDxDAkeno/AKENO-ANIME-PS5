@@ -105,6 +105,9 @@ struct LabFacts
     Outcome native_hls = Outcome::unknown;   // video.src = .m3u8 played
     Outcome iframe = Outcome::unknown;       // a cross-origin frame played video
     Outcome eme = Outcome::unknown;
+    // The lab's clip encrypted with Clear Key played through EME: the
+    // browser can decrypt and play encrypted video (no commercial DRM).
+    Outcome encrypted_playback = Outcome::unknown;
     Outcome drm = Outcome::unknown; // any commercial key system (yes/no/unknown)
     bool measured = false;          // the lab ran at least once
 };

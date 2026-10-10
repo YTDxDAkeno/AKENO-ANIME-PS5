@@ -188,6 +188,7 @@ class LabScreen final : public Screen
             {"browser.third_party_cookies", "Cookies in other sites' frames"},
             {"browser.secure", "Lab page is a secure context"},
             {"drm.eme", "DRM interface (EME)"},
+            {"playback.clearkey", "Encrypted video plays (Clear Key)"},
             {"drm.widevine", "Widevine"},
             {"drm.playready", "PlayReady"},
             {"drm.fairplay", "FairPlay"},
@@ -204,7 +205,7 @@ class LabScreen final : public Screen
         case Kind::lab:
         {
             row.title = "Run the AKENO playback lab";
-            row.hint = "MP4, MediaSource, HLS and frame playback of AKENO's clip; DRM; storage";
+            row.hint = "MP4, MediaSource, Clear Key, HLS and frame playback of AKENO's clip; DRM";
             const web::TestRecord *r = app_.web_tests().get("captest.finished");
             row.status = !r                                ? "Not run"
                          : r->outcome == web::Outcome::yes ? "Complete"
