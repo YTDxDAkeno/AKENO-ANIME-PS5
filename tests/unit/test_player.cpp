@@ -248,19 +248,242 @@ TEST(Player, RejectsSegmentsThatAreNotTransportStreams)
     EXPECT_NE(s.error.find("not MPEG-TS"), std::string::npos) << s.error;
 }
 
-TEST(Player, RefusesEncryptedStreamsWithAReason)
+TEST(Player, RefusesDrmStreamsWithAReason)
 {
     test::TestServer server(fixtures());
-    server.override_body("enc.m3u8",
-                         "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\"\n"
-                         "#EXTINF:2,\nhls/v720/seg000.ts\n#EXT-X-ENDLIST\n");
+    server.override_body("drm.m3u8", "#EXTM3U\n#EXT-X-TARGETDURATION:2\n"
+                                     "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://k\","
+                                     "KEYFORMAT=\"com.apple.streamingkeydelivery\"\n"
+                                     "#EXTINF:2,\nhls/v720/seg000.ts\n#EXT-X-ENDLIST\n");
     Rig rig;
     media::PlayRequest request;
-    request.url = server.url("enc.m3u8");
+    request.url = server.url("drm.m3u8");
     rig.player->play(request);
     const auto s = rig.wait_done();
     ASSERT_EQ(s.state, media::PlayerState::error);
-    EXPECT_NE(s.error.find("encrypted"), std::string::npos) << s.error;
+    EXPECT_NE(s.error.find("DRM"), std::string::npos) << s.error;
+    EXPECT_EQ(rig.record->sinks_created.load(), 0);
+}
+
+TEST(Player, PlaysFragmentedMp4Hls)
+{
+    test::TestServer server(fixtures());
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("hls/fmp4/index.m3u8");
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::ended) << s.error;
+    EXPECT_EQ(s.container, "HLS (fragmented MP4)");
+    EXPECT_EQ(s.segments_loaded, 3);
+    EXPECT_EQ(rig.record->video_units.load(), 150u); // 6 s at 25 fps
+    EXPECT_GE(rig.record->frames.load(), 149u);
+    EXPECT_EQ(rig.record->decode_errors.load(), 0u);
+    EXPECT_GT(rig.record->audio_units.load(), 250u); // ~281 AAC frames
+    EXPECT_EQ(rig.record->audio_type.load(), 0x0fu);
+    EXPECT_NEAR(s.position, 6.0, 0.5);
+}
+
+TEST(Player, FragmentedMp4HlsResumesAtASegment)
+{
+    test::TestServer server(fixtures());
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("hls/fmp4/index.m3u8");
+    request.start_seconds = 4.5;
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::ended) << s.error;
+    EXPECT_EQ(rig.record->video_units.load(), 50u); // the segment at 4.0 s
+    EXPECT_EQ(rig.record->decode_errors.load(), 0u);
+    EXPECT_NEAR(s.position, 6.0, 0.5);
+}
+
+TEST(Player, PlaysASeparateAudioRendition)
+{
+    test::TestServer server(fixtures());
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("hls/split/master.m3u8");
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::ended) << s.error << " / " << s.notice;
+    EXPECT_TRUE(s.notice.empty()) << s.notice;
+    EXPECT_EQ(rig.record->video_units.load(), 150u);
+    EXPECT_EQ(rig.record->decode_errors.load(), 0u);
+    EXPECT_GT(rig.record->audio_units.load(), 250u);
+    EXPECT_EQ(rig.record->audio_type.load(), 0x0fu);
+}
+
+TEST(Player, MissingAudioRenditionFallsBackToVideo)
+{
+    test::TestServer server(fixtures());
+    server.fail("hls/split/audio/index.m3u8", 404);
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("hls/split/master.m3u8");
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::ended) << s.error;
+    EXPECT_NE(s.notice.find("audio track could not be loaded"), std::string::npos) << s.notice;
+    EXPECT_EQ(rig.record->video_units.load(), 150u);
+    EXPECT_EQ(rig.record->audio_units.load(), 0u);
+}
+
+TEST(Player, PlaysAes128EncryptedHls)
+{
+    for (const char *playlist : {"hls/aes/index.m3u8", "hls/aes-seq/index.m3u8"})
+    {
+        test::TestServer server(fixtures());
+        Rig rig;
+        media::PlayRequest request;
+        request.url = server.url(playlist);
+        rig.player->play(request);
+        const auto s = rig.wait_done();
+        ASSERT_EQ(s.state, media::PlayerState::ended) << playlist << ": " << s.error;
+        EXPECT_GE(rig.record->video_units.load(), 150u) << playlist;
+        EXPECT_EQ(rig.record->decode_errors.load(), 0u) << playlist;
+        EXPECT_GT(rig.record->audio_units.load(), 250u) << playlist;
+    }
+}
+
+TEST(Player, WrongAes128KeyIsAnError)
+{
+    test::TestServer server(fixtures());
+    server.override_body("hls/aes-seq/key.bin", std::string(16, '\x42'));
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("hls/aes-seq/index.m3u8");
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::error);
+    EXPECT_TRUE(s.error.find("decrypted") != std::string::npos ||
+                s.error.find("not MPEG-TS") != std::string::npos)
+        << s.error;
+}
+
+TEST(Player, PlaysByteRangeSegments)
+{
+    for (const bool ranges : {true, false})
+    {
+        for (const char *playlist : {"hls/single/index.m3u8", "hls/single-fmp4/index.m3u8"})
+        {
+            test::TestServer server(fixtures());
+            server.ignore_ranges(!ranges);
+            Rig rig;
+            media::PlayRequest request;
+            request.url = server.url(playlist);
+            rig.player->play(request);
+            const auto s = rig.wait_done();
+            ASSERT_EQ(s.state, media::PlayerState::ended) << playlist << ": " << s.error;
+            EXPECT_EQ(rig.record->video_units.load(), 150u) << playlist;
+            EXPECT_EQ(rig.record->decode_errors.load(), 0u) << playlist;
+            EXPECT_GE(server.range_requests(), 3) << playlist;
+        }
+    }
+}
+
+TEST(Player, PlaysWebFilesWithRangeRequests)
+{
+    for (const char *name : {"h264-aac.mp4", "h264-aac.mkv"})
+    {
+        test::TestServer server(fixtures());
+        Rig rig;
+        media::PlayRequest request;
+        request.url = server.url(name);
+        request.kind = media::SourceKind::automatic;
+        rig.player->play(request);
+        const auto s = rig.wait_done();
+        ASSERT_EQ(s.state, media::PlayerState::ended) << name << ": " << s.error;
+        EXPECT_EQ(rig.record->video_units.load(), 75u) << name;
+        EXPECT_GT(rig.record->audio_units.load(), 50u) << name;
+        EXPECT_NEAR(s.duration, 3.0, 0.2) << name;
+        EXPECT_TRUE(s.seekable) << name;
+        EXPECT_GT(s.bytes_downloaded, 0u) << name;
+        EXPECT_EQ(s.last_http_status, 206) << name;
+    }
+}
+
+TEST(Player, WebFileResumesAtAKeyframe)
+{
+    test::TestServer server(fixtures());
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("h264-aac-720p.ts");
+    request.kind = media::SourceKind::http_file;
+    request.start_seconds = 3.0;
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::ended) << s.error;
+    EXPECT_EQ(rig.record->video_units.load(), 100u); // keyframe at 2.0 s
+    EXPECT_GE(server.range_requests(), 2);
+}
+
+TEST(Player, WebFileWithoutRangeSupportStillPlays)
+{
+    test::TestServer server(fixtures());
+    server.ignore_ranges(true);
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("h264-aac.mp4"); // index at the end of the file
+    request.kind = media::SourceKind::http_file;
+    request.start_seconds = 1.0;
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::ended) << s.error;
+    EXPECT_GT(rig.record->video_units.load(), 0u);
+    EXPECT_LE(rig.record->video_units.load(), 75u);
+    EXPECT_EQ(rig.record->decode_errors.load(), 0u);
+}
+
+TEST(Player, DetectsWhatAnAddressServes)
+{
+    struct Case
+    {
+        const char *path;
+        const char *container;
+        std::uint64_t video_units;
+    };
+    for (const Case &c : {Case{"hls/v720/index.m3u8", "HLS (MPEG-TS)", 200u},
+                          Case{"h264-aac-720p.ts", "MPEG-TS", 150u}})
+    {
+        test::TestServer server(fixtures());
+        Rig rig;
+        media::PlayRequest request;
+        request.url = server.url(c.path);
+        request.kind = media::SourceKind::automatic;
+        rig.player->play(request);
+        const auto s = rig.wait_done();
+        ASSERT_EQ(s.state, media::PlayerState::ended) << c.path << ": " << s.error;
+        EXPECT_EQ(s.container, c.container) << c.path;
+        EXPECT_EQ(rig.record->video_units.load(), c.video_units) << c.path;
+    }
+    test::TestServer server(fixtures());
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("nothing-here.mp4");
+    request.kind = media::SourceKind::automatic;
+    rig.player->play(request);
+    const auto s = rig.wait_done();
+    ASSERT_EQ(s.state, media::PlayerState::error);
+    EXPECT_NE(s.error.find("404"), std::string::npos) << s.error;
+}
+
+TEST(Player, SniffsSourceKinds)
+{
+    using media::SourceKind;
+    EXPECT_EQ(media::sniff_source("", "#EXTM3U\n#EXT-X-VERSION:3\n"), SourceKind::hls);
+    EXPECT_EQ(media::sniff_source("", "\xEF\xBB\xBF\r\n#EXTM3U\n"), SourceKind::hls);
+    EXPECT_EQ(media::sniff_source("application/vnd.apple.mpegURL", "garbage"), SourceKind::hls);
+    std::string ts(376, '\0');
+    ts[0] = ts[188] = 0x47;
+    EXPECT_EQ(media::sniff_source("video/mp2t", ts), SourceKind::http_ts);
+    ts[188] = 0;
+    EXPECT_EQ(media::sniff_source("", ts), SourceKind::http_file);
+    EXPECT_EQ(media::sniff_source("video/mp4", std::string("\0\0\0\x20"
+                                                           "ftypisom",
+                                                           12)),
+              SourceKind::http_file);
 }
 
 TEST(Player, SegmentFailureAfterRetriesIsAnError)

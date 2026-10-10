@@ -36,6 +36,6 @@ done
 ninja_inputs=("${objects[@]}")
 ninja_edge LINK "$build/akeno-screenshots" "$cxx" -pthread "${objects[@]}" \
     "$ffmpeg/lib/libavformat.a" "$ffmpeg/lib/libavcodec.a" "$ffmpeg/lib/libswresample.a" "$ffmpeg/lib/libavutil.a" \
-    "${freetype_libs[@]}" -lcurl -lm -o "$build/akeno-screenshots"
+    "${freetype_libs[@]}" -lcurl -lcrypto -lm -o "$build/akeno-screenshots"
 ninja_run >/dev/null
 AKENO_SOURCE_ROOT="$root" "$build/akeno-screenshots"

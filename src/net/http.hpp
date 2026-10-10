@@ -25,6 +25,15 @@ inline CancelFlag make_cancel_flag()
     return std::make_shared<std::atomic<bool>>(false);
 }
 
+// What a response announced before its body (redirects already followed).
+struct Head
+{
+    long status = 0;
+    std::int64_t content_length = -1; // bytes in this response, -1 when unknown
+    std::int64_t total_length = -1;   // whole resource (Content-Range or Content-Length)
+    bool partial = false;             // 206: the server honoured the Range header
+};
+
 struct Request
 {
     std::string url;
@@ -41,6 +50,11 @@ struct Request
     // Optional streaming sink. Returning false aborts the transfer. When set,
     // the body is not accumulated in Response::body.
     std::function<bool(const std::uint8_t *, std::size_t)> on_data;
+    // Byte range to request, e.g. "1000-" or "0-4095" (HTTP Range header).
+    std::string range;
+    // Called once before the first body byte (or at the end for an empty
+    // body). Returning false aborts the transfer.
+    std::function<bool(const Head &)> on_head;
 };
 
 enum class Outcome : std::uint8_t
@@ -64,6 +78,7 @@ struct Response
     std::string error; // human-readable, never contains credentials
     std::size_t bytes = 0;
     std::uint32_t elapsed_ms = 0;
+    Head head;
 
     [[nodiscard]] bool ok() const noexcept
     {

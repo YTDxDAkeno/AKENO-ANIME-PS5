@@ -2,13 +2,15 @@
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// One worker thread per playback session reads the source (HLS over HTTP(S)
-// or a local file remuxed by FFmpeg), feeds MPEG-TS bytes to the vendored
-// ProsperoTV demuxer (iptv_stream), which hands complete access units to a
-// DecodeSink. On the console the sink is the hardware decoder backend
-// (Videodec2 + Audiodec/AudioOut, paced to presentation time) and pictures
-// arrive in a FrameStore for the interface to composite. The UI thread only
-// calls the non-blocking control methods and reads status snapshots.
+// One worker thread per playback session reads the source (HLS over HTTP(S),
+// an MPEG-TS address, or a local or web MP4/MKV file remuxed by FFmpeg; HLS
+// with fragmented MP4 or a separate audio rendition is remuxed too), feeds
+// MPEG-TS bytes to the vendored ProsperoTV demuxer (iptv_stream), which hands
+// complete access units to a DecodeSink. On the console the sink is the
+// hardware decoder backend (Videodec2 + Audiodec/AudioOut, paced to
+// presentation time) and pictures arrive in a FrameStore for the interface to
+// composite. The UI thread only calls the non-blocking control methods and
+// reads status snapshots.
 #pragma once
 
 #include "media/frame_store.hpp"
@@ -22,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 
 namespace akeno::media
 {
@@ -30,7 +33,13 @@ enum class SourceKind : std::uint8_t
     hls,        // http(s) URL of a master or media playlist
     http_ts,    // http(s) URL of a single MPEG-TS file
     local_file, // path of a .ts/.mp4/.mkv/.m4v on console storage
+    http_file,  // http(s) URL of an MP4/MKV/MOV file (seekable with HTTP ranges)
+    automatic,  // http(s) URL: the first bytes decide between the kinds above
 };
+
+// What a web address serves, judged from its Content-Type and first bytes:
+// an HLS playlist, an MPEG-TS stream, or (anything else) a file for FFmpeg.
+SourceKind sniff_source(std::string_view content_type, const std::string &first_bytes);
 
 struct PlayRequest
 {

@@ -32,6 +32,16 @@ class TestServer final
     {
         return requests_.load();
     }
+    // Requests that carried a Range header.
+    [[nodiscard]] int range_requests() const noexcept
+    {
+        return range_requests_.load();
+    }
+    // Answers Range requests with the whole file (a server without range support).
+    void ignore_ranges(bool ignore)
+    {
+        ignore_ranges_.store(ignore);
+    }
 
   private:
     void serve();
@@ -42,6 +52,9 @@ class TestServer final
     int port_ = 0;
     std::atomic<bool> running_{true};
     std::atomic<int> requests_{0};
+    std::atomic<int> range_requests_{0};
+    std::atomic<bool> ignore_ranges_{false};
+    std::atomic<int> active_{0};
     std::mutex lock_;
     std::map<std::string, int> failures_;
     std::map<std::string, std::string> bodies_;

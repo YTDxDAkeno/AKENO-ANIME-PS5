@@ -63,7 +63,7 @@ for s in "${third_party[@]}"; do compile "$s" vendor; done
 for s in "${test_sources[@]}"; do compile "$s" test; done
 
 libs=("$ffmpeg/lib/libavformat.a" "$ffmpeg/lib/libavcodec.a" "$ffmpeg/lib/libswresample.a"
-    "$ffmpeg/lib/libavutil.a" "${freetype_libs[@]}" -lcurl -lm)
+    "$ffmpeg/lib/libavutil.a" "${freetype_libs[@]}" -lcurl -lcrypto -lm)
 ninja_inputs=("${objects[@]}" "$cxx")
 ninja_edge LINK "$build/akeno_tests" "$cxx" "${sanitize[@]}" -pthread "${objects[@]}" "${libs[@]}" \
     -o "$build/akeno_tests"

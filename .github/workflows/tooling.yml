@@ -47,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes clang-18 clang-format-18 lld-18 libclang-rt-18-dev make ninja-build \
-            ccache pkg-config tar unzip wget ffmpeg libfreetype-dev libcurl4-openssl-dev zlib1g-dev
+            ccache pkg-config tar unzip wget ffmpeg libfreetype-dev libcurl4-openssl-dev libssl-dev zlib1g-dev
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
 

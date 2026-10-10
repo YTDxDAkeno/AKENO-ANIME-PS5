@@ -2,11 +2,11 @@
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Supports RFC 8216 master and media playlists whose segments are MPEG-TS
-// with muxed H.264/HEVC video and AAC/MP3/AC-3 audio, VOD and live.
-// Deliberately unsupported (reported, never faked): encrypted segments of any
-// kind (AES-128, SAMPLE-AES and DRM key systems), fragmented MP4 (EXT-X-MAP),
-// byte-range segments and audio delivered only as a separate rendition.
+// Supports RFC 8216 master and media playlists: MPEG-TS and fragmented-MP4
+// (CMAF, EXT-X-MAP) segments, byte ranges, AES-128 full-segment encryption
+// (the standard HLS key method, keys fetched like segments), audio renditions,
+// VOD and live. Refused and reported, never worked around: SAMPLE-AES and
+// every DRM key system (FairPlay, Widevine, PlayReady).
 #pragma once
 
 #include <cstddef>
@@ -45,6 +45,23 @@ struct Rendition
     std::string language;
     std::string uri; // absolute, empty when carried in the variant stream
     bool is_default = false;
+    bool autoselect = false;
+};
+
+// Initialization section of fragmented-MP4 segments (EXT-X-MAP).
+struct Map
+{
+    std::string uri;
+    std::int64_t offset = -1; // byte range, -1 for the whole resource
+    std::int64_t length = 0;
+};
+
+// AES-128 key (EXT-X-KEY METHOD=AES-128).
+struct Key
+{
+    std::string uri;
+    bool has_iv = false;
+    std::uint8_t iv[16] = {};
 };
 
 struct Segment
@@ -54,6 +71,10 @@ struct Segment
     double start = 0.0; // seconds from the first segment in this playlist
     std::uint64_t sequence = 0;
     bool discontinuity = false;
+    int map = -1;             // index into Playlist::maps
+    int key = -1;             // index into Playlist::keys
+    std::int64_t offset = -1; // byte range, -1 for the whole resource
+    std::int64_t length = 0;
 };
 
 struct Playlist
@@ -67,6 +88,8 @@ struct Playlist
     bool endlist = false;
     std::string playlist_type; // VOD, EVENT or empty
     std::vector<Segment> segments;
+    std::vector<Map> maps;
+    std::vector<Key> keys;
     double total_duration = 0.0;
 
     // Set when the playlist uses a feature this player cannot handle honestly.
@@ -75,6 +98,11 @@ struct Playlist
     [[nodiscard]] bool is_live() const noexcept
     {
         return kind == Kind::media && !endlist;
+    }
+    // Fragmented MP4: segments need their initialization section.
+    [[nodiscard]] bool fragmented_mp4() const noexcept
+    {
+        return !maps.empty();
     }
 };
 
@@ -103,11 +131,16 @@ struct Selection
     std::uint64_t max_bandwidth = 0; // 0 = unlimited
 };
 
-// Chooses the best variant within limits whose codecs are playable and whose
-// audio is carried in the stream itself. Returns -1 when none qualifies and
-// writes the reason into *why.
+// Chooses the best variant within limits whose video codec is playable,
+// preferring ones whose audio codec is playable too. Returns -1 when none
+// qualifies and writes the reason into *why.
 int select_variant(const Playlist &playlist, const Selection &selection,
                    std::string *why = nullptr);
+
+// The audio rendition to play with a variant: the default (else autoselect,
+// else first) member of its AUDIO group that has its own URI. nullptr when the
+// variant carries its audio itself.
+const Rendition *audio_rendition(const Playlist &playlist, const Variant &variant);
 
 // Index of the segment containing time t (seconds from playlist start).
 std::size_t segment_at(const Playlist &playlist, double t) noexcept;

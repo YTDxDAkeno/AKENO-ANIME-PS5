@@ -1,4 +1,4 @@
-// AKENO STREAM PS5 - Local files to MPEG-TS for the native player.
+// AKENO STREAM PS5 - Containers to MPEG-TS for the native player.
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "media/remux.hpp"
@@ -7,9 +7,6 @@
 #include <cctype>
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 extern "C"
 {
@@ -48,40 +45,128 @@ bool audio_supported(AVCodecID id)
         return false;
     }
 }
+
+// FFmpeg lists every name a demuxer answers to ("mov,mp4,m4a,...").
+std::string container_name(const std::string &demuxer)
+{
+    if (demuxer.rfind("mov,", 0) == 0)
+        return "MP4";
+    if (demuxer.rfind("matroska", 0) == 0)
+        return "Matroska";
+    if (demuxer == "mpegts")
+        return "MPEG-TS";
+    return demuxer;
+}
+
+// One demuxed input on a ByteSource.
+struct Input
+{
+    std::unique_ptr<ByteSource> source;
+    AVIOContext *io = nullptr;
+    AVFormatContext *format = nullptr;
+    AVPacket *pending = nullptr; // next packet of a selected stream, not yet written
+    bool ended = false;
+
+    static int read(void *opaque, std::uint8_t *buffer, int size)
+    {
+        auto *self = static_cast<Input *>(opaque);
+        const int got = self->source->read(buffer, size);
+        if (got > 0)
+            return got;
+        return got == 0 ? AVERROR_EOF : AVERROR_EXIT;
+    }
+
+    static std::int64_t seek(void *opaque, std::int64_t offset, int whence)
+    {
+        auto *self = static_cast<Input *>(opaque);
+        ByteSource &s = *self->source;
+        if (whence & AVSEEK_SIZE)
+            return s.size() >= 0 ? s.size() : AVERROR(ENOSYS);
+        whence &= ~AVSEEK_FORCE;
+        std::int64_t target = offset;
+        if (whence == SEEK_CUR)
+            target = s.position() + offset;
+        else if (whence == SEEK_END)
+        {
+            if (s.size() < 0)
+                return AVERROR(ENOSYS);
+            target = s.size() + offset;
+        }
+        return s.seek(target) ? target : AVERROR(EIO);
+    }
+
+    bool open(std::unique_ptr<ByteSource> from, std::string *error)
+    {
+        source = std::move(from);
+        auto *buffer = static_cast<std::uint8_t *>(av_malloc(kIoBytes));
+        io = buffer ? avio_alloc_context(buffer, kIoBytes, 0, this, read, nullptr,
+                                         source->seekable() ? seek : nullptr)
+                    : nullptr;
+        format = avformat_alloc_context();
+        if (!io || !format)
+        {
+            if (!io)
+                av_free(buffer);
+            *error = "out of memory";
+            return false;
+        }
+        if (!source->seekable())
+            io->seekable = 0;
+        format->pb = io;
+        format->flags |= AVFMT_FLAG_CUSTOM_IO;
+        int result = avformat_open_input(&format, nullptr, nullptr, nullptr);
+        if (result < 0)
+        {
+            *error = source->error().empty()
+                         ? "unrecognised or damaged media (" + av_error(result) + ")"
+                         : source->error();
+            return false;
+        }
+        result = avformat_find_stream_info(format, nullptr);
+        if (result < 0 && format->nb_streams == 0)
+        {
+            *error = "no streams found (" + av_error(result) + ")";
+            return false;
+        }
+        pending = av_packet_alloc();
+        if (!pending)
+        {
+            *error = "out of memory";
+            return false;
+        }
+        return true;
+    }
+
+    void release()
+    {
+        av_packet_free(&pending);
+        if (format)
+            avformat_close_input(&format);
+        if (io)
+        {
+            av_freep(&io->buffer);
+            avio_context_free(&io);
+        }
+        source.reset();
+        ended = false;
+    }
+};
 } // namespace
 
 struct Remuxer::Impl
 {
-    int fd = -1;
-    std::int64_t file_size = 0;
-    AVIOContext *in_io = nullptr;
-    AVFormatContext *in = nullptr;
+    Input inputs[2];
+    int input_count = 0;
+    // Selected streams: input index and stream index for video and audio.
+    int video_input = 0, video_stream = -1;
+    int audio_input = -1, audio_stream = -1;
     AVIOContext *out_io = nullptr;
     AVFormatContext *out = nullptr;
-    int video_in = -1, audio_in = -1;
     int video_out = -1, audio_out = -1;
     bool header_written = false;
     const Sink *sink = nullptr;
     bool sink_refused = false;
     RemuxInfo info;
-
-    static int read(void *opaque, std::uint8_t *buffer, int size)
-    {
-        auto *self = static_cast<Impl *>(opaque);
-        const ssize_t got = ::read(self->fd, buffer, static_cast<std::size_t>(size));
-        if (got == 0)
-            return AVERROR_EOF;
-        return got < 0 ? AVERROR(errno) : static_cast<int>(got);
-    }
-
-    static std::int64_t seek(void *opaque, std::int64_t offset, int whence)
-    {
-        auto *self = static_cast<Impl *>(opaque);
-        if (whence & AVSEEK_SIZE)
-            return self->file_size;
-        const off_t result = ::lseek(self->fd, static_cast<off_t>(offset), whence & ~AVSEEK_FORCE);
-        return result < 0 ? AVERROR(errno) : static_cast<std::int64_t>(result);
-    }
 
     static int write(void *opaque, const std::uint8_t *buffer, int size)
     {
@@ -108,20 +193,16 @@ struct Remuxer::Impl
             avformat_free_context(out);
             out = nullptr;
         }
-        if (in)
-            avformat_close_input(&in);
-        if (in_io)
-        {
-            av_freep(&in_io->buffer);
-            avio_context_free(&in_io);
-        }
-        if (fd >= 0)
-        {
-            ::close(fd);
-            fd = -1;
-        }
+        for (Input &input : inputs)
+            input.release();
+        input_count = 0;
         header_written = false;
-        video_in = audio_in = video_out = audio_out = -1;
+        video_stream = audio_stream = audio_input = video_out = audio_out = -1;
+    }
+
+    AVStream *stream(int input, int index) const
+    {
+        return inputs[input].format->streams[index];
     }
 };
 
@@ -138,6 +219,11 @@ const RemuxInfo &Remuxer::info() const noexcept
     return impl_->info;
 }
 
+bool Remuxer::seekable() const
+{
+    return impl_->input_count > 0 && impl_->inputs[0].source->seekable();
+}
+
 void Remuxer::close()
 {
     impl_->release();
@@ -145,78 +231,92 @@ void Remuxer::close()
 
 bool Remuxer::open(const std::string &path, std::string *error)
 {
+    auto source = open_file_source(path, error);
+    if (!source)
+        return false;
+    return open(std::move(source), nullptr, error);
+}
+
+bool Remuxer::open(std::unique_ptr<ByteSource> main, std::unique_ptr<ByteSource> audio,
+                   std::string *error)
+{
     close();
     Impl &m = *impl_;
     m.info = {};
-    const auto fail = [&](std::string why)
+    std::string why;
+    const auto fail = [&](std::string message)
     {
         if (error)
-            *error = std::move(why);
+            *error = std::move(message);
         m.release();
         return false;
     };
-    m.fd = ::open(path.c_str(), O_RDONLY);
-    if (m.fd < 0)
-        return fail(std::string{"cannot open file: "} + std::strerror(errno));
-    struct stat facts
-    {
-    };
-    m.file_size = fstat(m.fd, &facts) == 0 ? static_cast<std::int64_t>(facts.st_size) : -1;
+    if (!main || !m.inputs[0].open(std::move(main), &why))
+        return fail(why.empty() ? "no input" : why);
+    m.input_count = 1;
+    AVFormatContext *in = m.inputs[0].format;
+    m.info.container = container_name(in->iformat ? in->iformat->name : "");
+    if (in->duration > 0)
+        m.info.duration = static_cast<double>(in->duration) / AV_TIME_BASE;
 
-    auto *buffer = static_cast<std::uint8_t *>(av_malloc(kIoBytes));
-    m.in_io = buffer ? avio_alloc_context(buffer, kIoBytes, 0, &m, Impl::read, nullptr, Impl::seek)
-                     : nullptr;
-    m.in = avformat_alloc_context();
-    if (!m.in_io || !m.in)
-    {
-        if (!m.in_io)
-            av_free(buffer);
-        return fail("out of memory");
-    }
-    m.in->pb = m.in_io;
-    m.in->flags |= AVFMT_FLAG_CUSTOM_IO;
-    int result = avformat_open_input(&m.in, nullptr, nullptr, nullptr);
-    if (result < 0)
-        return fail("unrecognised or damaged file (" + av_error(result) + ")");
-    result = avformat_find_stream_info(m.in, nullptr);
-    if (result < 0 && m.in->nb_streams == 0)
-        return fail("no streams found (" + av_error(result) + ")");
-    m.info.container = m.in->iformat ? m.in->iformat->name : "";
-    if (m.in->duration > 0)
-        m.info.duration = static_cast<double>(m.in->duration) / AV_TIME_BASE;
-
-    m.video_in = av_find_best_stream(m.in, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-    if (m.video_in < 0)
-        return fail("the file has no video stream");
-    const AVCodecParameters *video = m.in->streams[m.video_in]->codecpar;
+    m.video_stream = av_find_best_stream(in, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    if (m.video_stream < 0)
+        return fail("no video stream");
+    const AVCodecParameters *video = in->streams[m.video_stream]->codecpar;
     m.info.video_codec = avcodec_get_name(video->codec_id);
     m.info.width = video->width;
     m.info.height = video->height;
     if (video->codec_id != AV_CODEC_ID_H264 && video->codec_id != AV_CODEC_ID_HEVC)
         return fail("video codec " + m.info.video_codec + " is not supported (H.264 or HEVC only)");
-    m.audio_in = av_find_best_stream(m.in, AVMEDIA_TYPE_AUDIO, -1, m.video_in, nullptr, 0);
-    if (m.audio_in >= 0)
+
+    if (audio)
     {
-        const AVCodecParameters *audio = m.in->streams[m.audio_in]->codecpar;
-        if (audio_supported(audio->codec_id))
+        if (!m.inputs[1].open(std::move(audio), &why))
+            m.info.notice = "the audio track could not be opened (" + why + "); playing video only";
+        else
         {
-            m.info.audio_codec = avcodec_get_name(audio->codec_id);
-            m.info.audio_rate = audio->sample_rate;
-            m.info.audio_channels = audio->ch_layout.nb_channels;
+            m.input_count = 2;
+            const int index =
+                av_find_best_stream(m.inputs[1].format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+            if (index >= 0)
+            {
+                m.audio_input = 1;
+                m.audio_stream = index;
+            }
+        }
+    }
+    if (m.audio_input < 0)
+    {
+        const int index =
+            av_find_best_stream(in, AVMEDIA_TYPE_AUDIO, -1, m.video_stream, nullptr, 0);
+        if (index >= 0)
+        {
+            m.audio_input = 0;
+            m.audio_stream = index;
+        }
+    }
+    if (m.audio_input >= 0)
+    {
+        const AVCodecParameters *a = m.stream(m.audio_input, m.audio_stream)->codecpar;
+        if (audio_supported(a->codec_id))
+        {
+            m.info.audio_codec = avcodec_get_name(a->codec_id);
+            m.info.audio_rate = a->sample_rate;
+            m.info.audio_channels = a->ch_layout.nb_channels;
         }
         else
         {
-            m.info.notice = std::string{"audio codec "} + avcodec_get_name(audio->codec_id) +
+            m.info.notice = std::string{"audio codec "} + avcodec_get_name(a->codec_id) +
                             " is not supported; playing video only";
-            m.audio_in = -1;
+            m.audio_input = m.audio_stream = -1;
         }
     }
-    else
+    else if (m.info.notice.empty())
     {
-        m.info.notice = "the file has no audio track";
+        m.info.notice = "no audio track";
     }
 
-    result = avformat_alloc_output_context2(&m.out, nullptr, "mpegts", nullptr);
+    int result = avformat_alloc_output_context2(&m.out, nullptr, "mpegts", nullptr);
     if (result < 0 || !m.out)
         return fail("MPEG-TS muxer unavailable (" + av_error(result) + ")");
     auto *out_buffer = static_cast<std::uint8_t *>(av_malloc(kIoBytes));
@@ -230,28 +330,33 @@ bool Remuxer::open(const std::string &path, std::string *error)
     }
     m.out->pb = m.out_io;
     m.out->flags |= AVFMT_FLAG_CUSTOM_IO;
-    for (int index : {m.video_in, m.audio_in})
+    const auto add = [&](int input, int index, int *out_index)
     {
-        if (index < 0)
-            continue;
+        AVStream *source = m.stream(input, index);
         AVStream *stream = avformat_new_stream(m.out, nullptr);
-        if (!stream ||
-            avcodec_parameters_copy(stream->codecpar, m.in->streams[index]->codecpar) < 0)
-            return fail("cannot configure the MPEG-TS muxer");
+        if (!stream || avcodec_parameters_copy(stream->codecpar, source->codecpar) < 0)
+            return false;
         stream->codecpar->codec_tag = 0;
-        stream->time_base = m.in->streams[index]->time_base;
-        (index == m.video_in ? m.video_out : m.audio_out) = stream->index;
-    }
+        stream->time_base = source->time_base;
+        *out_index = stream->index;
+        return true;
+    };
+    if (!add(0, m.video_stream, &m.video_out) ||
+        (m.audio_input >= 0 && !add(m.audio_input, m.audio_stream, &m.audio_out)))
+        return fail("cannot configure the MPEG-TS muxer");
     return true;
 }
 
 bool Remuxer::seek(double seconds)
 {
     Impl &m = *impl_;
-    if (!m.in || seconds <= 0.0)
+    if (!m.input_count || seconds <= 0.0)
         return true;
     const std::int64_t target = static_cast<std::int64_t>(seconds * AV_TIME_BASE);
-    return av_seek_frame(m.in, -1, target, AVSEEK_FLAG_BACKWARD) >= 0;
+    bool ok = av_seek_frame(m.inputs[0].format, -1, target, AVSEEK_FLAG_BACKWARD) >= 0;
+    if (m.input_count == 2)
+        ok = av_seek_frame(m.inputs[1].format, -1, target, AVSEEK_FLAG_BACKWARD) >= 0 && ok;
+    return ok;
 }
 
 int Remuxer::run(const Sink &sink, const std::atomic<bool> &stop, std::string *error,
@@ -264,7 +369,7 @@ int Remuxer::run(const Sink &sink, const std::atomic<bool> &stop, std::string *e
             *error = std::move(why);
         return -1;
     };
-    if (!m.in || !m.out)
+    if (!m.input_count || !m.out)
         return fail("not open");
     m.sink = &sink;
     m.sink_refused = false;
@@ -275,54 +380,87 @@ int Remuxer::run(const Sink &sink, const std::atomic<bool> &stop, std::string *e
             return m.sink_refused ? 0 : fail("MPEG-TS header failed (" + av_error(result) + ")");
         m.header_written = true;
     }
-    AVPacket *packet = av_packet_alloc();
-    if (!packet)
-        return fail("out of memory");
+    // Fills an input's pending packet with its next video or audio packet.
+    const auto refill = [&](int i) -> int
+    {
+        Input &input = m.inputs[i];
+        while (!input.ended && input.pending->size == 0)
+        {
+            const int result = av_read_frame(input.format, input.pending);
+            if (result == AVERROR_EOF)
+            {
+                input.ended = true;
+                break;
+            }
+            if (result < 0)
+                return result;
+            const int s = input.pending->stream_index;
+            const bool wanted =
+                (i == 0 && s == m.video_stream) || (i == m.audio_input && s == m.audio_stream);
+            if (!wanted)
+                av_packet_unref(input.pending);
+        }
+        return 0;
+    };
+    const auto time_of = [&](int i)
+    {
+        const AVPacket *p = m.inputs[i].pending;
+        const std::int64_t t = p->dts != AV_NOPTS_VALUE ? p->dts : p->pts;
+        if (t == AV_NOPTS_VALUE)
+            return -1.0e18;
+        return t * av_q2d(m.inputs[i].format->streams[p->stream_index]->time_base);
+    };
+
     int outcome = 1;
     bool first_video = true;
     while (!stop.load(std::memory_order_relaxed))
     {
-        int result = av_read_frame(m.in, packet);
-        if (result == AVERROR_EOF)
-            break;
+        int result = 0;
+        int failed = 0;
+        for (int i = 0; i < m.input_count && result >= 0; ++i)
+        {
+            result = refill(i);
+            failed = i;
+        }
         if (result < 0)
         {
-            outcome = fail("read error (" + av_error(result) + ")");
+            const std::string &source_error = m.inputs[failed].source->error();
+            outcome = result == AVERROR_EXIT && stop.load()
+                          ? 0
+                          : fail(source_error.empty() ? "read error (" + av_error(result) + ")"
+                                                      : source_error);
             break;
         }
-        int target = -1;
-        if (packet->stream_index == m.video_in)
+        // The earliest pending packet goes next.
+        int next = -1;
+        for (int i = 0; i < m.input_count; ++i)
+            if (m.inputs[i].pending->size > 0 && (next < 0 || time_of(i) < time_of(next)))
+                next = i;
+        if (next < 0)
+            break; // every input has ended
+        AVPacket *packet = m.inputs[next].pending;
+        const AVStream *in_stream = m.stream(next, packet->stream_index);
+        const bool is_video = next == 0 && packet->stream_index == m.video_stream;
+        const int target = is_video ? m.video_out : m.audio_out;
+        if (is_video && first_video && first_video_seconds && packet->pts != AV_NOPTS_VALUE)
         {
-            target = m.video_out;
-            const AVStream *in_stream = m.in->streams[m.video_in];
-            if (first_video && first_video_seconds && packet->pts != AV_NOPTS_VALUE)
-            {
-                const std::int64_t origin =
-                    in_stream->start_time != AV_NOPTS_VALUE ? in_stream->start_time : 0;
-                first_video_seconds->store(
-                    std::max(0.0, (packet->pts - origin) * av_q2d(in_stream->time_base)));
-                first_video = false;
-            }
+            const std::int64_t origin =
+                in_stream->start_time != AV_NOPTS_VALUE ? in_stream->start_time : 0;
+            first_video_seconds->store(
+                std::max(0.0, (packet->pts - origin) * av_q2d(in_stream->time_base)));
+            first_video = false;
         }
-        else if (packet->stream_index == m.audio_in)
-            target = m.audio_out;
-        if (target < 0)
-        {
-            av_packet_unref(packet);
-            continue;
-        }
-        av_packet_rescale_ts(packet, m.in->streams[packet->stream_index]->time_base,
-                             m.out->streams[target]->time_base);
+        av_packet_rescale_ts(packet, in_stream->time_base, m.out->streams[target]->time_base);
         packet->stream_index = target;
         packet->pos = -1;
-        result = av_interleaved_write_frame(m.out, packet);
+        result = av_interleaved_write_frame(m.out, packet); // takes the packet's data
+        av_packet_unref(packet);
         if (result < 0)
         {
             outcome = m.sink_refused ? 0 : fail("mux error (" + av_error(result) + ")");
             break;
         }
     }
-    av_packet_free(&packet);
     if (stop.load())
         outcome = 0;
     if (outcome == 1)

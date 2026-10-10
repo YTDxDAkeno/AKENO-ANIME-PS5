@@ -52,6 +52,10 @@ const char *source_name(media::SourceKind kind)
         return "http_ts";
     case media::SourceKind::local_file:
         return "file";
+    case media::SourceKind::http_file:
+        return "http_file";
+    case media::SourceKind::automatic:
+        return "auto";
     }
     return "hls";
 }
@@ -62,6 +66,10 @@ media::SourceKind source_from(const std::string &name)
         return media::SourceKind::http_ts;
     if (name == "file")
         return media::SourceKind::local_file;
+    if (name == "http_file")
+        return media::SourceKind::http_file;
+    if (name == "auto")
+        return media::SourceKind::automatic;
     return media::SourceKind::hls;
 }
 } // namespace

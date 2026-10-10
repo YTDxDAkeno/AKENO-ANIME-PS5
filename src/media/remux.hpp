@@ -1,13 +1,16 @@
-// AKENO STREAM PS5 - Local files to MPEG-TS for the native player.
+// AKENO STREAM PS5 - Containers to MPEG-TS for the native player.
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// MP4, Matroska and MPEG-TS files are demuxed with FFmpeg and remuxed, without
-// transcoding, into an MPEG-TS byte stream for the same native pipeline that
-// plays HLS (ProsperoTV feeds MP4/Matroska to its native player the same way).
-// FFmpeg reads the file through custom AVIO on a POSIX descriptor; it never
-// opens paths itself.
+// MP4, Matroska, MPEG-TS and fragmented-MP4 (CMAF) inputs are demuxed with
+// FFmpeg and remuxed, without transcoding, into one MPEG-TS byte stream for
+// the native pipeline that plays HLS (ProsperoTV feeds MP4/Matroska to its
+// native player the same way). An optional second input supplies the audio
+// (an HLS audio rendition); packets of both are interleaved by time.
+// FFmpeg reads only through ByteSource; it never opens paths or URLs itself.
 #pragma once
+
+#include "media/byte_source.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -37,13 +40,18 @@ class Remuxer final
     Remuxer &operator=(const Remuxer &) = delete;
 
     bool open(const std::string &path, std::string *error);
+    // main supplies the video (and its own audio unless audio is given).
+    bool open(std::unique_ptr<ByteSource> main, std::unique_ptr<ByteSource> audio,
+              std::string *error);
     [[nodiscard]] const RemuxInfo &info() const noexcept;
+    // The input can be positioned (a file, or a web server with ranges).
+    [[nodiscard]] bool seekable() const;
     // Positions the input at or before seconds (keyframe). Call before run().
     bool seek(double seconds);
-    // Writes TS bytes to sink until the end of the file (returns 1), sink
+    // Writes TS bytes to sink until the end of the input (returns 1), sink
     // refusal or stop (0), or an error (-1, message in *error).
     using Sink = std::function<bool(const std::uint8_t *, std::size_t)>;
-    // first_video_seconds receives the file time of the first video packet
+    // first_video_seconds receives the input time of the first video packet
     // written (after a seek this is the keyframe actually used).
     int run(const Sink &sink, const std::atomic<bool> &stop, std::string *error,
             std::atomic<double> *first_video_seconds = nullptr);

@@ -9,6 +9,7 @@
 #include <curl/curl.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 
@@ -23,15 +24,75 @@ struct Transfer
 {
     const Request *request;
     Response *response;
+    CURL *easy = nullptr;
     bool overflow = false;
     bool sink_stopped = false;
+    bool head_sent = false;
+    std::int64_t range_total = -1;
 };
+
+bool starts_with_nocase(const char *data, std::size_t size, const char *prefix)
+{
+    std::size_t i = 0;
+    for (; prefix[i]; ++i)
+    {
+        if (i >= size)
+            return false;
+        char c = data[i];
+        if (c >= 'A' && c <= 'Z')
+            c = static_cast<char>(c - 'A' + 'a');
+        if (c != prefix[i])
+            return false;
+    }
+    return true;
+}
+
+std::size_t on_header(char *data, std::size_t size, std::size_t count, void *context)
+{
+    auto &t = *static_cast<Transfer *>(context);
+    const std::size_t bytes = size * count;
+    if (starts_with_nocase(data, bytes, "http/"))
+        t.range_total = -1; // a new response (after a redirect)
+    else if (starts_with_nocase(data, bytes, "content-range:"))
+    {
+        // Content-Range: bytes 0-99/1234
+        const std::string line(data, bytes);
+        const std::size_t slash = line.find('/');
+        if (slash != std::string::npos && slash + 1 < line.size() && line[slash + 1] != '*')
+            t.range_total = std::strtoll(line.c_str() + slash + 1, nullptr, 10);
+    }
+    return bytes;
+}
+
+// Fills Response::head and tells the caller; false when it wants to stop.
+bool announce_head(Transfer &t)
+{
+    if (t.head_sent)
+        return true;
+    t.head_sent = true;
+    Head &head = t.response->head;
+    if (t.easy)
+    {
+        curl_easy_getinfo(t.easy, CURLINFO_RESPONSE_CODE, &head.status);
+        curl_off_t length = -1;
+        if (curl_easy_getinfo(t.easy, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &length) == CURLE_OK)
+            head.content_length = length;
+    }
+    head.partial = head.status == 206;
+    head.total_length = head.partial ? t.range_total : head.content_length;
+    return !t.request->on_head || t.request->on_head(head);
+}
 
 std::size_t on_body(char *data, std::size_t size, std::size_t count, void *context)
 {
     auto &t = *static_cast<Transfer *>(context);
     if (size != 0 && count > static_cast<std::size_t>(-1) / size)
         return 0;
+    if (!announce_head(t))
+    {
+        t.sink_stopped = true;
+        return 0;
+    }
     const std::size_t bytes = size * count;
     if (t.response->bytes + bytes > t.request->max_bytes)
     {
@@ -148,6 +209,15 @@ Response Client::perform(const Request &request)
         {
             Response r = transport(request);
             r.bytes = r.body.size();
+            r.head.status = r.status;
+            r.head.content_length = static_cast<std::int64_t>(r.body.size());
+            r.head.total_length = r.head.content_length;
+            if (request.on_head && r.outcome == Outcome::ok && !request.on_head(r.head))
+            {
+                r.outcome = Outcome::cancelled;
+                r.body.clear();
+                return r;
+            }
             if (request.on_data && r.outcome == Outcome::ok)
             {
                 if (!request.on_data(reinterpret_cast<const std::uint8_t *>(r.body.data()),
@@ -176,7 +246,7 @@ Response Client::perform(const Request &request)
     curl_easy_reset(easy);
     platform::configure_curl(easy);
 
-    Transfer transfer{&request, &response};
+    Transfer transfer{&request, &response, easy};
     char error_buffer[CURL_ERROR_SIZE] = {};
     curl_slist *headers = nullptr;
     for (const std::string &h : request.headers)
@@ -200,6 +270,10 @@ Response Client::perform(const Request &request)
     curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, error_buffer);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, on_body);
     curl_easy_setopt(easy, CURLOPT_WRITEDATA, &transfer);
+    curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, on_header);
+    curl_easy_setopt(easy, CURLOPT_HEADERDATA, &transfer);
+    if (!request.range.empty())
+        curl_easy_setopt(easy, CURLOPT_RANGE, request.range.c_str());
     curl_easy_setopt(easy, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(easy, CURLOPT_XFERINFOFUNCTION, on_progress);
     curl_easy_setopt(easy, CURLOPT_XFERINFODATA, &transfer);
@@ -213,6 +287,8 @@ Response Client::perform(const Request &request)
     }
 
     const CURLcode code = curl_easy_perform(easy);
+    if (code == CURLE_OK && !transfer.head_sent && !announce_head(transfer))
+        transfer.sink_stopped = true;
     long status = 0;
     curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &status);
     char *content_type = nullptr;
@@ -225,6 +301,7 @@ Response Client::perform(const Request &request)
     // The handle keeps pointers to these until the next reset.
     curl_easy_setopt(easy, CURLOPT_ERRORBUFFER, nullptr);
     curl_easy_setopt(easy, CURLOPT_HTTPHEADER, nullptr);
+    curl_easy_setopt(easy, CURLOPT_RANGE, nullptr);
 
     response.status = status;
     response.curl_code = static_cast<int>(code);

@@ -185,6 +185,9 @@ ParseResult parse(std::string_view text, std::string_view base_url, const Limits
     double segment_duration = 0.0;
     bool next_discontinuity = false;
     bool saw_media_tags = false;
+    int current_map = -1, current_key = -1;
+    std::int64_t next_length = -1, next_offset = -1, last_range_end = 0;
+    std::string last_range_uri;
     std::uint64_t sequence = 0;
     std::size_t line_number = 0;
 
@@ -243,6 +246,7 @@ ParseResult parse(std::string_view text, std::string_view base_url, const Limits
                 r.name = attribute(attrs, "NAME");
                 r.language = attribute(attrs, "LANGUAGE");
                 r.is_default = upper(attribute(attrs, "DEFAULT")) == "YES";
+                r.autoselect = upper(attribute(attrs, "AUTOSELECT")) == "YES";
                 const std::string uri = attribute(attrs, "URI");
                 if (!uri.empty())
                 {
@@ -283,24 +287,65 @@ ParseResult parse(std::string_view text, std::string_view base_url, const Limits
                 if (pl.playlist_type == "VOD")
                     saw_media_tags = true;
             }
-            else if (tag == "#EXT-X-KEY" || tag == "#EXT-X-SESSION-KEY")
+            else if (tag == "#EXT-X-KEY")
             {
                 const auto attrs = parse_attributes(value);
                 const std::string method = upper(attribute(attrs, "METHOD"));
-                if (method != "NONE" && pl.unsupported.empty())
-                    pl.unsupported = "encrypted segments (METHOD=" + method +
-                                     "); encrypted and DRM-protected HLS is not supported";
+                const std::string format = attribute(attrs, "KEYFORMAT");
+                if (method == "NONE")
+                    current_key = -1;
+                else if (method == "AES-128" && (format.empty() || format == "identity"))
+                {
+                    Key key;
+                    if (const auto resolved = url::resolve(base_url, attribute(attrs, "URI")))
+                        key.uri = *resolved;
+                    std::string iv = attribute(attrs, "IV");
+                    if (iv.size() == 34 && (iv[1] == 'x' || iv[1] == 'X'))
+                    {
+                        key.has_iv = true;
+                        for (int i = 0; i < 16; ++i)
+                            key.iv[i] = static_cast<std::uint8_t>(
+                                std::strtoul(iv.substr(2 + 2 * i, 2).c_str(), nullptr, 16));
+                    }
+                    if (key.uri.empty() && pl.unsupported.empty())
+                        pl.unsupported = "an AES-128 key without a usable URI";
+                    pl.keys.push_back(std::move(key));
+                    current_key = static_cast<int>(pl.keys.size()) - 1;
+                }
+                else if (pl.unsupported.empty())
+                {
+                    pl.unsupported = "DRM-protected segments (METHOD=" + method +
+                                     (format.empty() ? std::string{} : ", KEYFORMAT=" + format) +
+                                     "); DRM-protected HLS is not supported";
+                }
             }
             else if (tag == "#EXT-X-MAP")
             {
-                if (pl.unsupported.empty())
-                    pl.unsupported =
-                        "fragmented MP4 (CMAF) segments; only MPEG-TS HLS is supported";
+                const auto attrs = parse_attributes(value);
+                Map map;
+                if (const auto resolved = url::resolve(base_url, attribute(attrs, "URI")))
+                    map.uri = *resolved;
+                const std::string range = attribute(attrs, "BYTERANGE");
+                if (!range.empty())
+                {
+                    const std::size_t at = range.find('@');
+                    map.length = static_cast<std::int64_t>(to_u64(range.substr(0, at)));
+                    map.offset = at == std::string::npos
+                                     ? 0
+                                     : static_cast<std::int64_t>(to_u64(range.substr(at + 1)));
+                }
+                if (map.uri.empty())
+                    return fail("EXT-X-MAP without a usable URI", line_number);
+                pl.maps.push_back(std::move(map));
+                current_map = static_cast<int>(pl.maps.size()) - 1;
             }
             else if (tag == "#EXT-X-BYTERANGE")
             {
-                if (pl.unsupported.empty())
-                    pl.unsupported = "byte-range segments are not supported";
+                const std::size_t at = value.find('@');
+                next_length = static_cast<std::int64_t>(to_u64(value.substr(0, at)));
+                next_offset = at == std::string_view::npos
+                                  ? -2 // continues after the previous range of the same URI
+                                  : static_cast<std::int64_t>(to_u64(value.substr(at + 1)));
             }
             continue;
         }
@@ -332,6 +377,18 @@ ParseResult parse(std::string_view text, std::string_view base_url, const Limits
         segment.start = pl.total_duration;
         segment.sequence = sequence++;
         segment.discontinuity = next_discontinuity;
+        segment.map = current_map;
+        segment.key = current_key;
+        if (next_length > 0)
+        {
+            segment.length = next_length;
+            segment.offset = next_offset >= 0                ? next_offset
+                             : last_range_uri == segment.uri ? last_range_end
+                                                             : 0;
+            last_range_end = segment.offset + segment.length;
+            last_range_uri = segment.uri;
+            next_length = next_offset = -1;
+        }
         pl.total_duration += segment_duration;
         pl.segments.push_back(std::move(segment));
         pending_segment = false;
@@ -355,6 +412,28 @@ ParseResult parse(std::string_view text, std::string_view base_url, const Limits
     return result;
 }
 
+const Rendition *audio_rendition(const Playlist &playlist, const Variant &variant)
+{
+    if (variant.audio_group.empty())
+        return nullptr;
+    const Rendition *chosen = nullptr;
+    int chosen_rank = -1;
+    for (const Rendition &r : playlist.renditions)
+    {
+        if (r.type != "AUDIO" || r.group != variant.audio_group)
+            continue;
+        if (r.uri.empty())
+            return nullptr; // a member without URI: the audio is in the variant itself
+        const int rank = r.is_default ? 2 : (r.autoselect ? 1 : 0);
+        if (rank > chosen_rank)
+        {
+            chosen = &r;
+            chosen_rank = rank;
+        }
+    }
+    return chosen;
+}
+
 int select_variant(const Playlist &playlist, const Selection &selection, std::string *why)
 {
     const auto set_why = [&](const char *reason)
@@ -367,20 +446,6 @@ int select_variant(const Playlist &playlist, const Selection &selection, std::st
         set_why("not a master playlist");
         return -1;
     }
-    const auto audio_separate = [&](const Variant &v)
-    {
-        if (v.audio_group.empty())
-            return false;
-        bool any = false, all_uri = true;
-        for (const Rendition &r : playlist.renditions)
-            if (r.type == "AUDIO" && r.group == v.audio_group)
-            {
-                any = true;
-                if (r.uri.empty())
-                    all_uri = false;
-            }
-        return any && all_uri;
-    };
     const auto within = [&](const Variant &v)
     {
         if (v.width > 0 && (v.width > selection.max_width || v.height > selection.max_height))
@@ -388,23 +453,22 @@ int select_variant(const Playlist &playlist, const Selection &selection, std::st
         return selection.max_bandwidth == 0 || v.bandwidth <= selection.max_bandwidth;
     };
     int best = -1;
-    int best_score_tier = -1;
+    int best_tier = -1;
     for (std::size_t i = 0; i < playlist.variants.size(); ++i)
     {
         const Variant &v = playlist.variants[i];
-        if (!v.video_codec_supported || !v.audio_codec_supported)
+        if (!v.video_codec_supported)
             continue;
-        // Tier: 3 muxed+within, 2 separate-audio+within, 1 muxed outside limits, 0 other.
-        const bool muxed = !audio_separate(v);
+        // Within limits beats outside; playable audio beats video only.
         const bool fits = within(v);
-        const int tier = fits ? (muxed ? 3 : 2) : (muxed ? 1 : 0);
-        if (best < 0 || tier > best_score_tier)
+        const int tier = (fits ? 2 : 0) + (v.audio_codec_supported ? 1 : 0);
+        if (best < 0 || tier > best_tier)
         {
             best = static_cast<int>(i);
-            best_score_tier = tier;
+            best_tier = tier;
             continue;
         }
-        if (tier < best_score_tier)
+        if (tier < best_tier)
             continue;
         const Variant &b = playlist.variants[static_cast<std::size_t>(best)];
         // Within limits prefer the highest bandwidth; outside limits the lowest.
@@ -415,9 +479,9 @@ int select_variant(const Playlist &playlist, const Selection &selection, std::st
             best = static_cast<int>(i);
     }
     if (best < 0)
-        set_why("no variant uses a supported codec (H.264/HEVC video with AAC/MP3/AC-3 audio)");
-    else if (best_score_tier == 2 || best_score_tier == 0)
-        set_why("audio is only available as a separate rendition; playing video only");
+        set_why("no variant uses a supported video codec (H.264 or HEVC)");
+    else if ((best_tier & 1) == 0)
+        set_why("the stream's audio codec is not supported; playing video only");
     return best;
 }
 

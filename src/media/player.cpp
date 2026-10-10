@@ -4,12 +4,16 @@
 #include "media/player.hpp"
 
 #include "core/url.hpp"
+#include "media/byte_source.hpp"
 #include "media/hls.hpp"
+#include "media/hls_source.hpp"
 #include "media/remux.hpp"
 #include "platform/platform.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <string_view>
 #include <vector>
 
 namespace akeno::media
@@ -17,7 +21,7 @@ namespace akeno::media
 namespace
 {
 constexpr std::size_t kPlaylistBytes = 4u * 1024u * 1024u;
-constexpr std::size_t kSegmentBytes = 48u * 1024u * 1024u;
+constexpr std::size_t kSniffBytes = 4096;
 constexpr std::size_t kPushChunk = 188u * 348u; // ~64 KiB of whole TS packets
 constexpr std::size_t kWorkerStack = 1024u * 1024u;
 
@@ -165,7 +169,49 @@ const char *audio_name(std::uint32_t stream_type)
         return "other";
     }
 }
+// Shown until the source reports its real container.
+const char *container_label(SourceKind kind)
+{
+    switch (kind)
+    {
+    case SourceKind::hls:
+        return "HLS";
+    case SourceKind::http_ts:
+        return "MPEG-TS";
+    case SourceKind::local_file:
+    case SourceKind::http_file:
+        return "File";
+    case SourceKind::automatic:
+        break;
+    }
+    return "Detecting";
+}
+
+bool starts_with_text(const std::string &bytes, std::string_view prefix)
+{
+    std::size_t i = 0;
+    if (bytes.compare(0, 3, "\xEF\xBB\xBF") == 0)
+        i = 3; // UTF-8 byte order mark
+    while (i < bytes.size() &&
+           (bytes[i] == ' ' || bytes[i] == '\r' || bytes[i] == '\n' || bytes[i] == '\t'))
+        ++i;
+    return bytes.compare(i, prefix.size(), prefix) == 0;
+}
 } // namespace
+
+SourceKind sniff_source(std::string_view content_type, const std::string &first_bytes)
+{
+    std::string type(content_type);
+    for (char &c : type)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (starts_with_text(first_bytes, "#EXTM3U") || type.find("mpegurl") != std::string::npos)
+        return SourceKind::hls;
+    const auto byte = [&](std::size_t i)
+    { return i < first_bytes.size() ? static_cast<unsigned char>(first_bytes[i]) : 0u; };
+    if (byte(0) == 0x47 && (first_bytes.size() <= 188 || byte(188) == 0x47))
+        return SourceKind::http_ts;
+    return SourceKind::http_file;
+}
 
 const char *state_name(PlayerState state) noexcept
 {
@@ -242,7 +288,7 @@ void Player::play(const PlayRequest &request)
         status_.state = PlayerState::opening;
         status_.title = request.title;
         status_.source_url = url::redact(request.url);
-        status_.container = request.kind == SourceKind::local_file ? "File" : "MPEG-TS";
+        status_.container = container_label(request.kind);
     }
     if (!platform::start_thread(session_->thread, thread_entry, this, kWorkerStack, "akeno-player"))
     {
@@ -400,7 +446,82 @@ void Player::run()
     net::Client http;
     hls::Playlist media;
     std::string media_url;
+    hls::Playlist audio_media; // separate audio rendition, when the variant has one
+    std::string audio_url;
+    bool hls_via_ffmpeg = false;
     double start = std::max(0.0, s.request.start_seconds);
+
+    // Network counters for the diagnostics screen.
+    const SegmentObserver segment_observer = [this](const SegmentStats &stats)
+    {
+        std::lock_guard<std::mutex> guard(status_lock_);
+        if (stats.segment_done)
+        {
+            ++status_.segments_loaded;
+            return;
+        }
+        status_.last_http_status = stats.status;
+        status_.bytes_downloaded += stats.bytes;
+        if (stats.status >= 200 && stats.status < 300 && stats.elapsed_ms > 0)
+            status_.throughput_kbps =
+                static_cast<std::uint32_t>(stats.bytes * 8u / stats.elapsed_ms);
+        if (stats.retry)
+            ++status_.retries;
+    };
+    const std::uint64_t transfer_started = platform::monotonic_us();
+    const TransferObserver transfer_observer =
+        [this, transfer_started](long code, std::size_t bytes)
+    {
+        std::lock_guard<std::mutex> guard(status_lock_);
+        status_.last_http_status = code;
+        status_.bytes_downloaded += bytes;
+        const std::uint64_t ms = (platform::monotonic_us() - transfer_started) / 1000u;
+        if (ms > 0)
+            status_.throughput_kbps =
+                static_cast<std::uint32_t>(status_.bytes_downloaded * 8u / ms);
+    };
+
+    // A web address of unknown kind: its first bytes decide.
+    if (s.request.kind == SourceKind::automatic)
+    {
+        std::string first;
+        long code = 0;
+        net::Request r;
+        r.url = s.request.url;
+        r.range = "0-" + std::to_string(kSniffBytes - 1);
+        r.cancel = s.cancel;
+        r.on_head = [&](const net::Head &head)
+        {
+            code = head.status;
+            return head.status >= 200 && head.status < 300;
+        };
+        r.on_data = [&](const std::uint8_t *d, std::size_t n)
+        {
+            first.append(reinterpret_cast<const char *>(d),
+                         std::min(n, kSniffBytes - first.size()));
+            return first.size() < kSniffBytes;
+        };
+        const net::Response response = http.perform(r);
+        {
+            std::lock_guard<std::mutex> guard(status_lock_);
+            status_.last_http_status = code;
+        }
+        if (s.stop.load())
+        {
+            s.finished.store(true);
+            return;
+        }
+        if (code < 200 || code > 299 || (first.empty() && !response.ok()))
+        {
+            set_error("Could not open the address: " +
+                      (code >= 300 ? "HTTP " + std::to_string(code) : response.describe()));
+            s.finished.store(true);
+            return;
+        }
+        s.request.kind = sniff_source(response.content_type, first);
+        std::lock_guard<std::mutex> guard(status_lock_);
+        status_.container = container_label(s.request.kind);
+    }
 
     // Resolve the HLS playlist once per session.
     if (s.request.kind == SourceKind::hls)
@@ -450,11 +571,12 @@ void Player::run()
         media_url = s.request.url;
         if (parsed.playlist.kind == hls::Kind::master)
         {
+            const hls::Playlist master = std::move(parsed.playlist);
             hls::Selection selection;
             selection.max_height = s.request.max_height;
             selection.max_width = s.request.max_height * 16 / 9 + 16;
             std::string why;
-            const int index = hls::select_variant(parsed.playlist, selection, &why);
+            const int index = hls::select_variant(master, selection, &why);
             if (index < 0)
             {
                 set_error("No playable stream: " + why);
@@ -462,15 +584,15 @@ void Player::run()
                 return;
             }
             add_notice(why);
-            const hls::Variant &variant = parsed.playlist.variants[static_cast<std::size_t>(index)];
+            const hls::Variant &variant = master.variants[static_cast<std::size_t>(index)];
             {
                 std::lock_guard<std::mutex> guard(status_lock_);
                 status_.variant = describe_variant(variant);
-                status_.variant_count = static_cast<int>(parsed.playlist.variants.size());
+                status_.variant_count = static_cast<int>(master.variants.size());
             }
             media_url = variant.uri;
-            if (!parsed.playlist.unsupported.empty())
-                add_notice(parsed.playlist.unsupported);
+            if (!master.unsupported.empty())
+                add_notice(master.unsupported);
             if (!fetch(media_url, &body, &error))
             {
                 set_error("Could not load the stream playlist: " + error);
@@ -485,6 +607,29 @@ void Player::run()
                 s.finished.store(true);
                 return;
             }
+            // Audio in its own rendition (EXT-X-MEDIA TYPE=AUDIO with a URI).
+            if (const hls::Rendition *rendition = hls::audio_rendition(master, variant))
+            {
+                std::string audio_body;
+                auto audio = fetch(rendition->uri, &audio_body, &error)
+                                 ? hls::parse(audio_body, rendition->uri)
+                                 : hls::ParseResult{};
+                if (audio.ok && audio.playlist.kind == hls::Kind::media &&
+                    audio.playlist.unsupported.empty() && !audio.playlist.segments.empty())
+                {
+                    audio_url = rendition->uri;
+                    audio_media = std::move(audio.playlist);
+                }
+                else if (!s.stop.load())
+                {
+                    const std::string reason =
+                        !audio.ok ? (audio.error.empty() ? error : audio.error)
+                        : !audio.playlist.unsupported.empty() ? audio.playlist.unsupported
+                                                              : std::string{"not a media playlist"};
+                    add_notice("the audio track could not be loaded (" + reason +
+                               "); playing video only");
+                }
+            }
         }
         media = std::move(parsed.playlist);
         if (!media.unsupported.empty())
@@ -493,6 +638,13 @@ void Player::run()
             s.finished.store(true);
             return;
         }
+        if (media.segments.empty() && !media.is_live())
+        {
+            set_error("This stream cannot be played: the playlist lists no segments");
+            s.finished.store(true);
+            return;
+        }
+        hls_via_ffmpeg = media.fragmented_mp4() || !audio_url.empty();
         s.live = media.is_live();
         s.duration = s.live ? 0.0 : media.total_duration;
         s.seekable = !s.live && media.total_duration > 0.0;
@@ -501,6 +653,7 @@ void Player::run()
         status_.duration = s.duration;
         status_.seekable = s.seekable;
         status_.segments_total = static_cast<int>(media.segments.size());
+        status_.container = media.fragmented_mp4() ? "HLS (fragmented MP4)" : "HLS (MPEG-TS)";
     }
 
     // One attempt per start position; a seek starts a new attempt.
@@ -568,36 +721,55 @@ void Player::run()
                 return true;
             };
 
-            if (s.request.kind == SourceKind::local_file)
+            // Remuxed sources (files, web files, fMP4/separate-audio HLS) run
+            // through FFmpeg; update_base takes the first video time as the
+            // position origin (after a seek in a file).
+            const auto run_remux = [&](Remuxer &remux, bool update_base)
+            {
+                add_notice(remux.info().notice);
+                const int outcome =
+                    remux.run([&](const std::uint8_t *d, std::size_t n) { return push(d, n); },
+                              s.stop_or_seek, &failure, update_base ? &s.base_seconds : nullptr);
+                RunResult r = outcome == 1   ? RunResult::finished
+                              : outcome == 0 ? RunResult::stopped
+                                             : RunResult::failed;
+                if (outcome != -1 && !failure.empty() && !interrupted())
+                    r = RunResult::failed;
+                return r;
+            };
+            const auto take_file_info = [&](const Remuxer &remux)
+            {
+                const RemuxInfo &info = remux.info();
+                s.duration = info.duration;
+                s.seekable = info.duration > 0.0 && remux.seekable();
+                std::lock_guard<std::mutex> guard(status_lock_);
+                status_.duration = s.duration;
+                status_.seekable = s.seekable;
+                status_.container = info.container;
+            };
+
+            if (s.request.kind == SourceKind::local_file || s.request.kind == SourceKind::http_file)
             {
                 Remuxer remux;
-                if (!remux.open(s.request.url, &failure))
+                std::unique_ptr<ByteSource> input =
+                    s.request.kind == SourceKind::local_file
+                        ? open_file_source(s.request.url, &failure)
+                        : open_http_source(s.request.url, s.stop_or_seek, transfer_observer,
+                                           &failure);
+                if (!input || !remux.open(std::move(input), nullptr, &failure))
                 {
-                    result = RunResult::failed;
+                    result = interrupted() ? RunResult::stopped : RunResult::failed;
                 }
                 else
                 {
-                    const RemuxInfo &info = remux.info();
-                    s.duration = info.duration;
-                    s.seekable = info.duration > 0.0;
-                    {
-                        std::lock_guard<std::mutex> guard(status_lock_);
-                        status_.duration = s.duration;
-                        status_.seekable = s.seekable;
-                        status_.container = info.container;
-                    }
-                    add_notice(info.notice);
+                    take_file_info(remux);
                     if (start > 0.0 && !remux.seek(start))
+                    {
+                        add_notice("this file cannot be positioned; playing from the start");
                         start = 0.0;
+                    }
                     s.base_seconds.store(start);
-                    const int outcome =
-                        remux.run([&](const std::uint8_t *d, std::size_t n) { return push(d, n); },
-                                  s.stop_or_seek, &failure, &s.base_seconds);
-                    result = outcome == 1   ? RunResult::finished
-                             : outcome == 0 ? RunResult::stopped
-                                            : RunResult::failed;
-                    if (outcome != -1 && !failure.empty() && !interrupted())
-                        result = RunResult::failed;
+                    result = run_remux(remux, true);
                 }
             }
             else if (s.request.kind == SourceKind::http_ts)
@@ -626,121 +798,66 @@ void Player::run()
                         failure = "Download failed: " + response.describe();
                 }
             }
+            else if (hls_via_ffmpeg)
+            {
+                // Fragmented MP4 and/or a separate audio rendition: FFmpeg
+                // demuxes the renditions and remuxes them into one TS stream.
+                double base = 0.0;
+                auto video = open_hls_source(media_url, media, start, s.stop_or_seek, s.cancel,
+                                             segment_observer, config_.live_edge_segments,
+                                             config_.segment_retries, &base);
+                std::unique_ptr<ByteSource> audio;
+                if (!audio_url.empty())
+                    audio = open_hls_source(audio_url, audio_media, start, s.stop_or_seek, s.cancel,
+                                            segment_observer, config_.live_edge_segments,
+                                            config_.segment_retries, nullptr);
+                s.base_seconds.store(base);
+                Remuxer remux;
+                if (!remux.open(std::move(video), std::move(audio), &failure))
+                    result = interrupted() ? RunResult::stopped : RunResult::failed;
+                else
+                    result = run_remux(remux, false);
+            }
             else
             {
-                // HLS segments.
-                std::size_t index = 0;
-                if (s.live)
-                    index =
-                        media.segments.size() > static_cast<std::size_t>(config_.live_edge_segments)
-                            ? media.segments.size() -
-                                  static_cast<std::size_t>(config_.live_edge_segments)
-                            : 0;
-                else
-                    index = hls::segment_at(media, start);
-                s.base_seconds.store(
-                    s.live || media.segments.empty() ? 0.0 : media.segments[index].start);
-                std::uint64_t next_sequence =
-                    index < media.segments.size() ? media.segments[index].sequence : 0;
-                std::uint64_t last_reload_us = platform::monotonic_us();
-                int stale_reloads = 0;
+                // MPEG-TS segments straight into the native demuxer.
+                SegmentCursor cursor(http, media_url, media, s.stop_or_seek,
+                                     config_.live_edge_segments);
+                SegmentFetcher fetcher(http, s.stop_or_seek, s.cancel, segment_observer,
+                                       config_.segment_retries);
+                s.base_seconds.store(cursor.start_at(start));
+                bool first_segment = true;
                 result = RunResult::finished;
                 for (;;)
                 {
-                    if (interrupted())
+                    SegmentRef ref;
+                    std::string why;
+                    const SegmentCursor::Next next = cursor.next(&ref, &why);
+                    if (next == SegmentCursor::Next::end)
+                        break;
+                    if (next == SegmentCursor::Next::stopped)
                     {
                         result = RunResult::stopped;
                         break;
                     }
-                    // Find the next segment by sequence number (live playlists slide).
-                    const auto it = std::find_if(media.segments.begin(), media.segments.end(),
-                                                 [&](const hls::Segment &seg)
-                                                 { return seg.sequence >= next_sequence; });
-                    if (it == media.segments.end())
+                    if (next == SegmentCursor::Next::failed)
                     {
-                        if (!s.live)
-                            break; // VOD complete
-                        // Live: wait about half a target duration, then reload.
-                        const std::uint64_t wait_us = static_cast<std::uint64_t>(
-                            std::max(1.0, media.target_duration / 2.0) * 1.0e6);
-                        while (!interrupted() &&
-                               platform::monotonic_us() - last_reload_us < wait_us)
-                            platform::sleep_us(50000);
-                        if (interrupted())
-                            continue;
-                        net::Request r;
-                        r.url = media_url;
-                        r.max_bytes = kPlaylistBytes;
-                        r.cancel = s.cancel;
-                        const net::Response reload = http.perform(r);
-                        last_reload_us = platform::monotonic_us();
-                        auto parsed =
-                            reload.ok() ? hls::parse(reload.body, media_url) : hls::ParseResult{};
-                        if (parsed.ok && parsed.playlist.kind == hls::Kind::media)
-                        {
-                            const bool grew =
-                                !parsed.playlist.segments.empty() &&
-                                parsed.playlist.segments.back().sequence >= next_sequence;
-                            stale_reloads = grew ? 0 : stale_reloads + 1;
-                            media = std::move(parsed.playlist);
-                            if (!media.is_live())
-                                s.live = false; // the event ended (ENDLIST appeared)
-                        }
-                        else
-                        {
-                            ++stale_reloads;
-                        }
-                        if (stale_reloads > 12)
-                        {
-                            failure = "The live stream stopped updating";
-                            result = RunResult::failed;
-                            break;
-                        }
-                        continue;
+                        failure = why;
+                        result = RunResult::failed;
+                        break;
                     }
-                    const hls::Segment segment = *it;
-                    if (segment.sequence > next_sequence && s.live)
+                    if (ref.jumped)
                         (void)iptv_stream_discontinuity(&stream); // fell behind the live window
                     std::string body;
-                    bool downloaded = false;
-                    net::Response response;
-                    for (int attempt = 0; attempt <= config_.segment_retries && !interrupted();
-                         ++attempt)
-                    {
-                        net::Request r;
-                        r.url = segment.uri;
-                        r.max_bytes = kSegmentBytes;
-                        r.cancel = s.cancel;
-                        response = http.perform(r);
-                        {
-                            std::lock_guard<std::mutex> guard(status_lock_);
-                            status_.last_http_status = response.status;
-                            status_.bytes_downloaded += response.bytes;
-                            if (response.ok() && response.elapsed_ms > 0)
-                                status_.throughput_kbps = static_cast<std::uint32_t>(
-                                    response.bytes * 8u / response.elapsed_ms);
-                            if (attempt > 0)
-                                ++status_.retries;
-                        }
-                        if (response.ok())
-                        {
-                            body = std::move(response.body);
-                            downloaded = true;
-                            break;
-                        }
-                        if (response.outcome == net::Outcome::cancelled)
-                            break;
-                        platform::sleep_us(500000u * static_cast<unsigned>(attempt + 1));
-                    }
-                    if (!downloaded)
+                    if (!fetcher.fetch(ref, &body, &why))
                     {
                         if (interrupted())
-                        {
                             result = RunResult::stopped;
-                            break;
+                        else
+                        {
+                            failure = why;
+                            result = RunResult::failed;
                         }
-                        failure = "Segment download failed: " + response.describe();
-                        result = RunResult::failed;
                         break;
                     }
                     if (body.size() < 188 || static_cast<unsigned char>(body[0]) != 0x47)
@@ -752,17 +869,14 @@ void Player::run()
                         result = RunResult::failed;
                         break;
                     }
-                    if (segment.discontinuity &&
-                        segment.sequence != media.segments.front().sequence)
+                    if (ref.segment.discontinuity && !first_segment)
                         (void)iptv_stream_discontinuity(&stream);
+                    first_segment = false;
                     if (!push(reinterpret_cast<const std::uint8_t *>(body.data()), body.size()))
                     {
                         result = interrupted() ? RunResult::stopped : RunResult::failed;
                         break;
                     }
-                    next_sequence = segment.sequence + 1;
-                    std::lock_guard<std::mutex> guard(status_lock_);
-                    ++status_.segments_loaded;
                 }
             }
         }
