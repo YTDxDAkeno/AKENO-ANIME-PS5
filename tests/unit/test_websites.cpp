@@ -412,27 +412,29 @@ TEST(PublicWebsiteVideo, FindsOnlyExplicitDirectMedia)
     EXPECT_EQ(videos[0].url, "https://media.example.org/videos/movie/episode.mp4?quality=1080&x=1");
     EXPECT_EQ(videos[1].url, "https://media.example.org/stream/playlist");
     EXPECT_EQ(videos[2].url, "https://cdn.example.org/movie.m3u8");
-    EXPECT_TRUE(web::public_videos_from_html(
-        "<script>const media='https://a.example/hidden.mp4'</script>",
-        "https://a.example/").empty());
-    EXPECT_TRUE(web::public_videos_from_html(
-        "<video src='file:///etc/passwd'></video>", "https://a.example/").empty());
+    EXPECT_TRUE(
+        web::public_videos_from_html("<script>const media='https://a.example/hidden.mp4'</script>",
+                                     "https://a.example/")
+            .empty());
+    EXPECT_TRUE(web::public_videos_from_html("<video src='file:///etc/passwd'></video>",
+                                             "https://a.example/")
+                    .empty());
 }
 
 TEST(PublicWebsiteVideo, CanFindPublishedUrlsWithMockedNetwork)
 {
-    net::set_test_transport([](const net::Request &request)
-    {
-        net::Response reply;
-        reply.outcome = net::Outcome::ok;
-        reply.status = 200;
-        reply.final_url = request.url;
-        reply.content_type = "text/html; charset=utf-8";
-        reply.body = "<html><video src='/clip.mp4'></video></html>";
-        return reply;
-    });
-    const auto found = web::probe_public_videos("https://a.example/view",
-                                                 net::make_cancel_flag());
+    net::set_test_transport(
+        [](const net::Request &request)
+        {
+            net::Response reply;
+            reply.outcome = net::Outcome::ok;
+            reply.status = 200;
+            reply.final_url = request.url;
+            reply.content_type = "text/html; charset=utf-8";
+            reply.body = "<html><video src='/clip.mp4'></video></html>";
+            return reply;
+        });
+    const auto found = web::probe_public_videos("https://a.example/view", net::make_cancel_flag());
     ASSERT_EQ(found.videos.size(), 1u);
     EXPECT_EQ(found.videos[0].url, "https://a.example/clip.mp4");
     net::set_test_transport({});

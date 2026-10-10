@@ -386,44 +386,51 @@ class WebsitesScreen final : public BrowseScreen
         auto alive = alive_;
         App &app = app_;
         app_.toast("Checking publicly declared video links...", th::kInfo);
-        app_.jobs().run([address, alive, &app]
-        {
-            web::PublicVideos result = web::probe_public_videos(address, net::make_cancel_flag());
-            app.jobs().post([result = std::move(result), alive, &app]
+        app_.jobs().run(
+            [address, alive, &app]
             {
-                if (!*alive)
-                    return;
-                if (result.videos.empty())
-                {
-                    app.push(make_confirm_screen(app, "Native video not found",
-                        result.message + "\n\nA website is not itself a direct video address. "
-                        "Use Sources for a DRM-free MP4/HLS link you are authorized to play.",
-                        "", nullptr));
-                    return;
-                }
-                std::vector<MenuOption> entries;
-                for (const auto &video : result.videos)
-                {
-                    entries.push_back({"Play in AKENO - " + video.source,
-                        url::redact(video.url),
-                        [&app, url = video.url] { app.play_link(url); }});
-                }
-                app.push(make_menu_screen(app, "Native playback candidates",
-                    "Only explicitly published media. Not an authentication or DRM bypass.",
-                    std::move(entries)));
+                web::PublicVideos result =
+                    web::probe_public_videos(address, net::make_cancel_flag());
+                app.jobs().post(
+                    [result = std::move(result), alive, &app]
+                    {
+                        if (!*alive)
+                            return;
+                        if (result.videos.empty())
+                        {
+                            app.push(make_confirm_screen(
+                                app, "Native video not found",
+                                result.message +
+                                    "\n\nA website is not itself a direct video address. "
+                                    "Use Sources for a DRM-free MP4/HLS link you are authorized to "
+                                    "play.",
+                                "", nullptr));
+                            return;
+                        }
+                        std::vector<MenuOption> entries;
+                        for (const auto &video : result.videos)
+                        {
+                            entries.push_back({"Play in AKENO - " + video.source,
+                                               url::redact(video.url),
+                                               [&app, url = video.url] { app.play_link(url); }});
+                        }
+                        app.push(make_menu_screen(
+                            app, "Native playback candidates",
+                            "Only explicitly published media. Not an authentication or DRM bypass.",
+                            std::move(entries)));
+                    });
             });
-        });
     }
 
     void ask_scan_video()
     {
         auto alive = alive_;
         app_.open_keyboard("Web page containing public video", "https://", 2048, false,
-            [this, alive](bool ok, const std::string &address)
-            {
-                if (ok && *alive && !address.empty())
-                    scan_public_video(address);
-            });
+                           [this, alive](bool ok, const std::string &address)
+                           {
+                               if (ok && *alive && !address.empty())
+                                   scan_public_video(address);
+                           });
     }
 
     void site_menu(const std::string &id)
@@ -541,8 +548,7 @@ class WebsitesScreen final : public BrowseScreen
                                    with_notice([this, url, title] { open_url(url, title); });
                            }});
         options.push_back({"Find public videos (native)",
-                           "Only media publicly declared in the HTML page",
-                           [this, alive, url]
+                           "Only media publicly declared in the HTML page", [this, alive, url]
                            {
                                if (*alive)
                                    scan_public_video(url);

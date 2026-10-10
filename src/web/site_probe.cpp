@@ -338,8 +338,7 @@ bool video_media_type(std::string_view type)
 }
 } // namespace
 
-std::vector<PublicVideo> public_videos_from_html(std::string_view html,
-                                                  const std::string &page_url)
+std::vector<PublicVideo> public_videos_from_html(std::string_view html, const std::string &page_url)
 {
     std::vector<PublicVideo> out;
     if (!url::parse(page_url))
@@ -355,8 +354,7 @@ std::vector<PublicVideo> public_videos_from_html(std::string_view html,
         const std::size_t begin = at + 1;
         std::size_t tag_end = begin;
         while (tag_end < low.size() &&
-               (std::isalnum(static_cast<unsigned char>(low[tag_end])) ||
-                low[tag_end] == '-'))
+               (std::isalnum(static_cast<unsigned char>(low[tag_end])) || low[tag_end] == '-'))
             ++tag_end;
         const std::string tag = low.substr(begin, tag_end - begin);
         at = tag_end;
@@ -398,15 +396,14 @@ std::vector<PublicVideo> public_videos_from_html(std::string_view html,
         const auto address = check_address(*resolved);
         if (!address.ok)
             continue;
-        if (tag == "meta" && !media_extension(address.url) &&
-            !video_media_type(type))
+        if (tag == "meta" && !media_extension(address.url) && !video_media_type(type))
             continue;
-        const bool duplicate = std::any_of(out.begin(), out.end(),
-                                           [&](const PublicVideo &v) { return v.url == address.url; });
+        const bool duplicate = std::any_of(out.begin(), out.end(), [&](const PublicVideo &v)
+                                           { return v.url == address.url; });
         if (!duplicate)
-            out.push_back({address.url, tag == "video" ? "HTML video" :
-                                                     tag == "source" ? "HTML source" :
-                                                                       "Public video metadata"});
+            out.push_back({address.url, tag == "video"    ? "HTML video"
+                                        : tag == "source" ? "HTML source"
+                                                          : "Public video metadata"});
     }
     return out;
 }
@@ -432,15 +429,16 @@ PublicVideos probe_public_videos(const std::string &page_url, const net::CancelF
     result.http_status = response.status;
     if (!response.ok())
     {
-        result.message = "Could not read public page metadata: " +
-                         describe_failure(response, nullptr);
+        result.message =
+            "Could not read public page metadata: " + describe_failure(response, nullptr);
         return result;
     }
     if (!response.content_type.empty() &&
         lower(response.content_type).find("text/html") == std::string::npos &&
         lower(response.content_type).find("application/xhtml+xml") == std::string::npos)
     {
-        result.message = "The address did not return an HTML page. Direct media URLs belong in Sources.";
+        result.message =
+            "The address did not return an HTML page. Direct media URLs belong in Sources.";
         return result;
     }
     result.videos = public_videos_from_html(
@@ -448,8 +446,9 @@ PublicVideos probe_public_videos(const std::string &page_url, const net::CancelF
     result.message = result.videos.empty()
                          ? "No publicly declared playable media was found. Dynamic players, "
                            "account-only media and DRM streams cannot be imported."
-                         : std::to_string(result.videos.size()) + " public media address(es) found. "
-                           "Playback still depends on the source and its permissions.";
+                         : std::to_string(result.videos.size()) +
+                               " public media address(es) found. "
+                               "Playback still depends on the source and its permissions.";
     return result;
 }
 
