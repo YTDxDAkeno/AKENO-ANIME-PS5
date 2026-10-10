@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Open Anime Fixture</title>
+<link rel="stylesheet" href="/style.css">
+<link REL="next" href="/page-2.html">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {"@type": "WebSite", "name": "Open Anime Fixture", "url": "/",
+     "potentialAction": {"@type": "SearchAction",
+       "target": {"@type": "EntryPoint", "urlTemplate": "/search.html?q={search_term_string}"},
+       "query-input": "required name=search_term_string"}},
+    {"@type": "Organization", "name": "Open Anime Fixture Studio"},
+    {"@type": "ItemList", "name": "All series", "itemListElement": [
+      {"@type": "ListItem", "position": 1, "item": {"@type": "TVSeries", "name": "The Signal",
+        "url": "/anime/the-signal.html", "image": "/art/signal.jpg", "startDate": "2026-01-05",
+        "genre": ["Sci-Fi", "Drama"], "description": "A fictional test series."}},
+      {"@type": "ListItem", "position": 2, "item": {"@type": "Movie", "name": "Night Train",
+        "url": "/films/night-train.html", "datePublished": "2025-11-02"}},
+      {"@type": "ListItem", "position": 3, "item": {"@type": "TVSeries", "name": "Locked Away",
+        "url": "/anime/locked-away.html"}},
+      {"@type": "ListItem", "position": 4, "name": "Web Player Only",
+        "url": "/anime/web-player-only.html"},
+      {"@type": "ListItem", "position": 5, "item": {"@type": "TVSeries", "name": "Elsewhere",
+        "url": "https://other-site.example/anime/elsewhere"}}
+    ]}
+  ]
+}
+</script>
+<script type="application/ld+json">
+<!--
+{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": []}
+-->
+</script>
+<script>var notStructuredData = {"@type": "TVSeries", "name": "Hidden in a script"};</script>
+</head>
+<body><h1>Open Anime Fixture</h1><a rel="next" href="/page-2.html">More</a></body>
+</html>

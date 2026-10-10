@@ -178,6 +178,10 @@ void describe(const std::vector<Series> &series, ProviderReport &r)
             }
         }
         if (r.preview.size() < 5)
+            r.preview_art.push_back(s.poster);
+        if (r.preview.size() < 5 && s.details_pending)
+            r.preview.push_back(s.year ? s.title + " (" + std::to_string(s.year) + ")" : s.title);
+        else if (r.preview.size() < 5)
             r.preview.push_back(s.title + " - " + std::to_string(s.seasons.size()) +
                                 (s.seasons.size() == 1 ? " season, " : " seasons, ") +
                                 std::to_string(episodes) +
@@ -461,9 +465,21 @@ ProviderState Registry::load_provider(const ProviderConfig &config, const Provid
         return state;
     }
     state.series = std::move(loaded.series);
+    state.next_page = std::move(loaded.next_page);
+    state.total = loaded.total;
     state.checked = probe_episodes(*provider, state.series, cancel, max_probes, nullptr);
     state.loaded = true;
     return state;
+}
+
+int Registry::check_series(const ProviderConfig &config, const ProviderContext &context,
+                           Series &series, const net::CancelFlag &cancel, int max_probes)
+{
+    const auto provider = make_provider(config, context);
+    std::vector<Series> one{std::move(series)};
+    const int checked = probe_episodes(*provider, one, cancel, max_probes, nullptr);
+    series = std::move(one.front());
+    return checked;
 }
 
 void Registry::install(ProviderState state)
@@ -490,6 +506,22 @@ void Registry::install(ProviderState state)
                                         e.availability_detail = before.availability_detail;
                                     }
                                 }
+            // A website provider's catalogue page lists entries again: the
+            // seasons and episodes already loaded stay, and so do entries
+            // found on later pages or by search.
+            if (state.config.type == ProviderType::website && state.loaded)
+            {
+                for (Series &series : state.series)
+                    if (series.details_pending)
+                        if (const Series *old = find_series(s.config.id, series.id);
+                            old && !old->details_pending)
+                            series = *old;
+                for (const Series &old : s.series)
+                    if (std::none_of(state.series.begin(), state.series.end(),
+                                     [&old](const Series &x) { return x.id == old.id; }) &&
+                        state.series.size() < kMaxCatalogSeries)
+                        state.series.push_back(old);
+            }
             s = std::move(state);
             return;
         }
@@ -507,6 +539,40 @@ void Registry::install(ProviderState state)
                          };
                          return index(a.config.id) < index(b.config.id);
                      });
+}
+
+void Registry::merge_series(std::string_view provider, std::vector<Series> series,
+                            const std::string *next_page)
+{
+    for (ProviderState &s : states_)
+        if (s.config.id == provider)
+        {
+            for (Series &x : series)
+                if (std::none_of(s.series.begin(), s.series.end(),
+                                 [&x](const Series &old) { return old.id == x.id; }) &&
+                    s.series.size() < kMaxCatalogSeries)
+                    s.series.push_back(std::move(x));
+            if (next_page)
+                s.next_page = *next_page;
+            return;
+        }
+}
+
+void Registry::install_series(std::string_view provider, Series series)
+{
+    for (ProviderState &s : states_)
+        if (s.config.id == provider)
+        {
+            for (Series &old : s.series)
+                if (old.id == series.id)
+                {
+                    old = std::move(series);
+                    return;
+                }
+            if (s.series.size() < kMaxCatalogSeries)
+                s.series.push_back(std::move(series));
+            return;
+        }
 }
 
 const ProviderState *Registry::state(std::string_view id) const
@@ -731,6 +797,93 @@ ProviderReport report_for(const ProviderState &state, SourceClass base)
     return r;
 }
 
+namespace
+{
+// A website an adapter recognised: its first catalogue page, the seasons and
+// episodes of up to three entries, and up to max_probes of their videos.
+ProviderReport check_website(const SiteDetection &site, const std::string &entered,
+                             const std::string &name, const ProviderContext &context,
+                             const net::CancelFlag &cancel, ProviderConfig *config, int max_probes)
+{
+    const WebsiteAdapter *adapter = find_website_adapter(site.adapter);
+    ProviderConfig c;
+    c.type = ProviderType::website;
+    c.adapter = site.adapter;
+    c.adapter_version = adapter ? adapter->version() : 1;
+    c.settings = site.settings;
+    c.address = site.homepage;
+    c.original_url = entered;
+    c.name = !name.empty() ? name : site.site_name;
+    if (c.name.empty())
+        if (const auto u = url::parse(site.homepage))
+            c.name = u->host;
+    c.id = kWebsiteIdPrefix + slug(c.name);
+    ProviderState state = Registry::load_provider(c, context, cancel, 0);
+    int opened = 0;
+    for (Series &s : state.series)
+    {
+        if (opened >= 3 || (cancel && cancel->load()))
+            break;
+        if (!s.details_pending)
+            continue;
+        ++opened;
+        SiteSeries full = load_website_series(c, s, context, cancel);
+        if (!full.ok)
+            continue;
+        s = std::move(full.series);
+        bool media = false;
+        for (const Season &season : s.seasons)
+            for (const Episode &e : season.episodes)
+                media = media || e.media || !e.source_ref.empty();
+        if (media)
+            break;
+    }
+    ProviderReport counts;
+    if (state.loaded)
+    {
+        const auto provider = make_provider(c, context);
+        probe_episodes(*provider, state.series, cancel, max_probes, &counts);
+    }
+    ProviderReport report = report_for(state, SourceClass::native_provider);
+    report.format = site.format;
+    report.adapter = site.adapter;
+    report.adapter_label = adapter ? adapter->label() : site.adapter;
+    report.evidence = site.evidence;
+    report.total_series = state.total;
+    report.name = c.name;
+    SiteCapabilities capabilities = site.capabilities;
+    capabilities.native_playback = report.playable > 0;
+    std::vector<std::string> lines = capability_lines(capabilities);
+    for (const std::string &line : report.capabilities)
+        if (line.starts_with("Audio") || line.starts_with("Subtitles") ||
+            line.starts_with("Posters") || line.starts_with("Episode thumbnails"))
+            lines.push_back(line);
+    report.capabilities = std::move(lines);
+    if (!state.loaded)
+        report.verdict = "Recognised as a " + site.format +
+                         ", but its catalogue could not be "
+                         "read: " +
+                         state.error;
+    else if (report.source == SourceClass::metadata)
+        report.verdict = "Recognised as a " + site.format + ". Its catalogue lists " +
+                         std::to_string(report.series) +
+                         (report.series == 1 ? " entry" : " entries") +
+                         ", but none of the checked ones names a video file AKENO STREAM may play "
+                         "(only a web player): the site stays in Websites (browser).";
+    else if (report.importable && report.playable > 0)
+        report.verdict = "Recognised as a " + site.format + ". " + std::to_string(report.playable) +
+                         " of " + std::to_string(report.probed) +
+                         " checked episodes play in AKENO STREAM's own player.";
+    if (report.importable && config)
+    {
+        c.known_series = state.total > 0 ? state.total : static_cast<int>(state.series.size());
+        c.known_episodes = report.episodes;
+        *config = c;
+    }
+    return report;
+}
+} // namespace
+
 ProviderReport check_source(const std::string &address, const std::string &name,
                             const ProviderContext &context, const net::CancelFlag &cancel,
                             ProviderConfig *config, int max_probes)
@@ -758,7 +911,10 @@ ProviderReport check_source(const std::string &address, const std::string &name,
     }
     else
     {
-        const Fetched f = fetch_text(c.address, cancel, u->host, 8u * 1024u * 1024u);
+        const SitePage f = fetch_site_page(
+            c.address, cancel,
+            "application/json,text/html;q=0.9,application/xhtml+xml;q=0.9,*/*;q=0.5",
+            8u * 1024u * 1024u);
         if (!f.ok)
         {
             report.source = (f.status == 401 || f.status == 403) ? SourceClass::protected_source
@@ -794,13 +950,18 @@ ProviderReport check_source(const std::string &address, const std::string &name,
                 report.verdict = "This is one video, not a catalogue. Play it with "
                                  "Websites > Play a Video Link or add it in Sources.";
             }
+            else if (SiteDetection site = detect_website(f, cancel); site.recognised)
+                return check_website(site, c.address, name, context, cancel, config, max_probes);
             else if (media.detail.find("web page") != std::string::npos)
             {
                 report.source = SourceClass::web_page;
                 report.format = "Web page (HTML)";
                 report.verdict =
-                    "This is a website, not a catalogue or documented API. It opens in the "
-                    "browser (Websites); AKENO STREAM does not read video out of web pages.";
+                    "None of AKENO STREAM's website adapters recognises this website: " +
+                    site.why_not +
+                    " It opens in the browser (Websites); AKENO STREAM does not read video out "
+                    "of web pages it cannot identify.";
+                report.evidence = site.evidence;
             }
             else
             {

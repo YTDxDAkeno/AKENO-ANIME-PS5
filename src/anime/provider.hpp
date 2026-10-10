@@ -105,9 +105,16 @@ struct ProviderReport
     // What the loaded data offers ("Seasons", "Subtitles: en, ja", "AniList links"),
     // read from the series themselves; empty when nothing was loaded.
     std::vector<std::string> capabilities;
-    std::vector<std::string> preview; // the first series: "Title - 2 seasons, 5 episodes"
-    std::string verdict;              // one or two sentences
-    bool importable = false;          // a source the Anime mode can use
+    std::vector<std::string> preview;     // the first series: "Title - 2 seasons, 5 episodes"
+    std::vector<std::string> preview_art; // their posters (same order; may be empty strings)
+    std::string verdict;                  // one or two sentences
+    bool importable = false;              // a source the Anime mode can use
+    // Website providers: the adapter that recognised the site and what it found.
+    std::string adapter;               // "schema-org"; empty: not a website provider
+    std::string adapter_label;         // "Structured data (schema.org)"
+    std::vector<std::string> evidence; // "JSON-LD: an ItemList of 12 TVSeries"
+    int total_series = -1;             // the whole catalogue, when the site says so
+    std::string existing_id;           // the address is already this provider
 };
 
 struct LoadedCatalog
@@ -118,6 +125,9 @@ struct LoadedCatalog
     std::vector<Series> series;
     std::vector<CatalogIssue> errors;
     std::vector<CatalogIssue> warnings;
+    // Website providers: where the next catalogue page starts (empty: no more).
+    std::string next_page;
+    int total = -1; // series in the whole catalogue when the source says so
 };
 
 struct Resolution

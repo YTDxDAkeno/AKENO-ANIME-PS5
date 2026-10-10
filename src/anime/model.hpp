@@ -119,6 +119,11 @@ struct Series
     std::string attribution; // credit the provider asks for
     std::string updated;     // "YYYY-MM-DD" of the latest change
     std::vector<Season> seasons;
+    // Website providers list a catalogue first and load a series' seasons and
+    // episodes when it is opened: source_ref is the provider's own reference
+    // for that (a page address, a channel handle).
+    std::string source_ref;
+    bool details_pending = false; // seasons and episodes not loaded yet
 };
 
 // "provider/series/season/episode": the key for progress and history.

@@ -36,6 +36,10 @@ struct ProviderState
     std::vector<CatalogIssue> errors;
     std::vector<CatalogIssue> warnings;
     int checked = 0; // episodes probed while loading
+    // Website providers: the next catalogue page (empty: no more) and the
+    // catalogue's size when the site says so.
+    std::string next_page;
+    int total = -1;
 };
 
 struct SearchFilters
@@ -99,8 +103,19 @@ class Registry final
     // (the first of each series first) so availability is measured.
     static ProviderState load_provider(const ProviderConfig &config, const ProviderContext &context,
                                        const net::CancelFlag &cancel, int max_probes);
+    // Worker thread: checks up to max_probes episodes of one series (the first
+    // of each season first). Returns how many were checked.
+    static int check_series(const ProviderConfig &config, const ProviderContext &context,
+                            Series &series, const net::CancelFlag &cancel, int max_probes);
     // UI thread.
     void install(ProviderState state);
+    // Website providers: entries from a later catalogue page or a search join
+    // the provider's list (entries already there stay as they are); next_page,
+    // when given, is where the catalogue continues.
+    void merge_series(std::string_view provider, std::vector<Series> series,
+                      const std::string *next_page);
+    // Website providers: a series whose seasons and episodes were loaded.
+    void install_series(std::string_view provider, Series series);
     [[nodiscard]] const std::vector<ProviderState> &states() const noexcept
     {
         return states_;
