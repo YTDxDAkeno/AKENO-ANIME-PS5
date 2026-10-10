@@ -51,6 +51,13 @@ std::string data_dir_from_pc()
     return data_dir();
 }
 
+std::string backup_dir()
+{
+    // Tests and screenshots never write outside their own folders unless asked.
+    const char *dir = std::getenv("AKENO_BACKUP_DIR");
+    return dir ? dir : "";
+}
+
 SystemInfo system_info()
 {
     SystemInfo info;

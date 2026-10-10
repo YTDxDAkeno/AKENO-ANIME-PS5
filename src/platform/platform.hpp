@@ -24,6 +24,10 @@ std::string app_dir();
 std::string data_dir();
 // Where a PC finds data_dir() (over FTP while the app runs on the console).
 std::string data_dir_from_pc();
+// A folder outside the title's registration for backups of data_dir()
+// (/data/akeno-backup on the console, where ShadowMountPlus mounts /data
+// writable into the sandbox). Empty when there is none.
+std::string backup_dir();
 
 struct SystemInfo
 {

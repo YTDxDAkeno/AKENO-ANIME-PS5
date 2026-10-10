@@ -130,6 +130,80 @@ void count(const std::vector<Series> &series, ProviderReport &r)
             }
     }
 }
+
+void add_unique(std::vector<std::string> &list, const std::string &value)
+{
+    if (!value.empty() && std::find(list.begin(), list.end(), value) == list.end())
+        list.push_back(value);
+}
+
+std::string joined(const std::vector<std::string> &list, std::size_t limit)
+{
+    std::string out;
+    for (std::size_t i = 0; i < list.size() && i < limit; ++i)
+        out += (i ? ", " : "") + list[i];
+    if (list.size() > limit)
+        out += ", ...";
+    return out;
+}
+
+// What the loaded series actually carry; nothing is assumed from the source's type.
+void describe(const std::vector<Series> &series, ProviderReport &r)
+{
+    bool seasons = false, artwork = false, thumbnails = false, descriptions = false;
+    bool alt_titles = false, anilist = false;
+    std::vector<std::string> subtitles, audio;
+    for (const Series &s : series)
+    {
+        seasons = seasons || s.seasons.size() > 1;
+        artwork = artwork || !s.poster.empty() || !s.banner.empty();
+        alt_titles = alt_titles || !s.alt_titles.empty();
+        anilist = anilist || s.anilist_id > 0;
+        int episodes = 0;
+        for (const Season &season : s.seasons)
+        {
+            anilist = anilist || season.anilist_id > 0;
+            for (const Episode &e : season.episodes)
+            {
+                ++episodes;
+                thumbnails = thumbnails || !e.thumbnail.empty();
+                descriptions = descriptions || !e.description.empty();
+                if (!e.media)
+                    continue;
+                for (const SubtitleTrack &t : e.media->subtitles)
+                    add_unique(subtitles, t.language.empty() ? t.label : t.language);
+                for (const AudioTrack &a : e.media->audio)
+                    add_unique(audio, a.language.empty() ? a.label : a.language);
+            }
+        }
+        if (r.preview.size() < 5)
+            r.preview.push_back(s.title + " - " + std::to_string(s.seasons.size()) +
+                                (s.seasons.size() == 1 ? " season, " : " seasons, ") +
+                                std::to_string(episodes) +
+                                (episodes == 1 ? " episode" : " episodes"));
+    }
+    if (series.empty())
+        return;
+    r.capabilities.push_back(alt_titles ? "Search (titles and alternative titles)"
+                                        : "Search (titles)");
+    r.capabilities.push_back(seasons ? "Seasons" : "One season per series");
+    if (r.episodes)
+        r.capabilities.push_back("Episode lists");
+    if (descriptions)
+        r.capabilities.push_back("Episode descriptions");
+    if (artwork || thumbnails)
+        r.capabilities.push_back(artwork && thumbnails ? "Posters and episode thumbnails"
+                                 : artwork             ? "Posters"
+                                                       : "Episode thumbnails");
+    if (!audio.empty())
+        r.capabilities.push_back("Audio: " + joined(audio, 6));
+    if (!subtitles.empty())
+        r.capabilities.push_back("Subtitles: " + joined(subtitles, 6));
+    if (anilist)
+        r.capabilities.push_back("AniList links");
+    if (r.playable)
+        r.capabilities.push_back("Native playback (checked)");
+}
 } // namespace
 
 Registry::Registry(std::string data_dir, std::string app_dir)
@@ -523,6 +597,7 @@ ProviderReport report_for(const ProviderState &state, SourceClass base)
                 default:
                     break;
                 }
+    describe(state.series, r);
     if (!state.loaded)
     {
         r.importable = false;

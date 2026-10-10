@@ -116,6 +116,13 @@ std::string data_dir()
     return path;
 }
 
+std::string backup_dir()
+{
+    // Survives a re-registration of the title, unlike /download0. Without a
+    // writable /data (another loader) saving a backup simply fails.
+    return "/data/akeno-backup";
+}
+
 std::string data_dir_from_pc()
 {
     // The title's download data is mounted into its sandbox only while it runs.

@@ -1,0 +1,125 @@
+{
+  "akenoCatalog": 1,
+  "provider": {
+    "id": "example-studio",
+    "name": "Example Studio",
+    "description": "A template catalogue. Replace every address with media you are allowed to distribute.",
+    "homepage": "https://media.example.org/",
+    "licence": "CC BY 4.0",
+    "attribution": "Example Studio"
+  },
+  "series": [
+    {
+      "id": "harbor-lights",
+      "title": "Harbor Lights",
+      "altTitles": ["Minato no Hikari", "HL"],
+      "description": "Two seasons and a special, with Japanese and English audio and two subtitle languages.",
+      "poster": "art/harbor-lights/poster.jpg",
+      "banner": "art/harbor-lights/banner.jpg",
+      "genres": ["Drama", "Slice of Life"],
+      "year": 2024,
+      "status": "releasing",
+      "score": 78,
+      "anilistId": 0,
+      "updated": "2026-10-01",
+      "seasons": [
+        {
+          "id": "s1",
+          "number": 1,
+          "title": "Season 1",
+          "year": 2024,
+          "episodeCount": 12,
+          "episodes": [
+            {
+              "id": "e1",
+              "number": 1,
+              "title": "Arrival",
+              "description": "The first night at the harbor.",
+              "duration": 1440,
+              "airDate": "2024-04-05",
+              "thumbnail": "art/harbor-lights/s1e1.jpg",
+              "media": {
+                "url": "hls/harbor-lights/s1e1/master.m3u8",
+                "type": "hls",
+                "audio": [
+                  {"language": "ja", "label": "Japanese"},
+                  {"language": "en", "label": "English"}
+                ],
+                "subtitles": [
+                  {"language": "en", "label": "English", "url": "subs/harbor-lights/s1e1.en.vtt"},
+                  {"language": "de", "label": "Deutsch", "url": "subs/harbor-lights/s1e1.de.srt"}
+                ]
+              }
+            },
+            {
+              "id": "e2",
+              "number": 2,
+              "title": "Low Tide",
+              "duration": 1440,
+              "media": {
+                "url": "https://cdn.media.example.org/harbor-lights/s1e2.mp4",
+                "type": "mp4",
+                "audio": [{"language": "ja", "label": "Japanese"}],
+                "subtitles": [{"language": "en", "label": "English", "url": "subs/harbor-lights/s1e2.en.vtt"}]
+              }
+            },
+            {
+              "id": "e3",
+              "number": 3,
+              "title": "Members Preview",
+              "description": "Shown as 'Sign-in required': AKENO STREAM has no sign-in for this provider.",
+              "media": {"url": "https://members.media.example.org/harbor-lights/s1e3.m3u8", "type": "hls", "requiresAuth": true}
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "number": 2,
+          "title": "Season 2",
+          "year": 2025,
+          "episodes": [
+            {
+              "id": "e1",
+              "number": 1,
+              "title": "Fog Horn",
+              "media": {"url": "hls/harbor-lights/s2e1/master.m3u8", "type": "hls", "regions": ["DE", "AT", "CH"]}
+            },
+            {
+              "id": "e2",
+              "number": 2,
+              "title": "Licensed Elsewhere",
+              "description": "Shown as 'DRM not supported' and never played.",
+              "media": {"url": "https://drm.media.example.org/harbor-lights/s2e2.mpd", "drm": "widevine"}
+            }
+          ]
+        },
+        {
+          "id": "specials",
+          "number": 0,
+          "title": "Specials",
+          "episodes": [
+            {"id": "ova1", "number": 1, "special": true, "title": "Behind the Lights", "media": {"url": "video/harbor-lights/ova1.mkv", "type": "mkv"}}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "paper-planes",
+      "title": "Paper Planes",
+      "description": "A finished one-season series; episode 3 is listed without a video yet.",
+      "genres": ["Adventure"],
+      "year": 2023,
+      "status": "finished",
+      "seasons": [
+        {
+          "id": "s1",
+          "episodes": [
+            {"id": "e1", "number": 1, "title": "Fold", "media": {"url": "video/paper-planes/e1.mp4"}},
+            {"id": "e2", "number": 2, "title": "Throw", "media": {"url": "video/paper-planes/e2.ts", "type": "ts"}},
+            {"id": "e3", "number": 3, "title": "Landing"}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -196,6 +196,42 @@ TEST(AnimeCatalog, RejectsMalformedCatalogues)
     EXPECT_TRUE(looks_like_catalog(" {\"akenoCatalog\": 1}"));
 }
 
+// The documented example (docs/ANIME_PROVIDERS.md) must stay a valid catalogue
+// whose states are the ones the documentation describes.
+TEST(AnimeCatalog, DocumentedExampleIsValid)
+{
+    const char *root = std::getenv("AKENO_SOURCE_ROOT");
+    const auto text = fs::read_text(
+        std::string{root ? root : "."} + "/examples/anime-catalog/catalog.json", 1024 * 1024);
+    ASSERT_TRUE(text) << "set AKENO_SOURCE_ROOT";
+    CatalogOptions web;
+    web.base = "https://media.example.org/anime/catalog.json";
+    web.region = "US";
+    const ParsedCatalog c = parse_catalog(*text, web);
+    ASSERT_TRUE(c.ok) << (c.errors.empty() ? "" : c.errors[0].path + ": " + c.errors[0].message);
+    EXPECT_TRUE(c.warnings.empty()) << c.warnings[0].path << ": " << c.warnings[0].message;
+    EXPECT_EQ(c.provider.id, "example-studio");
+    ASSERT_EQ(c.series.size(), 2u);
+    const Series &harbor = c.series[0];
+    ASSERT_EQ(harbor.seasons.size(), 3u);
+    EXPECT_EQ(harbor.seasons.back().title, "Specials"); // season 0 is listed last
+    const Season &s1 = harbor.seasons[0];
+    ASSERT_EQ(s1.episodes.size(), 3u);
+    EXPECT_EQ(s1.episode_count, 12);
+    EXPECT_EQ(s1.episodes[0].media->url,
+              "https://media.example.org/anime/hls/harbor-lights/s1e1/master.m3u8");
+    EXPECT_EQ(s1.episodes[0].media->audio.size(), 2u);
+    ASSERT_EQ(s1.episodes[0].media->subtitles.size(), 2u);
+    EXPECT_EQ(s1.episodes[0].media->subtitles[1].format, "srt");
+    EXPECT_EQ(s1.episodes[0].availability, Availability::unverified);
+    EXPECT_EQ(s1.episodes[2].availability, Availability::auth_required);
+    EXPECT_EQ(harbor.seasons[1].episodes[0].availability, Availability::region_unavailable);
+    EXPECT_EQ(harbor.seasons[1].episodes[1].availability, Availability::drm_unsupported);
+    const Series &planes = c.series[1];
+    EXPECT_EQ(planes.seasons[0].episodes[2].availability, Availability::episodes_indexed);
+    EXPECT_EQ(planes.seasons[0].episodes[2].title, "Landing");
+}
+
 TEST(AnimeCatalog, ResolvesFilesNextToALocalCatalogue)
 {
     std::string why;
@@ -397,6 +433,21 @@ TEST(AnimeRegistry, ChecksWhatASourceReallyIs)
     EXPECT_EQ(good.playable, 1);
     EXPECT_EQ(config.type, ProviderType::catalog);
     EXPECT_EQ(config.address, server.url("catalog.json"));
+    // Capabilities come from the data: no subtitles or audio tracks are listed,
+    // so none are claimed; the AniList id and the checked episode are.
+    const auto offers = [&good](const std::string &c)
+    {
+        return std::find(good.capabilities.begin(), good.capabilities.end(), c) !=
+               good.capabilities.end();
+    };
+    EXPECT_TRUE(offers("Episode lists"));
+    EXPECT_TRUE(offers("AniList links"));
+    EXPECT_TRUE(offers("Native playback (checked)"));
+    for (const std::string &c : good.capabilities)
+        EXPECT_FALSE(c.starts_with("Subtitles") || c.starts_with("Audio")) << c;
+    ASSERT_EQ(good.preview.size(), 2u);
+    EXPECT_EQ(good.preview[0], "Pilot Show - 1 season, 2 episodes");
+    EXPECT_EQ(good.preview[1], "Catalogue Only - 1 season, 1 episode");
 
     const ProviderReport page = check("page.html");
     EXPECT_EQ(page.source, SourceClass::web_page); // HTTP 200 is not a provider

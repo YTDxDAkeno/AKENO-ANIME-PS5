@@ -81,8 +81,12 @@ struct ProviderReport
     int network = 0;
     std::vector<CatalogIssue> errors;
     std::vector<CatalogIssue> warnings;
-    std::string verdict;     // one or two sentences
-    bool importable = false; // a source the Anime mode can use
+    // What the loaded data offers ("Seasons", "Subtitles: en, ja", "AniList links"),
+    // read from the series themselves; empty when nothing was loaded.
+    std::vector<std::string> capabilities;
+    std::vector<std::string> preview; // the first series: "Title - 2 seasons, 5 episodes"
+    std::string verdict;              // one or two sentences
+    bool importable = false;          // a source the Anime mode can use
 };
 
 struct LoadedCatalog

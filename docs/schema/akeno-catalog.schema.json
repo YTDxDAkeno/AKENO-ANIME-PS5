@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/YTDxDAkeno/AKENO-ANIME-PS5/blob/main/docs/schema/akeno-catalog.schema.json",
+  "title": "AKENO STREAM catalogue, version 1",
+  "description": "Series, seasons and episodes of an AKENO STREAM streaming provider, with the DRM-free resource to play per episode. Documented in docs/ANIME_PROVIDERS.md. AKENO STREAM's own validator (src/anime/catalog_format.cpp) is authoritative: it also resolves addresses and reports problems by path.",
+  "type": "object",
+  "required": ["akenoCatalog", "provider", "series"],
+  "properties": {
+    "akenoCatalog": {"const": 1, "description": "Format version. AKENO STREAM 1.0 reads version 1 only."},
+    "provider": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id", "description": "Stable id; defaults to a slug of the name."},
+        "name": {"type": "string", "minLength": 1, "maxLength": 60},
+        "description": {"type": "string", "maxLength": 500},
+        "homepage": {"type": "string", "maxLength": 300},
+        "licence": {"type": "string", "maxLength": 80, "description": "Default licence of every series."},
+        "attribution": {"type": "string", "maxLength": 200, "description": "Default credit of every series."}
+      }
+    },
+    "series": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/series"}}
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,80}$"
+    },
+    "address": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "An http(s) URL, or a path relative to the catalogue. A catalogue on console storage may also name an absolute console path; '..' is refused. javascript:, data:, file: and other schemes are refused."
+    },
+    "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "series": {
+      "type": "object",
+      "required": ["title", "seasons"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id", "description": "Defaults to a slug of the title. Unique in the catalogue."},
+        "title": {"type": "string", "minLength": 1, "maxLength": 160},
+        "altTitles": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 160}, "description": "Romaji, English and other names; searched like the title."},
+        "description": {"type": "string", "maxLength": 4000},
+        "poster": {"$ref": "#/$defs/address"},
+        "banner": {"$ref": "#/$defs/address"},
+        "genres": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 40}},
+        "year": {"type": "integer"},
+        "status": {"enum": ["finished", "releasing", "upcoming"]},
+        "score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "anilistId": {"type": "integer", "minimum": 0, "description": "Explicit link to an AniList entry. Never guessed from titles."},
+        "malId": {"type": "integer", "minimum": 0},
+        "licence": {"type": "string", "maxLength": 80},
+        "attribution": {"type": "string", "maxLength": 200},
+        "updated": {"$ref": "#/$defs/date", "description": "Date of the latest change (Recently Updated row)."},
+        "seasons": {"type": "array", "minItems": 1, "maxItems": 60, "items": {"$ref": "#/$defs/season"}}
+      }
+    },
+    "season": {
+      "type": "object",
+      "properties": {
+        "id": {"$ref": "#/$defs/id", "description": "Defaults to s<number>. Unique in the series."},
+        "number": {"type": "integer", "minimum": 0, "description": "0 holds specials and is listed last. Defaults to the position (1-based)."},
+        "title": {"type": "string", "maxLength": 120, "description": "Defaults to 'Season N' (or 'Specials')."},
+        "year": {"type": "integer"},
+        "anilistId": {"type": "integer", "minimum": 0},
+        "episodeCount": {"type": "integer", "minimum": 0, "description": "Announced count when the catalogue lists fewer episodes."},
+        "episodes": {"type": "array", "items": {"$ref": "#/$defs/episode"}, "description": "At most 3000 episodes per series in total."}
+      }
+    },
+    "episode": {
+      "type": "object",
+      "properties": {
+        "id": {"$ref": "#/$defs/id", "description": "Defaults to the number. Unique in the season."},
+        "number": {"type": "integer", "minimum": 0, "maximum": 100000},
+        "special": {"type": "boolean", "description": "Listed after the numbered episodes of its season."},
+        "title": {"type": "string", "maxLength": 160, "description": "Optional; never invented when missing."},
+        "description": {"type": "string", "maxLength": 2000},
+        "thumbnail": {"$ref": "#/$defs/address"},
+        "duration": {"type": "number", "minimum": 0, "description": "Seconds."},
+        "airDate": {"$ref": "#/$defs/date"},
+        "media": {"$ref": "#/$defs/media"}
+      }
+    },
+    "media": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "url": {"$ref": "#/$defs/address"},
+        "type": {"enum": ["", "mp4", "m4v", "mov", "mkv", "hls", "m3u8", "ts", "mpegts"], "description": "Defaults to the address's extension."},
+        "audio": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"type": "object", "properties": {"language": {"type": "string", "maxLength": 16}, "label": {"type": "string", "maxLength": 40}}}
+        },
+        "subtitles": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "language": {"type": "string", "maxLength": 16},
+              "label": {"type": "string", "maxLength": 40},
+              "url": {"$ref": "#/$defs/address"},
+              "format": {"enum": ["vtt", "srt"], "description": "Defaults to the address's extension."}
+            }
+          }
+        },
+        "drm": {"type": ["string", "boolean"], "description": "Declares DRM (for example \"widevine\"). Such episodes are shown as 'DRM not supported' and never played."},
+        "requiresAuth": {"type": "boolean", "description": "The provider needs a sign-in AKENO STREAM does not have."},
+        "regions": {"type": "array", "maxItems": 250, "items": {"type": "string", "pattern": "^[A-Za-z]{2}$"}, "description": "ISO 3166 codes where the episode is offered; empty or missing: everywhere."}
+      }
+    }
+  }
+}

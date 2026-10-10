@@ -4,6 +4,7 @@
 #include "app/app.hpp"
 
 #include "anime/session.hpp"
+#include "app/backup.hpp"
 
 #include "app/screens.hpp"
 #include "core/fs.hpp"
@@ -156,6 +157,11 @@ App::~App()
 void App::start(std::uint64_t now_ms)
 {
     now_ms_ = now_ms;
+    // Before anything is loaded: a restore chosen in Settings, or an empty data
+    // folder (the title was registered again) restored from a backup.
+    backup::Result restored;
+    const std::string restored_from =
+        backup::restore_at_start(platform::data_dir(), backup_locations(), &restored);
     store_.load();
     if (!store_.last_error().empty())
         report_error("storage", store_.last_error());
@@ -208,6 +214,13 @@ void App::start(std::uint64_t now_ms)
     anime_library_.load();
     if (!anime_library_.last_error().empty())
         report_error("anime library", anime_library_.last_error());
+    if (!restored_from.empty())
+        toast("Your data was restored from " + restored_from + " (" +
+                  std::to_string(restored.copied) + " files)",
+              th::kSuccess);
+    else if (!restored.error.empty())
+        report_error("restore", restored.error);
+    back_up_now();
     apply_settings();
     stacks_[static_cast<int>(Mode::home)].push_back(make_home_screen(*this));
     stacks_[static_cast<int>(Mode::anime)].push_back(make_anime_screen(*this));
@@ -1014,16 +1027,61 @@ void App::render_tabs(ui::Painter &p, int left, int right)
     p.glyph(ui::Glyph::r1, x + glyph_space - 30, 62, 34);
 }
 
+std::vector<std::string> App::backup_locations() const
+{
+    std::vector<std::string> out;
+    if (const std::string dir = platform::backup_dir(); !dir.empty())
+        out.push_back(dir);
+    out.push_back(fs::join(platform::app_dir(), "akeno-backup"));
+    return out;
+}
+
+void App::back_up_now()
+{
+    const std::string dir = platform::backup_dir();
+    if (dir.empty())
+    {
+        backup_status_ = "Not available on this system";
+        return;
+    }
+    if (backup::is_empty(platform::data_dir()))
+    {
+        backup_status_ = "Nothing to back up yet";
+        return;
+    }
+    backup_status_ = "Saving...";
+    jobs_.run(
+        [this, dir, data = platform::data_dir()]
+        {
+            const backup::Result r = backup::save(data, dir);
+            jobs_.post(
+                [this, r]
+                {
+                    backup_status_ = r.error.empty()
+                                         ? std::to_string(r.copied) + " files in the backup"
+                                         : r.error;
+                    mark_dirty();
+                });
+        });
+}
+
 void App::render_chrome(ui::Painter &p, Screen &screen)
 {
     const ui::Pixel accent = this->accent();
-    // Brand.
-    p.s.fill_rounded({th::kMarginX, 52, 16, 16}, 8, accent);
-    p.text(th::kMarginX + 28, 38, "AKENO", {40, gfx::Weight::bold}, th::kText);
-    p.text(th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10, 50, "STREAM",
+    // Brand: the "A" mark from the app icon, a mode-coloured tile until it has loaded.
+    static const std::string mark_path =
+        fs::join(platform::app_dir(), "assets/brand/akeno-mark-128.png");
+    const int mark = 44;
+    if (const gfx::Image *icon = images_.get(mark_path, mark, mark))
+        p.s.draw_image(*icon, th::kMarginX, 38, 255, 11);
+    else
+        p.s.fill_rounded({th::kMarginX, 38, mark, mark}, 11, gfx::with_alpha(accent, 140));
+    const int text_x = th::kMarginX + mark + 14;
+    p.text(text_x, 38, "AKENO", {40, gfx::Weight::bold}, th::kText);
+    p.text(text_x + p.measure("AKENO", {40, gfx::Weight::bold}) + 10, 50, "STREAM",
            th::kCaptionStrong, th::kTextSecondary);
 
-    const int brand_right = th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10 +
+    const int brand_right = text_x + p.measure("AKENO", {40, gfx::Weight::bold}) + 10 +
                             p.measure("STREAM", th::kCaptionStrong);
     render_tabs(p, brand_right, th::kWidth - th::kMarginX - 110);
 

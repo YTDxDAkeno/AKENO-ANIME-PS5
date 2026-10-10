@@ -236,6 +236,13 @@ std::vector<InfoLine> report_lines(const anime::ProviderReport &r)
                            count_label(r.episodes, "episode", "episodes") + " (" +
                            std::to_string(r.with_media) + " name a video)",
                        th::kText});
+    if (!r.capabilities.empty())
+    {
+        std::string offers;
+        for (const std::string &c : r.capabilities)
+            offers += (offers.empty() ? "" : ", ") + c;
+        out.push_back({"Offers", offers, th::kText});
+    }
     if (r.probed || r.drm || r.auth || r.region)
     {
         std::string checks =
@@ -264,6 +271,9 @@ std::vector<InfoLine> report_lines(const anime::ProviderReport &r)
             {"Note",
              (r.warnings[i].path.empty() ? "" : r.warnings[i].path + ": ") + r.warnings[i].message,
              th::kTextMuted});
+    // A preview of what Import adds (after the problems, which matter more).
+    for (const std::string &line : r.preview)
+        out.push_back({"Series", line, th::kTextSecondary});
     return out;
 }
 

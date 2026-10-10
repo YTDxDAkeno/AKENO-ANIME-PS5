@@ -347,6 +347,14 @@ class App final
     {
         return anime_library_;
     }
+    // Backups of the data folder (app/backup.hpp): where they are looked for,
+    // and what the last backup did ("10 files saved at start", or why not).
+    [[nodiscard]] std::vector<std::string> backup_locations() const;
+    [[nodiscard]] const std::string &backup_status() const noexcept
+    {
+        return backup_status_;
+    }
+    void back_up_now();
     [[nodiscard]] const AppConfig &config() const
     {
         return config_;
@@ -400,6 +408,7 @@ class App final
     std::uint64_t anime_generation_ = 0;
     std::set<std::string> anime_loading_;
     bool browser_active_ = false;
+    std::string backup_status_;
 
     Mode mode_ = Mode::home;
     std::string site_mode_; // the website shown in Mode::site
