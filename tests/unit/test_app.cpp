@@ -247,9 +247,15 @@ TEST(Store, ResumeRules)
     EXPECT_DOUBLE_EQ(store.resume_position("open:b"), 0.0);
     store.record_progress(video("c"), 590.0, 600.0); // essentially finished
     EXPECT_DOUBLE_EQ(store.resume_position("open:c"), 0.0);
+    // A short episode: the end zone is a tenth of it, so 11 s of 15 s resumes.
+    store.record_progress(video("short"), 11.0, 15.0);
+    EXPECT_DOUBLE_EQ(store.resume_position("open:short"), 11.0);
+    store.record_progress(video("short"), 14.0, 15.0);
+    EXPECT_DOUBLE_EQ(store.resume_position("open:short"), 0.0);
     const auto cont = store.continue_watching();
     ASSERT_EQ(cont.size(), 1u);
     EXPECT_EQ(cont[0].item.id, "a");
+    store.remove_history("open:short");
     store.record_progress(video("a"), 300.0, 600.0);
     EXPECT_EQ(store.history().front().item.id, "a"); // most recent first
     Store reload(dir);

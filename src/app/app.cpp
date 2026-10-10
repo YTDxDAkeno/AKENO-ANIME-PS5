@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/app.hpp"
 
+#include "anime/session.hpp"
+#include "app/backup.hpp"
+
 #include "app/screens.hpp"
 #include "core/fs.hpp"
 #include "core/url.hpp"
@@ -132,7 +135,8 @@ App::App(AppConfig config, gfx::FontEngine &fonts)
       open_{platform::app_dir(), platform::data_dir()},
       youtube_{[this] { return store_.youtube_api_key(); }}, web_{platform::make_web_view()},
       websites_{platform::data_dir()}, web_tests_{platform::data_dir()},
-      playback_checks_{platform::data_dir()}
+      playback_checks_{platform::data_dir()}, anime_{platform::data_dir(), platform::app_dir()},
+      anime_library_{platform::data_dir()}
 {
     media::PlayerConfig pc;
     pc.frames = frames_;
@@ -153,6 +157,11 @@ App::~App()
 void App::start(std::uint64_t now_ms)
 {
     now_ms_ = now_ms;
+    // Before anything is loaded: a restore chosen in Settings, or an empty data
+    // folder (the title was registered again) restored from a backup.
+    backup::Result restored;
+    const std::string restored_from =
+        backup::restore_at_start(platform::data_dir(), backup_locations(), &restored);
     store_.load();
     if (!store_.last_error().empty())
         report_error("storage", store_.last_error());
@@ -199,6 +208,19 @@ void App::start(std::uint64_t now_ms)
         report_error("websites", websites_.last_error());
     web_tests_.load();
     playback_checks_.load();
+    anime_.load();
+    if (!anime_.last_error().empty())
+        report_error("anime providers", anime_.last_error());
+    anime_library_.load();
+    if (!anime_library_.last_error().empty())
+        report_error("anime library", anime_library_.last_error());
+    if (!restored_from.empty())
+        toast("Your data was restored from " + restored_from + " (" +
+                  std::to_string(restored.copied) + " files)",
+              th::kSuccess);
+    else if (!restored.error.empty())
+        report_error("restore", restored.error);
+    back_up_now();
     apply_settings();
     stacks_[static_cast<int>(Mode::home)].push_back(make_home_screen(*this));
     stacks_[static_cast<int>(Mode::anime)].push_back(make_anime_screen(*this));
@@ -228,6 +250,8 @@ void App::apply_settings()
     youtube_.set_safe_search(s.youtube_safe_search);
     peertube_.set_max_height(s.max_height);
     archive_.set_max_height(s.max_height);
+    anime_.context.region = s.youtube_region;
+    anime_.context.max_height = s.max_height;
 }
 
 std::vector<std::unique_ptr<Screen>> &App::stack()
@@ -449,6 +473,36 @@ void App::open_item(const MediaItem &item)
         }
         return;
     }
+    if (item.provider == "anilist")
+    {
+        // Anime: the series with its seasons and episodes (catalogue only
+        // unless an episode provider maps this title).
+        push(make_anilist_series_screen(*this, item));
+        return;
+    }
+    if (item.provider == "anime-series")
+    {
+        const std::size_t slash = item.id.find('/');
+        if (slash != std::string::npos)
+            push(make_series_screen(*this, item.id.substr(0, slash), item.id.substr(slash + 1)));
+        return;
+    }
+    if (item.provider == anime::kEpisodeItemProvider)
+    {
+        // An episode from history: through its provider (subtitles, next
+        // episode); while providers load, straight from the saved address.
+        std::string provider, series, season, episode;
+        if (anime::split_episode_key(item.id, &provider, &series, &season, &episode))
+            if (const anime::Series *s = anime_.find_series(provider, series))
+                if (const auto ref = anime::find_episode(*s, season, episode))
+                {
+                    play_episode(provider, series, *ref);
+                    return;
+                }
+        refresh_anime(false);
+        play(item);
+        return;
+    }
     if (item.provider == "source")
     {
         // Entries of a user source: lists open as a source, streams play.
@@ -472,7 +526,7 @@ void App::open_item(const MediaItem &item)
     push(make_details_screen(*this, item, provider, accent()));
 }
 
-void App::play(const MediaItem &item, double start_seconds)
+void App::play(const MediaItem &item, double start_seconds, std::shared_ptr<PlayerContext> context)
 {
     if (!item.playable)
     {
@@ -498,7 +552,127 @@ void App::play(const MediaItem &item, double start_seconds)
     playing_ = item;
     playing_active_ = true;
     last_progress_save_ms_ = now_ms_;
-    push(make_player_screen(*this, item));
+    push(make_player_screen(*this, item, std::move(context)));
+}
+
+void App::refresh_anime(bool force)
+{
+    for (const anime::ProviderConfig &config : anime_.configs())
+    {
+        if (anime_loading_.count(config.id))
+            continue;
+        if (!force && anime_.state(config.id))
+            continue;
+        anime_loading_.insert(config.id);
+        const anime::ProviderContext context = anime_.context;
+        // Files on the console are checked completely; web providers lightly.
+        const int probes = config.address.rfind("/", 0) == 0 ? 400 : 12;
+        jobs_.run(
+            [this, config, context, probes]
+            {
+                anime::ProviderState state = anime::Registry::load_provider(
+                    config, context, net::make_cancel_flag(), probes);
+                jobs_.post(
+                    [this, state = std::move(state)]() mutable
+                    {
+                        anime_loading_.erase(state.config.id);
+                        if (!state.loaded)
+                            report_error("anime provider " + state.config.name, state.error);
+                        anime_.install(std::move(state));
+                        ++anime_generation_;
+                        dirty_ = true;
+                    });
+            });
+    }
+}
+
+void App::play_episode(const std::string &provider_id, const std::string &series_id,
+                       anime::EpisodeRef ref, double start)
+{
+    const anime::Series *found = anime_.find_series(provider_id, series_id);
+    const anime::ProviderConfig *config = anime_.config(provider_id);
+    if (!found || !config || ref.season >= found->seasons.size() ||
+        ref.episode >= found->seasons[ref.season].episodes.size())
+    {
+        toast("This episode is no longer offered by its provider", th::kWarning);
+        return;
+    }
+    const anime::Episode &episode = found->seasons[ref.season].episodes[ref.episode];
+    switch (episode.availability)
+    {
+    case anime::Availability::playable:
+    case anime::Availability::unverified:
+    case anime::Availability::network_error: // try again
+        break;
+    default:
+        toast(std::string{anime::availability_label(episode.availability)} + ": " +
+                  episode.availability_detail,
+              th::kWarning);
+        return;
+    }
+    if (episode.media.has_value() == false && episode.source_ref.empty())
+    {
+        toast("This episode has no video source", th::kWarning);
+        return;
+    }
+    toast("Opening " + anime::episode_label(found->seasons[ref.season], episode) + "...",
+          th::kInfo);
+    const anime::Series series = *found;
+    const anime::ProviderConfig provider = *config;
+    const anime::ProviderContext context = anime_.context;
+    const bool checked = episode.availability == anime::Availability::playable;
+    jobs_.run(
+        [this, series, provider, context, ref, start, checked]
+        {
+            const auto source = anime::make_provider(provider, context);
+            const anime::Season &season = series.seasons[ref.season];
+            const anime::Episode &ep = season.episodes[ref.episode];
+            const auto cancel = net::make_cancel_flag();
+            anime::Resolution r = source->resolve(series, season, ep, cancel);
+            anime::ProbeResult probe{r.availability, r.detail, {}};
+            if (r.ok)
+                probe = checked && provider.type != anime::ProviderType::peertube
+                            ? anime::ProbeResult{anime::Availability::playable,
+                                                 ep.availability_detail,
+                                                 {}}
+                            : anime::probe_media(r.media, cancel);
+            jobs_.post(
+                [this, series, ref, start, r, probe]
+                {
+                    const anime::Season &season = series.seasons[ref.season];
+                    const anime::Episode &ep = season.episodes[ref.episode];
+                    anime_.set_availability(series.provider_id, series.id, season.id, ep.id,
+                                            probe.availability, probe.detail);
+                    ++anime_generation_;
+                    if (!r.ok || probe.availability != anime::Availability::playable)
+                    {
+                        toast(std::string{anime::availability_label(probe.availability)} + ": " +
+                                  probe.detail,
+                              th::kWarning);
+                        return;
+                    }
+                    const anime::PlaybackSession session =
+                        anime::make_session(series, ref, r.media, start);
+                    const MediaItem item = anime::session_item(session, series);
+                    auto context = std::make_shared<PlayerContext>();
+                    context->subtitles = session.subtitles;
+                    const std::string provider_id = series.provider_id, series_id = series.id;
+                    if (session.next)
+                    {
+                        context->next_label = session.next_label;
+                        context->play_next = [this, provider_id, series_id, next = *session.next]
+                        { play_episode(provider_id, series_id, next, 0.0); };
+                    }
+                    if (session.previous)
+                    {
+                        context->previous_label = session.previous_label;
+                        context->play_previous =
+                            [this, provider_id, series_id, previous = *session.previous]
+                        { play_episode(provider_id, series_id, previous, 0.0); };
+                    }
+                    play(item, start, std::move(context));
+                });
+        });
 }
 
 void App::finish_playback_record()
@@ -853,16 +1027,61 @@ void App::render_tabs(ui::Painter &p, int left, int right)
     p.glyph(ui::Glyph::r1, x + glyph_space - 30, 62, 34);
 }
 
+std::vector<std::string> App::backup_locations() const
+{
+    std::vector<std::string> out;
+    if (const std::string dir = platform::backup_dir(); !dir.empty())
+        out.push_back(dir);
+    out.push_back(fs::join(platform::app_dir(), "akeno-backup"));
+    return out;
+}
+
+void App::back_up_now()
+{
+    const std::string dir = platform::backup_dir();
+    if (dir.empty())
+    {
+        backup_status_ = "Not available on this system";
+        return;
+    }
+    if (backup::is_empty(platform::data_dir()))
+    {
+        backup_status_ = "Nothing to back up yet";
+        return;
+    }
+    backup_status_ = "Saving...";
+    jobs_.run(
+        [this, dir, data = platform::data_dir()]
+        {
+            const backup::Result r = backup::save(data, dir);
+            jobs_.post(
+                [this, r]
+                {
+                    backup_status_ = r.error.empty()
+                                         ? std::to_string(r.copied) + " files in the backup"
+                                         : r.error;
+                    mark_dirty();
+                });
+        });
+}
+
 void App::render_chrome(ui::Painter &p, Screen &screen)
 {
     const ui::Pixel accent = this->accent();
-    // Brand.
-    p.s.fill_rounded({th::kMarginX, 52, 16, 16}, 8, accent);
-    p.text(th::kMarginX + 28, 38, "AKENO", {40, gfx::Weight::bold}, th::kText);
-    p.text(th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10, 50, "STREAM",
+    // Brand: the "A" mark from the app icon, a mode-coloured tile until it has loaded.
+    static const std::string mark_path =
+        fs::join(platform::app_dir(), "assets/brand/akeno-mark-128.png");
+    const int mark = 44;
+    if (const gfx::Image *icon = images_.get(mark_path, mark, mark))
+        p.s.draw_image(*icon, th::kMarginX, 38, 255, 11);
+    else
+        p.s.fill_rounded({th::kMarginX, 38, mark, mark}, 11, gfx::with_alpha(accent, 140));
+    const int text_x = th::kMarginX + mark + 14;
+    p.text(text_x, 38, "AKENO", {40, gfx::Weight::bold}, th::kText);
+    p.text(text_x + p.measure("AKENO", {40, gfx::Weight::bold}) + 10, 50, "STREAM",
            th::kCaptionStrong, th::kTextSecondary);
 
-    const int brand_right = th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10 +
+    const int brand_right = text_x + p.measure("AKENO", {40, gfx::Weight::bold}) + 10 +
                             p.measure("STREAM", th::kCaptionStrong);
     render_tabs(p, brand_right, th::kWidth - th::kMarginX - 110);
 

@@ -190,7 +190,7 @@ void Store::record_progress(const MediaItem &item, double position, double durat
     entry.item = item;
     entry.duration = duration > 0.0 ? duration : entry.duration;
     entry.position = position < 10.0 ? 0.0 : position;
-    if (entry.duration > 0.0 && position >= entry.duration - 15.0)
+    if (entry.duration > 0.0 && position >= entry.duration - HistoryEntry::end_zone(entry.duration))
         entry.position = entry.duration; // finished
     entry.updated = platform::wall_clock_seconds();
     entry.order = ++order_;

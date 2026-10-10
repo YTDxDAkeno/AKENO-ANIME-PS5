@@ -12,8 +12,11 @@ MP4, MKV, MOV and TS files - through the console's hardware video decoder.
 **Crunchyroll** opens its real website with its own sign-in. **Discover**
 plays free video from PeerTube and public-domain films from the Internet
 Archive; **Sources** takes your own M3U lists, JSON feeds and stream addresses
-(also from your phone); the app adds an anime discovery mode, a local
-library, watch history, favourites and a diagnostics screen.
+(also from your phone). **Anime** browses AniList's catalogue and plays
+series, seasons and episodes from streaming providers you add (AKENO
+catalogues, PeerTube channels) in the native player, with subtitles, Up Next
+and resume. The app adds a local library, watch history, favourites, a data
+backup and a diagnostics screen.
 
 | | |
 | --- | --- |
@@ -28,19 +31,25 @@ library, watch history, favourites and a diagnostics screen.
 > PeerTube videos played with picture and sound, YouTube videos played in the
 > embedded browser, user-entered websites opened, and Crunchyroll's website
 > loaded with a working sign-in. Crunchyroll *episodes* stop with error
-> **KAT-6005** and AnikotoTV's player loads but never starts - see
-> *Known limitations*. 1.0.0 adds the redesigned Home, websites as their own
-> app modes and the Playback Lab (which now also plays an encrypted clip with
-> Clear Key to tell "no DRM system" apart from "no decryption at all"); these
-> are host-tested and build for the PS5, and need their console run with the
-> [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md) (section 11)
-> before 1.0.0 is published as stable. What changed: [CHANGELOG.md](CHANGELOG.md).
+> **KAT-6005** (DRM, see [docs/CRUNCHYROLL.md](docs/CRUNCHYROLL.md)) and
+> AnikotoTV's player loads but never starts - see *Known limitations*.
+> 1.0.0 adds the redesigned Home, websites as their own app modes, the
+> Playback Lab, the **anime episode system** (providers, seasons, episodes,
+> subtitles, Up Next), native playback of videos a page publishes openly, a
+> data backup, and the **AKENO STREAM artwork** (icon, backgrounds, splash).
+> These are host-tested and build for the PS5, and need their console run
+> with the [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md)
+> (sections 11 and 12) before 1.0.0 is published as stable. What changed:
+> [CHANGELOG.md](CHANGELOG.md). Install and update:
+> [docs/INSTALL.md](docs/INSTALL.md).
 
 German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
 
 | | |
 | --- | --- |
 | ![Home](docs/screenshots/01-home.jpg) | ![Home: Anime row](docs/screenshots/02-home-anime.jpg) |
+| ![Anime: a series with seasons and episodes](docs/screenshots/41-anime-episodes.jpg) | ![An episode in the native player with subtitles](docs/screenshots/43-anime-player-subtitles.jpg) |
+| ![Add Streaming Provider](docs/screenshots/45-anime-add-provider.jpg) | ![Streaming Providers](docs/screenshots/46-anime-providers.jpg) |
 | ![Websites](docs/screenshots/28-websites.jpg) | ![A website as its own mode](docs/screenshots/38-website-mode.jpg) |
 | ![Playback Lab](docs/screenshots/37-playback-lab.jpg) | ![Crunchyroll website test](docs/screenshots/32-crunchyroll.jpg) |
 | ![YouTube: official embedded player](docs/screenshots/08-youtube-setup.jpg) | ![Anime](docs/screenshots/03-anime.jpg) |
@@ -94,14 +103,21 @@ into `eboot.bin`, not yet tried on the console.
 | Offline test clips (no network needed) | **Console** | 2 s 360p clip and a 12 s 720p A/V sync clip |
 | Public DRM-free test streams | Big Buck Bunny **Console** | Third-party streams may go offline |
 | Your own streams (`streams.json`) | Host-tested, PS5 build | Still read; Sources is the more flexible way |
-| Anime mode: AniList catalogue, search, details, official links (QR) | **Console** (catalogue and artwork loaded) | Discovery only - AniList has no video |
+| Anime mode: AniList catalogue, search, details, official links (QR) | **Console** (catalogue and artwork loaded) | AniList is metadata only; video comes from providers |
+| Anime episodes: providers, series, seasons, episode lists, availability states, Play/Continue, watchlist | Host-tested (end to end, offline sample series), PS5 build | New in 1.0.0; only checked, DRM-free episodes are offered as playable. [docs/ANIME_PROVIDERS.md](docs/ANIME_PROVIDERS.md) |
+| Add Streaming Provider: AKENO catalogue or PeerTube channel/playlist; test, compatibility report, capabilities, preview, import, remove, check again | Host-tested, PS5 build | New in 1.0.0; a website's homepage is never treated as a provider |
+| Anime search: English, romaji and alternative titles, partial matches, suggestions, history, year/genre/status/availability filters | Host-tested (typed on the on-screen keyboard), PS5 build | New in 1.0.0 |
+| Bundled synthetic test series (offline; generated test patterns, not anime) | Host-tested, PS5 build | New in 1.0.0; checks the episode path on the console without a network |
+| Find public videos on a page (native): explicit `<video>`/`<source>`/meta/direct links | Host-tested, PS5 build | New in 1.0.0; no scripts, cookies, players or DRM; [docs/NATIVE_PUBLIC_VIDEO.md](docs/NATIVE_PUBLIC_VIDEO.md) |
+| Data backup to `/data/akeno-backup` at every start; automatic restore after a re-registration; restore from Settings | Host-tested, PS5 build | New in 1.0.0; needs ShadowMountPlus's writable `/data` in the sandbox |
+| AKENO STREAM artwork: home-screen icon, selection and launch backgrounds (4K BC7), header mark, splash | PS5 build (assets validated) | New in 1.0.0; an older registration may need one refresh - [docs/INSTALL.md](docs/INSTALL.md) |
 | YouTube: trending, search, channels (Data API v3, your key) | Host-tested, PS5 build | Playback in the official embedded player (above) |
 | YouTube: open the official YouTube app | PS5 build (experimental, secondary) | 0.6.0's run-time lookup most likely fails in a homebrew title (see [BROWSER_RESEARCH.md](docs/BROWSER_RESEARCH.md)); the external-browser hand-off was removed in 0.7.0 |
 | Diagnostics: network test, FFmpeg self-test, report export | **Console** | Reports exclude keys and tokens |
 | Crash reporter, previous-crash notice | PS5 build | No crash since 0.4.1 to test it with |
 | On-screen keyboard with symbols, secret masking | Host-tested, PS5 build | 0.4.3 fixed the crash while typing a key (seen on the console with 0.4.2); long addresses scroll to the cursor |
 | USB drives in the library | PS5 build | Title sandbox access is unverified; the app reports what it can reach |
-| Subtitles | Not implemented | |
+| Subtitles: WebVTT and SubRip files listed with an episode; Triangle switches | Host-tested, PS5 build | New in 1.0.0; subtitles inside video files and in HLS playlists are not shown yet |
 | HDR | Not implemented | HDR streams play without tone mapping |
 
 ## Install
@@ -121,6 +137,10 @@ into `eboot.bin`, not yet tried on the console.
    console, delete it - it is an obsolete Hello World build.
 4. Refresh ShadowMountPlus (or restart it) and start **AKENO STREAM**.
 
+Updating, rollback copies, and what to do when the home screen still shows
+the old name *Akeno Anime Preview* or the old icon (ShadowMountPlus keeps the
+first registration): [docs/INSTALL.md](docs/INSTALL.md).
+
 The folder contains `eboot.bin`, `sce_sys/` (param.json, icon, backgrounds),
 `sce_module/libc.prx`, `assets/` (fonts and the offline test clips) and
 `sources-example.txt` (a template, see *Sources* below).
@@ -130,11 +150,12 @@ The folder contains `eboot.bin`, `sce_sys/` (param.json, icon, backgrounds),
 | Button | Everywhere | In the player |
 | --- | --- | --- |
 | L1 / R1 | Previous / next mode | Seek -60 s / +60 s |
+| L2 / R2 | | Previous / next episode (Anime) |
 | D-pad, left stick | Move | Left/right: seek -10 s / +10 s; up/down: volume |
 | Cross | Select | Pause / play (replay at the end, retry after an error) |
 | Circle | Back | Stop and close the player |
-| Triangle | Search (Anime, YouTube, Discover, inside a source); Websites: address or search | Subtitles (shows "not available") |
-| Square | Add / remove favourite (Sources: remove a source; Websites: options) | Change maximum quality (HLS) |
+| Triangle | Search (Anime, YouTube, Discover, inside a source); Websites: address or search | Subtitles: off, each track, off |
+| Square | Add / remove favourite (Sources: remove a source; Websites: options) | Change maximum quality (HLS); *Up next*: watch again |
 | OPTIONS | Service information | Stream information panel |
 
 **First test:** Home -> *Local Library* -> *A/V Sync Test Clip*. It plays
@@ -159,10 +180,13 @@ with [UFS2Tool](https://github.com/SvenGDK/UFS2Tool)).
 | Your stream list (older format) | `/data/homebrew/PPSA99276/streams.json` |
 | YouTube API key (optional) | `/data/homebrew/PPSA99276/youtube-key.txt` |
 | Websites to add (optional) | `/data/homebrew/PPSA99276/websites.txt` (`Name = https://…` per line, imported once) |
+| Your own anime library (optional) | `/data/homebrew/PPSA99276/anime-catalog.json` with your files next to it ([format](docs/ANIME_PROVIDERS.md)) |
+| A data backup to restore (optional) | `/data/homebrew/PPSA99276/akeno-backup/` (then *Settings -> Restore my data*) |
 
 | What | Read from (while the app runs) |
 | --- | --- |
 | Diagnostics reports, `crash-previous.txt` | `/mnt/sandbox/PPSA99276_000/download0/akeno/` |
+| The automatic data backup | `/data/akeno-backup/` (any time) |
 
 Files in the install folder are kept when you update the app by copying the
 new `PPSA99276/` folder over the old one.
@@ -288,10 +312,25 @@ passwords, cookies or what you type. Full guide and security model:
 
 ### Anime mode and Crunchyroll
 
-Anime mode shows trending, seasonal, popular and top-rated anime from the
-public [AniList](https://anilist.co) API with descriptions, episode counts,
-trailers and the official streaming sites for each title (as QR codes).
-AniList provides no video, and AKENO STREAM does not scrape video sites.
+Anime mode separates **metadata** from **video**. The public
+[AniList](https://anilist.co) API supplies titles, artwork, descriptions,
+seasons and episode counts (*Trending Anime*, *New Episodes*, *This Season*,
+*Most Popular*, genre rows, *Movies*). Video comes from **streaming
+providers** you add under *Anime -> Add Streaming Provider*: an AKENO
+catalogue (a JSON file listing series, seasons and episodes with DRM-free
+MP4/HLS/TS/MKV addresses, subtitles and audio languages) or a PeerTube
+channel or playlist. AKENO checks an episode's first bytes before it offers
+it as playable; *Available to Watch* lists only series with such an episode,
+and AniList titles without a provider stay catalogue entries with official
+links. A series page has a season selector, an episode list with thumbnails,
+progress, runtime, audio and subtitle languages, and Play/Continue; the
+player switches subtitles (Triangle), jumps between episodes (L2/R2) and
+offers *Up next* with a countdown. Progress, Continue Watching and the
+watchlist are kept per provider. A synthetic test series (generated test
+patterns and tones, clearly labelled, not an anime production) ships with
+the app so the whole path can be tried offline. Format, provider types and
+how to add one: [docs/ANIME_PROVIDERS.md](docs/ANIME_PROVIDERS.md).
+AKENO STREAM does not scrape video sites.
 
 The **Crunchyroll** section (Home's Anime row, Anime -> Streaming Services, Websites)
 opens Crunchyroll's own website in the browser inside AKENO STREAM. Sign in
@@ -357,8 +396,14 @@ redacted.
 - MP3 audio inside MPEG-TS is not supported (the stream plays without audio
   with a notice); MP2 is.
 - Video: H.264 and HEVC (8/10-bit 4:2:0). VP9/AV1 are not supported.
-- No subtitles, no HDR tone mapping, no picture-in-picture, no download
-  manager.
+- Subtitles: WebVTT and SubRip files that a catalogue lists with an
+  episode (PeerTube captions included). Subtitle tracks inside MP4/MKV files
+  and HLS subtitle playlists are not shown yet. No HDR tone mapping, no
+  picture-in-picture, no download manager.
+- Anime episodes play only from providers you add (AKENO catalogues,
+  PeerTube); AniList is metadata only. The bundled test series is synthetic
+  test material, not anime. No site-specific scrapers are included or
+  planned.
 - Third-party test streams can disappear at any time.
 - USB access from inside the title sandbox has not been confirmed on the
   console (firmware 13.09).
@@ -372,7 +417,7 @@ tests) FFmpeg's command-line tools, FreeType and libcurl development files:
 sudo apt-get install clang-18 lld-18 clang-format-18 libclang-rt-18-dev ninja-build ccache \
   pkg-config python3 ffmpeg libfreetype-dev libcurl4-openssl-dev
 make            # PS5 build: dist/PPSA99276/ and dist/PPSA99276.zip
-make test-unit  # 166 host tests (ASan/UBSan), local HTTP server, generated media, browser stand-in
+make test-unit  # 189 host tests (ASan/UBSan), local HTTP server, generated media, browser stand-in
 make screenshots  # renders every screen to build/screenshots/*.png
 make lint
 ```

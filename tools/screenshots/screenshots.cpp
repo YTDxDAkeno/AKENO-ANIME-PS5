@@ -156,16 +156,54 @@ int main()
     press(app, input::Button::up, 8);
 
     // Modes are reached by name: the tab order has website modes in it.
+    // Anime: the bundled sample series is Available to Watch (first row).
     app.switch_mode(Mode::anime);
+    settle(app, 60);
     shot(app, "03-anime");
+    press(app, input::Button::cross);
+    shot(app, "40-anime-series");
+    press(app, input::Button::down, 2); // seasons, then episodes
+    shot(app, "41-anime-episodes");
+    press(app, input::Button::right); // season 2
+    shot(app, "42-anime-season-2");
+    press(app, input::Button::cross); // S2 E1 in the native player, subtitles on
+    // The first subtitle cue shows from 1 s to 4.5 s.
+    for (int i = 0; i < 400 && app.player().status().position < 1.6; ++i)
+    {
+        app.update(g_now += 16);
+        platform::sleep_us(10000);
+    }
+    app.render(g_surface, g_now);
+    shot(app, "43-anime-player-subtitles");
+    press(app, input::Button::circle); // stop before 10 s: no resume point
+    press(app, input::Button::circle); // back to Anime
+    // Rows now: Available to Watch, Recently Updated, Recently Watched, sources.
+    press(app, input::Button::down, 3); // Your Anime Sources
+    press(app, input::Button::cross);   // Search Anime
+    shot(app, "44-anime-search");
+    press(app, input::Button::circle);
+    press(app, input::Button::right);
+    press(app, input::Button::cross); // Add Streaming Provider
+    shot(app, "45-anime-add-provider");
+    press(app, input::Button::circle);
+    press(app, input::Button::right);
+    press(app, input::Button::cross); // Streaming Providers
+    shot(app, "46-anime-providers");
+    press(app, input::Button::circle);
+    press(app, input::Button::right);
+    press(app, input::Button::cross); // Crunchyroll: native integration status
+    shot(app, "47-crunchyroll-native");
+    press(app, input::Button::circle);
+    press(app, input::Button::left, 3);
+    press(app, input::Button::down); // AniList: Trending Anime
     press(app, input::Button::right, 2);
     shot(app, "04-anime-focus");
     press(app, input::Button::left, 2);
-    press(app, input::Button::cross);
+    press(app, input::Button::cross); // an AniList title: catalogue only
     shot(app, "05-anime-details");
-    press(app, input::Button::down);
+    press(app, input::Button::down, 2); // seasons, then AniList's episode titles
     shot(app, "06-anime-details-episodes");
-    press(app, input::Button::cross);
+    press(app, input::Button::cross); // the episode's official page (QR)
     shot(app, "07-qr");
     press(app, input::Button::circle);
     press(app, input::Button::circle);

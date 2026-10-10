@@ -273,34 +273,6 @@ class OpenStreamsScreen final : public BrowseScreen
 };
 
 // ---------------------------------------------------------------------------
-class AnimeScreen final : public BrowseScreen
-{
-  public:
-    explicit AnimeScreen(App &app)
-        : BrowseScreen{app, th::kAccentAnime, [&app](const net::CancelFlag &c)
-                       { return app.anilist().home(c); }, &app.anilist(), "Search Anime"}
-    {
-    }
-
-  protected:
-    std::vector<Shelf> local_after() override
-    {
-        Shelf open{"Open Animated Films (playable)", {}, false};
-        for (const auto &m : OpenCatalog::public_streams())
-            if (m.attribution.find("Blender") != std::string::npos)
-                open.items.push_back(m);
-        Shelf services{"Streaming Services", {}, false};
-        services.items.push_back(
-            mode_card("crunchyroll", "Crunchyroll", "Website in the browser",
-                      "Open crunchyroll.com in the PS5 browser inside AKENO STREAM and sign in on "
-                      "Crunchyroll's own page. Its episodes use DRM: the section shows whether "
-                      "this console's browser can play them.",
-                      0xf47521));
-        return {open, services};
-    }
-};
-
-// ---------------------------------------------------------------------------
 class DiscoverScreen final : public BrowseScreen
 {
   public:
@@ -1187,10 +1159,6 @@ class StatusScreen final : public Screen
 std::unique_ptr<Screen> make_home_screen(App &app)
 {
     return std::make_unique<HomeScreen>(app);
-}
-std::unique_ptr<Screen> make_anime_screen(App &app)
-{
-    return std::make_unique<AnimeScreen>(app);
 }
 std::unique_ptr<Screen> make_youtube_screen(App &app)
 {

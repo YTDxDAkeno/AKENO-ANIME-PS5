@@ -1,6 +1,7 @@
 // AKENO STREAM PS5 - Settings, diagnostics and licences.
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "app/backup.hpp"
 #include "app/screens.hpp"
 #include "core/fs.hpp"
 #include "media/ffmpeg_probe.hpp"
@@ -59,9 +60,11 @@ class SettingsScreen final : public Screen
         diagnostics,
         clear_history,
         clear_recent,
+        backup,
+        restore,
         about,
     };
-    static constexpr int kRows = 16;
+    static constexpr int kRows = 18;
 
     void handle(input::Button b) override
     {
@@ -181,6 +184,10 @@ class SettingsScreen final : public Screen
             return "Clear watch history";
         case Row::clear_recent:
             return "Clear recently visited websites";
+        case Row::backup:
+            return "Back up my data";
+        case Row::restore:
+            return "Restore my data";
         case Row::about:
             return "About & licences";
         }
@@ -219,6 +226,15 @@ class SettingsScreen final : public Screen
         case Row::clear_history:
             return confirm_clear_ ? "Press X again to confirm"
                                   : std::to_string(app_.store().history().size()) + " entries";
+        case Row::backup:
+            return app_.backup_status();
+        case Row::restore:
+        {
+            for (const std::string &dir : app_.backup_locations())
+                if (const int n = backup::count(dir); n > 0)
+                    return std::to_string(n) + " files in " + dir;
+            return "No backup found";
+        }
         default:
             return ">";
         }
@@ -274,6 +290,18 @@ class SettingsScreen final : public Screen
                    "troubleshooting.";
         case Row::clear_history:
             return "Removes all resume points and the Continue Watching row. Favorites are kept.";
+        case Row::backup:
+            return "Copies your settings, watch history, favorites, sources, websites and anime "
+                   "providers and watchlist to /data/akeno-backup. AKENO STREAM does this at every "
+                   "start; X saves a copy now. The backup survives removing and registering the "
+                   "app again in your homebrew loader (for example to refresh its name and icon "
+                   "on the home screen), and an empty data folder is restored from it "
+                   "automatically. Your YouTube API key is not included.";
+        case Row::restore:
+            return "Replaces your current data with the backup at the next start of AKENO "
+                   "STREAM (/data/akeno-backup, or the akeno-backup folder a PC copied into "
+                   "/data/homebrew/PPSA99276/). Files that are replaced are kept as "
+                   ".before-restore copies.";
         case Row::about:
             return "Version information and the open-source components AKENO is built from.";
         }
@@ -394,6 +422,15 @@ class SettingsScreen final : public Screen
             confirm_clear_ = false;
             app_.toast("Watch history cleared", th::kInfo);
             return;
+        case Row::backup:
+            app_.back_up_now();
+            app_.toast(app_.backup_status() == "Saving..." ? "Saving a backup of your data"
+                                                           : app_.backup_status(),
+                       th::kInfo);
+            return;
+        case Row::restore:
+            restore();
+            return;
         case Row::about:
             app_.push(make_licenses_screen(app_));
             return;
@@ -401,6 +438,37 @@ class SettingsScreen final : public Screen
             change(1);
             return;
         }
+    }
+
+    void restore()
+    {
+        std::string from;
+        for (const std::string &dir : app_.backup_locations())
+            if (backup::count(dir) > 0)
+            {
+                from = dir;
+                break;
+            }
+        if (from.empty())
+        {
+            app_.toast("No backup found", th::kWarning);
+            return;
+        }
+        app_.push(make_confirm_screen(
+            app_, "Restore your data?",
+            "At the next start AKENO STREAM replaces your settings, history, favorites, sources, "
+            "websites and anime providers with the backup in " +
+                from + ". Close and reopen the app to apply it.",
+            "Restore at next start",
+            [&app = app_, from]
+            {
+                std::string error;
+                if (backup::stage_restore(from, platform::data_dir(), app.backup_locations(),
+                                          &error))
+                    app.toast("Close and reopen AKENO STREAM to restore your data", th::kSuccess);
+                else
+                    app.toast(error, th::kError);
+            }));
     }
 
     int row_ = 0;

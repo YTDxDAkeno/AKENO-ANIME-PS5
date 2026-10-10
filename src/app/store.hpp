@@ -53,9 +53,15 @@ struct HistoryEntry
     {
         return duration > 0.0 ? (position / duration < 1.0 ? position / duration : 1.0) : 0.0;
     }
+    // The last 15 s count as watched to the end (a tenth of a video shorter
+    // than 150 s, so a short episode can still be resumed).
+    [[nodiscard]] static double end_zone(double duration) noexcept
+    {
+        return duration * 0.1 < 15.0 ? duration * 0.1 : 15.0;
+    }
     [[nodiscard]] bool finished() const noexcept
     {
-        return duration > 0.0 && position >= duration - 15.0;
+        return duration > 0.0 && position >= duration - end_zone(duration);
     }
 };
 
@@ -80,8 +86,9 @@ class Store final
     {
         return history_;
     }
-    // Records a playback position; positions under 10 s or within the last
-    // 15 s of a known duration clear the resume point but keep the entry.
+    // Records a playback position; positions under 10 s or within the end
+    // zone of a known duration (HistoryEntry::end_zone) clear the resume
+    // point but keep the entry.
     void record_progress(const MediaItem &item, double position, double duration);
     [[nodiscard]] double resume_position(const std::string &key) const;
     void remove_history(const std::string &key);

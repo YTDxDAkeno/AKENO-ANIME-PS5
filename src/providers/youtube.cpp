@@ -312,7 +312,9 @@ DetailsResult YouTube::details(const MediaItem &item, const net::CancelFlag &can
             if (list.ok)
             {
                 Shelf shelf{"Latest Uploads", {}, false};
-                for (const auto &v : json::parse(list.body).value["items"].items())
+                // The parsed document must outlive the loop over its items.
+                const auto uploads_list = json::parse(list.body);
+                for (const auto &v : uploads_list.value["items"].items())
                 {
                     const std::string id = v["snippet"]["resourceId"]["videoId"].str();
                     if (!id.empty())
