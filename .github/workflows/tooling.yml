@@ -154,7 +154,8 @@ jobs:
         run: |
           set -euo pipefail
           listing=$(python3 -m zipfile -l "dist/$TITLE_ID.zip")
-          for entry in eboot.bin sce_sys/param.json sce_sys/icon0.png sce_module/libc.prx \
+          for entry in eboot.bin sce_sys/param.json sce_sys/icon0.png sce_sys/pic0.dds sce_sys/pic1.dds \
+              sce_module/libc.prx assets/brand/akeno-banner-1920.jpg assets/brand/akeno-mark-128.png \
               assets/fonts/Inter-Regular.ttf assets/selftest/av-sync-720p.ts \
               assets/selftest/h264-aac-360p.mp4 assets/selftest/h264-aac-360p-frag.mp4 \
               assets/selftest/h264-aac-360p-cenc.m4s LICENSE THIRD_PARTY_NOTICES.md \
@@ -164,6 +165,19 @@ jobs:
             grep -Fq "$TITLE_ID/$entry" <<<"$listing" || { echo "missing $entry" >&2; exit 1; }
           done
           if grep -q PPSA99999 <<<"$listing"; then echo "obsolete PPSA99999 packaged" >&2; exit 1; fi
+          # The home screen's name and artwork are AKENO STREAM's, never the 0.x
+          # prototype's ("Akeno Anime Preview", the orange icon).
+          python3 - "dist/$TITLE_ID.zip" "$TITLE_ID" <<'PY'
+          import hashlib, json, sys, zipfile
+          archive, title = zipfile.ZipFile(sys.argv[1]), sys.argv[2]
+          param = json.loads(archive.read(f"{title}/sce_sys/param.json"))
+          name = param["localizedParameters"][param["localizedParameters"]["defaultLanguage"]]["titleName"]
+          if name != "AKENO STREAM":
+              raise SystemExit(f"the packaged titleName is {name!r}")
+          icon = hashlib.sha256(archive.read(f"{title}/sce_sys/icon0.png")).hexdigest()
+          if icon == "6c59a707fb5968d58e0cbc98ee76653c90ba7d5bd209bc8a6a4861f3098b958c":
+              raise SystemExit("the prototype icon is packaged")
+          PY
           # The app ships no sources or websites and must never overwrite the user's.
           if grep -Eq "$TITLE_ID/(sources\.(txt|json)|streams\.json|websites\.(txt|json))" <<<"$listing"; then
             echo "a source or website list is packaged" >&2; exit 1
@@ -171,6 +185,10 @@ jobs:
           # Nor the user's anime providers, watchlist or personal catalogue.
           if grep -Eq "$TITLE_ID/(anime-providers|anime-library|anime-catalog)\.json" <<<"$listing"; then
             echo "a user anime list is packaged" >&2; exit 1
+          fi
+          # Nor a data backup, which a restore would apply to the user's data.
+          if grep -q "$TITLE_ID/akeno-backup/" <<<"$listing"; then
+            echo "a data backup is packaged" >&2; exit 1
           fi
           # The system browser dialog and the common-dialog service are imported
           # from the system (positional imports), never packaged.

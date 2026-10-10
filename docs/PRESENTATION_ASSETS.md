@@ -41,6 +41,28 @@ from this template:
 The two DDS backgrounds are about 8.3 MB each. They change rarely; commit them
 like any other source file.
 
+## AKENO STREAM's own artwork (1.0.0)
+
+The files in `sce_sys/` and `assets/brand/` come from the AKENO STREAM
+concept pack supplied by the project owner (main icon and banner):
+
+| File | Made from | Notes |
+| --- | --- | --- |
+| `sce_sys/icon0.png` | main icon, 512x512 | flattened to RGB (the tile has no transparency) |
+| `sce_sys/launch-background-source.png` -> `pic1.dds` | the banner, cropped to the artwork (the concept sheet's neighbouring tile, frame line and corner removed) and scaled to 3840x2160 | launch transition |
+| `sce_sys/background-source.png` -> `pic0.dds` | the same picture with a soft shade towards the bottom left | keeps the Shell's own title and Start button readable while the app is selected |
+| `assets/brand/akeno-banner-1920.jpg` | the launch picture at 1920x1080 | the app's startup screen |
+| `assets/brand/akeno-mark-128.png` | the "A" of the main icon | the app's header |
+
+The two DDS files were encoded on Linux with
+[bc7enc](https://github.com/richgel999/bc7enc_rdo) (`bc7enc -u4 -g`) and
+their headers normalised to the exact profile of the hardware-tested
+backgrounds (DX10, `BC7_UNORM`, one surface, `DDSD_MIPMAPCOUNT` with a count
+of 1); `tools/validate-assets.sh` checks that profile, and decoding them
+again gives about 51-52 dB PSNR against the sources. Windows users can
+regenerate them from the `*-source.png` files with `tools/prepare-assets.ps1`
+as described below.
+
 ## What you can customize
 
 | Experience | Source to provide | Generated console file |

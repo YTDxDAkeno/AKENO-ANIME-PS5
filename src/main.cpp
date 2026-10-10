@@ -9,6 +9,7 @@
 #include "app/app.hpp"
 #include "app/version.hpp"
 #include "core/fs.hpp"
+#include "gfx/image_decode.hpp"
 #include "media/native/native_sink.hpp"
 #include "net/http.hpp"
 #include "platform/display.hpp"
@@ -61,8 +62,33 @@ std::string build_label()
     return "release";
 }
 
-void draw_splash(gfx::Surface &surface, gfx::FontEngine &fonts, std::string_view status)
+// The launch artwork (the same picture as sce_sys/pic1.dds) behind the startup
+// steps. Missing or unreadable artwork leaves the plain text splash.
+gfx::Image load_splash_art()
 {
+    const std::string path = fs::join(platform::app_dir(), "assets/brand/akeno-banner-1920.jpg");
+    if (auto bytes = fs::read_bytes(path, gfx::kMaxImageBytes))
+    {
+        gfx::Image art = gfx::decode_image(bytes->data(), bytes->size());
+        if (art.valid() && art.width == platform::Display::kWidth &&
+            art.height == platform::Display::kHeight)
+            return art;
+    }
+    return {};
+}
+
+void draw_splash(gfx::Surface &surface, gfx::FontEngine &fonts, const gfx::Image &art,
+                 std::string_view status)
+{
+    if (art.valid())
+    {
+        // The artwork carries the AKENO STREAM logo; progress sits below it.
+        surface.draw_image(art, 0, 0);
+        surface.dim({0, 900, surface.width(), surface.height() - 900}, 150);
+        fonts.draw(surface, 100, 952, status, {30, gfx::Weight::regular, gfx::hex(0xe8eaf3)});
+        fonts.draw(surface, 100, 1004, kAppVersion, {22, gfx::Weight::regular, gfx::hex(0xb6bdd0)});
+        return;
+    }
     surface.clear(gfx::hex(0x0b0e17));
     fonts.draw(surface, 96, 430, "AKENO STREAM", {72, gfx::Weight::bold, gfx::hex(0xffffff)});
     fonts.draw(surface, 100, 540, status, {30, gfx::Weight::regular, gfx::hex(0x9aa3b8)});
@@ -71,10 +97,10 @@ void draw_splash(gfx::Surface &surface, gfx::FontEngine &fonts, std::string_view
 
 // One startup step: named for the crash report and shown on the splash.
 void step(platform::Display &display, gfx::Surface &surface, gfx::FontEngine &fonts,
-          const char *stage, std::string_view status)
+          const gfx::Image &art, const char *stage, std::string_view status)
 {
     platform::set_stage(stage);
-    draw_splash(surface, fonts, status);
+    draw_splash(surface, fonts, art, status);
     display.present(surface);
 }
 } // namespace
@@ -99,17 +125,21 @@ int main()
     gfx::Surface surface{pixels.data(), platform::Display::kWidth, platform::Display::kHeight,
                          platform::Display::kWidth};
     gfx::FontEngine fonts; // the built-in pixel font until the typefaces load
-    step(display, surface, fonts, "startup: fonts", "Loading fonts...");
+    gfx::Image splash;     // the launch artwork once loaded (freed before the app starts)
+    step(display, surface, fonts, splash, "startup: fonts", "Loading fonts...");
     load_fonts(fonts);
+    platform::set_stage("startup: artwork");
+    splash = load_splash_art();
 
-    step(display, surface, fonts, "startup: network", "Starting network...");
+    step(display, surface, fonts, splash, "startup: network", "Starting network...");
     net::Client::global_init();
 
-    step(display, surface, fonts, "startup: controller", "Connecting the controller...");
+    step(display, surface, fonts, splash, "startup: controller", "Connecting the controller...");
     platform::Pad pad;
     (void)pad.open();
 
-    step(display, surface, fonts, "startup: interface", "Preparing the interface...");
+    step(display, surface, fonts, splash, "startup: interface", "Preparing the interface...");
+    splash = {};
     AppConfig config;
     config.version = kAppVersion;
     config.build = build_label();
