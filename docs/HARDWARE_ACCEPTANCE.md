@@ -1,4 +1,4 @@
-# Hardware acceptance checklist (AKENO STREAM 0.4.x)
+# Hardware acceptance checklist (AKENO STREAM 0.5.x)
 
 Run this on the console before calling a build "working". Note the result of
 each step (pass / fail / not tested) and, when anything fails, export a
@@ -13,8 +13,8 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
       `sce_module/libc.prx` and `assets/` (fonts and `selftest/`)
 - [ ] No old `/data/homebrew/PPSA99999/` remains
 - [ ] The tile is named **AKENO STREAM** and shows the icon
-- [ ] Notifications "AKENO STREAM 0.4.2 starting" and, within ~5 s,
-      "AKENO STREAM 0.4.2 ready" appear; the splash screen shows the startup
+- [ ] Notifications "AKENO STREAM 0.5.0 starting" and, within ~5 s,
+      "AKENO STREAM 0.5.0 ready" appear; the splash screen shows the startup
       steps in between
 - [ ] If it crashes instead: note the "crashed: ..." notification text
       (signal, `eboot+0x…`, stage) and the last splash message
@@ -25,7 +25,7 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
 ## 2. Navigation
 
 - [ ] D-pad and left stick move focus; holding repeats
-- [ ] L1/R1 cycle Home -> Anime -> YouTube -> Library -> Settings and wrap
+- [ ] L1/R1 cycle Home -> Anime -> YouTube -> Library -> Sources -> Settings and wrap
 - [ ] Cross opens, Circle goes back; the last mode is restored after restart
 - [ ] PS button / home menu and returning to the app do not freeze it
 
@@ -62,8 +62,9 @@ Settings -> *Diagnostics*:
 - [ ] Square changes the maximum quality; playback continues near the same position
 - [ ] L1/R1 seek ±60 s
 - [ ] **Akamai live test stream**: plays, shows LIVE, keeps playing > 2 min
-- [ ] **Apple BipBop** and **Sintel** streams open (they may play without
-      sound if the stream only has separate audio renditions - a notice says so)
+- [ ] **Apple BipBop** and **Sintel** streams open and play with sound
+- [ ] **Tears of Steel** (fragmented MP4 / CMAF, refused by 0.4.x) plays
+      with sound; OPTIONS shows container "HLS (fragmented MP4)"
 - [ ] Unplug the network during playback: the player retries and shows an error after a while instead of freezing
 - [ ] Stop at ~1 min, leave, reopen: "Resume" starts at the saved position;
       the item appears under *Continue Watching*
@@ -78,6 +79,27 @@ Settings -> *Diagnostics*:
       connected" / "No access from the title sandbox"): ______
 - [ ] `/data/homebrew/PPSA99276/streams.json` (README example with a real
       stream) shows *Your Streams* in Open Streams
+
+## 6b. Sources (new in 0.5.0)
+
+Use only lists and streams you are allowed to watch; public test streams
+(for example the Big Buck Bunny address from Open Streams) are enough.
+
+- [ ] Sources -> *Add a Source*: the responsibility note appears once;
+      typing an address with `:` `/` `?` `=` works (R1 = symbols); the end of
+      a long address stays visible while typing
+- [ ] The new source appears under *Your Sources*; Cross opens it; an M3U
+      list shows its groups as rows and its logos
+- [ ] Triangle inside a source finds an entry by name
+- [ ] An entry plays with sound; Circle returns to the source
+- [ ] `sources.txt` copied to `/data/homebrew/PPSA99276/` (lines like
+      `Name = https://…`) shows its sources with the badge **PC**
+- [ ] Square on a source added on the console asks, then removes it; it stays
+      removed after a restart
+- [ ] *Play an Address* with an MP4 file on a web server plays; L1/R1 and
+      left/right seek within it
+- [ ] A web page address (e.g. `https://example.com/`) gives a clear message
+      instead of a crash
 
 ## 7. Export a report
 
@@ -111,3 +133,4 @@ Result: ______ passed, ______ failed, ______ not tested.
 | --- | --- | --- | --- |
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.0 | Crashed at launch (`CE-108255-1`): system heap returned null |
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1 | Starts; UI, controller, fonts; network test passed (HTTPS 200, HLS master with 5 variants); FFmpeg self-test passed; A/V sync clip 360/360 frames presented, 0 dropped, 0 decoder errors, 0 audio underruns/errors; Big Buck Bunny HLS played and resumed; AniList artwork loaded; report export works; a fMP4/CMAF stream was refused as designed |
+| 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1/0.4.2 | Crash while typing a YouTube key on the on-screen keyboard (fixed in 0.4.3); `youtube-key.txt` was not read from the install folder (fixed in 0.4.2/0.4.3) |

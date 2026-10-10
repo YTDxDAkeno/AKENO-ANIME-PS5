@@ -6,11 +6,14 @@
 //   settings.json   versioned preferences (no secrets)
 //   history.json    resume positions, newest first
 //   favorites.json  saved items
+//   sources.json    sources added on the console (not exported: addresses may
+//                   carry personal tokens)
 //   secrets.json    API keys entered by the user; never logged or exported
 // A damaged file is renamed to *.corrupt and replaced with defaults.
 #pragma once
 
 #include "providers/model.hpp"
+#include "providers/sources.hpp"
 
 #include <cstdint>
 #include <string>
@@ -30,6 +33,7 @@ struct Settings
     std::string youtube_region = "US";
     std::string youtube_safe_search = "moderate";
     bool reduce_motion = false;
+    bool sources_notice_accepted = false; // the responsibility note was confirmed
 };
 
 struct HistoryEntry
@@ -88,6 +92,15 @@ class Store final
     // Returns true if the item is now a favourite.
     bool toggle_favorite(const MediaItem &item);
 
+    // Sources added on the console. add_source returns false when the
+    // address is already listed or the list is full.
+    [[nodiscard]] const std::vector<SourceEntry> &sources() const noexcept
+    {
+        return sources_;
+    }
+    bool add_source(SourceEntry entry);
+    void remove_source(const std::string &url);
+
     [[nodiscard]] std::string youtube_api_key() const
     {
         return youtube_key_;
@@ -101,11 +114,13 @@ class Store final
 
     static constexpr std::size_t kMaxHistory = 100;
     static constexpr std::size_t kMaxFavorites = 300;
+    static constexpr std::size_t kMaxSources = 100;
 
   private:
     void save_settings();
     void save_history();
     void save_favorites();
+    void save_sources();
     void save_secrets();
     json::Value load_json(const std::string &name);
     void save_json(const std::string &name, const json::Value &value);
@@ -114,6 +129,7 @@ class Store final
     Settings settings_;
     std::vector<HistoryEntry> history_;
     std::vector<MediaItem> favorites_;
+    std::vector<SourceEntry> sources_;
     std::string youtube_key_;
     std::uint64_t order_ = 0;
     std::string last_error_;

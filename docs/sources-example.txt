@@ -1,0 +1,19 @@
+# AKENO STREAM - template for your own sources
+#
+# AKENO STREAM ships no sources. To add yours from a PC, copy this file as
+# sources.txt into /data/homebrew/PPSA99276/ and replace the example lines
+# below with addresses you are allowed to use. One source per line:
+#
+#   Name = address
+#
+# An address can be an M3U/M3U8 list, an AKENO JSON feed (see docs/SOURCES.md),
+# an HLS playlist (.m3u8), an MPEG-TS stream or an MP4/MKV file. Only http://
+# and https:// work. DRM-protected streams cannot be played, and web pages are
+# not searched for videos. Lines starting with # are ignored.
+#
+# This template itself is not read by the app, and an update never overwrites
+# your sources.txt.
+
+# My list = https://example.com/lists/my-list.m3u
+# My feed = https://example.com/feeds/my-feed.json
+# My stream = https://example.com/live/stream.m3u8

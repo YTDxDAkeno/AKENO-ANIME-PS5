@@ -96,6 +96,7 @@ void Store::load()
         settings_.youtube_region = s["youtube_region"].str("US");
         settings_.youtube_safe_search = s["youtube_safe_search"].str("moderate");
         settings_.reduce_motion = s["reduce_motion"].boolean(false);
+        settings_.sources_notice_accepted = s["sources_notice_accepted"].boolean(false);
     }
     const json::Value h = load_json("history.json");
     history_.clear();
@@ -124,6 +125,16 @@ void Store::load()
         if (!m.id.empty() && favorites_.size() < kMaxFavorites)
             favorites_.push_back(std::move(m));
     }
+    sources_.clear();
+    if (const auto text = fs::read_text(fs::join(directory_, "sources.json"), 1024u * 1024u))
+    {
+        std::string error;
+        sources_ = parse_source_list(*text, &error);
+        if (sources_.size() > kMaxSources)
+            sources_.resize(kMaxSources);
+        if (!error.empty())
+            last_error_ = error;
+    }
     const json::Value secrets = load_json("secrets.json");
     youtube_key_ = secrets["youtube_api_key"].str();
     if (!youtube_key_.empty() && !plausible_youtube_key(youtube_key_))
@@ -150,6 +161,7 @@ void Store::save_settings()
     s.set("youtube_region", settings_.youtube_region);
     s.set("youtube_safe_search", settings_.youtube_safe_search);
     s.set("reduce_motion", settings_.reduce_motion);
+    s.set("sources_notice_accepted", settings_.sources_notice_accepted);
     save_json("settings.json", s);
 }
 
@@ -270,6 +282,33 @@ void Store::save_favorites()
         items.push(m.to_json());
     root.set("items", items);
     save_json("favorites.json", root);
+}
+
+bool Store::add_source(SourceEntry entry)
+{
+    entry.from_install_folder = false;
+    if (sources_.size() >= kMaxSources ||
+        std::any_of(sources_.begin(), sources_.end(),
+                    [&](const SourceEntry &s) { return s.url == entry.url; }))
+        return false;
+    sources_.push_back(std::move(entry));
+    save_sources();
+    return true;
+}
+
+void Store::remove_source(const std::string &url)
+{
+    sources_.erase(std::remove_if(sources_.begin(), sources_.end(),
+                                  [&](const SourceEntry &s) { return s.url == url; }),
+                   sources_.end());
+    save_sources();
+}
+
+void Store::save_sources()
+{
+    std::string error;
+    if (!fs::write_atomic(fs::join(directory_, "sources.json"), dump_source_list(sources_), &error))
+        last_error_ = "could not save sources.json: " + error;
 }
 
 void Store::set_youtube_api_key(const std::string &key)

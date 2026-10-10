@@ -80,7 +80,8 @@ int main()
     fs::make_directory("build/screenshots");
     const std::string data = "build/screenshot-data";
     fs::make_directory(data);
-    for (const char *f : {"settings.json", "history.json", "favorites.json", "secrets.json"})
+    for (const char *f : {"settings.json", "history.json", "favorites.json", "secrets.json",
+                          "sources.json"})
         fs::remove_file(fs::join(data, f));
     setenv("AKENO_DATA_DIR", data.c_str(), 1);
     net::set_test_transport(test::canned_transport);
@@ -94,6 +95,7 @@ int main()
         store.record_progress(streams[0], 212.0, 596.0);
         store.record_progress(streams[2], 405.0, 888.0);
         store.toggle_favorite(streams[1]);
+        store.add_source({"Example List", "https://lists.example/demo.m3u", false});
     }
 
     gfx::FontEngine fonts;
@@ -148,35 +150,46 @@ int main()
     press(app, input::Button::cross);
     shot(app, "13-library-files");
     press(app, input::Button::r1);
-    shot(app, "14-settings");
+    shot(app, "14-sources");
+    press(app, input::Button::cross);
+    shot(app, "15-source-list");
+    press(app, input::Button::circle);
+    press(app, input::Button::down);
+    press(app, input::Button::cross);
+    shot(app, "16-sources-notice");
+    press(app, input::Button::cross);
+    shot(app, "17-sources-keyboard");
+    press(app, input::Button::circle); // cancel the keyboard
+    press(app, input::Button::r1);
+    shot(app, "18-settings");
     press(app, input::Button::down, 9);
     press(app, input::Button::cross);
     press(app, input::Button::right);
     press(app, input::Button::cross);
     settle(app, 120);
-    shot(app, "15-diagnostics");
+    shot(app, "19-diagnostics");
     press(app, input::Button::circle);
     press(app, input::Button::up);
     press(app, input::Button::cross);
     press(app, input::Button::cross);
     press(app, input::Button::cross);
     press(app, input::Button::cross);
-    shot(app, "16-crunchyroll-status");
+    shot(app, "20-crunchyroll-status");
     press(app, input::Button::circle);
     // Play the bundled clip through the software decoder.
     press(app, input::Button::r1); // home, focus still on the Explore row
     press(app, input::Button::down, 2);
     press(app, input::Button::cross);
-    shot(app, "17-details-offline-clip");
+    shot(app, "21-details-offline-clip");
     press(app, input::Button::cross);
     for (int i = 0; i < 60; ++i)
     {
         settle(app, 2);
         platform::sleep_us(5000);
     }
-    shot(app, "18-player");
+    shot(app, "22-player");
     press(app, input::Button::options);
-    shot(app, "19-player-info");
+    shot(app, "23-player-info");
     press(app, input::Button::circle);
     press(app, input::Button::circle);
     net::set_test_transport({});

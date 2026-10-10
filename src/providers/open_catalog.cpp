@@ -44,8 +44,8 @@ ProviderInfo OpenCatalog::info() const
         {"Browse", Support::available,
          "Curated public HLS test streams and clips packaged with the app."},
         {"Playback", Support::available,
-         "MPEG-TS HLS with H.264/HEVC video and AAC/AC-3/MP2 audio, decoded by the PS5 hardware "
-         "decoder."},
+         "HLS (MPEG-TS or fragmented MP4, separate audio, AES-128) with H.264/HEVC video and "
+         "AAC/AC-3/MP2 audio, decoded by the PS5 hardware decoder."},
         {"Your streams", Support::available,
          "Add DRM-free HLS URLs you are allowed to watch to streams.json."},
     };

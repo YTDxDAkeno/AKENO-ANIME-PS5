@@ -35,9 +35,10 @@ enum class Mode : std::uint8_t
     anime,
     youtube,
     library,
+    sources,
     settings,
 };
-inline constexpr int kModeCount = 5;
+inline constexpr int kModeCount = 6;
 const char *mode_name(Mode mode) noexcept;
 const char *mode_id(Mode mode) noexcept;
 ui::Pixel mode_accent(Mode mode) noexcept;

@@ -167,9 +167,32 @@ void Keyboard::render(Painter &p, Pixel accent)
     const Rect field{panel.x + 48, panel.y + 100, panel.w - 96, 72};
     p.s.fill_rounded(field, 14, theme::kBackgroundTop);
     p.s.stroke_rounded(field, 14, 3, accent);
-    const std::string shown = secret_ ? mask_secret(text_) : text_;
-    const int tw = p.text(field.x + 24, field.y + 18, shown.empty() ? std::string{} : shown,
-                          theme::kBody, theme::kText, field.w - 60);
+    std::string shown = secret_ ? mask_secret(text_) : text_;
+    // Long input (addresses): keep the end, where the cursor is, in view.
+    const int room = field.w - 60;
+    if (p.measure(shown, theme::kBody) > room)
+    {
+        const auto boundary = [&](std::size_t at)
+        {
+            while (at < shown.size() && (static_cast<unsigned char>(shown[at]) & 0xC0) == 0x80)
+                ++at; // whole UTF-8 code points
+            return at;
+        };
+        // Smallest cut whose tail fits (binary search: this runs every frame).
+        std::size_t low = 0, high = shown.size();
+        while (low < high)
+        {
+            const std::size_t mid = boundary(low + (high - low) / 2);
+            if (mid >= high)
+                break;
+            if (p.measure("..." + shown.substr(mid), theme::kBody) > room)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+        shown = "..." + shown.substr(boundary(high));
+    }
+    const int tw = p.text(field.x + 24, field.y + 18, shown, theme::kBody, theme::kText, room);
     p.s.fill({field.x + 26 + tw, field.y + 16, 3, 40}, accent);
     char counter[32];
     std::snprintf(counter, sizeof(counter), "%zu/%zu", text_.size(), max_length_);

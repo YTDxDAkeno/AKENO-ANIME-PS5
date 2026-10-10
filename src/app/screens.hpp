@@ -5,7 +5,9 @@
 
 #include "app/app.hpp"
 
+#include <functional>
 #include <memory>
+#include <string>
 
 namespace akeno
 {
@@ -24,4 +26,10 @@ std::unique_ptr<Screen> make_status_screen(App &app, ProviderInfo info);
 std::unique_ptr<Screen> make_diagnostics_screen(App &app);
 std::unique_ptr<Screen> make_licenses_screen(App &app);
 std::unique_ptr<Screen> make_open_streams_screen(App &app);
+std::unique_ptr<Screen> make_sources_screen(App &app);
+std::unique_ptr<Screen> make_source_screen(App &app, SourceEntry entry);
+// A modal question: Cross runs on_confirm, Circle closes.
+std::unique_ptr<Screen> make_confirm_screen(App &app, std::string title, std::string message,
+                                            std::string confirm_label,
+                                            std::function<void()> on_confirm);
 } // namespace akeno

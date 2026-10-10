@@ -4,15 +4,17 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 AKENO STREAM is a native, controller-operated media app for jailbroken PS5
-consoles. It plays DRM-free video with audio - HLS streams, MPEG-TS over HTTP
-and your own MP4, MKV, MOV and TS files - through the console's hardware video
-decoder, and adds an anime discovery mode, a YouTube browser, a local library,
-watch history, favourites and a diagnostics screen.
+consoles. It plays DRM-free video with audio - HLS streams (MPEG-TS or
+fragmented MP4), MPEG-TS over HTTP, MP4/MKV files on web servers and your own
+MP4, MKV, MOV and TS files - through the console's hardware video decoder. You
+can add your own sources (M3U lists, JSON feeds, stream addresses), and the
+app adds an anime discovery mode, a YouTube browser, a local library, watch
+history, favourites and a diagnostics screen.
 
 | | |
 | --- | --- |
 | Title ID | `PPSA99276` (unchanged since v0.1) |
-| Version | 0.4.2 (`contentVersion` 01.004.002) |
+| Version | 0.5.0 (`contentVersion` 01.005.000) |
 | Tested on | PS5 firmware 13.09 with ShadowMountPlus (0.4.1); no PSN account, no PC needed after install |
 | Install path | `/data/homebrew/PPSA99276/` |
 | Licence | GPL-3.0-or-later |
@@ -24,7 +26,9 @@ watch history, favourites and a diagnostics screen.
 > diagnostics export all worked on the console. Earlier, 0.4.0 crashed at
 > launch because the system heap returns null for real allocations; 0.4.1
 > brought its own heap. Features not yet tried on the console are marked
-> below. Please keep reporting with the
+> below. 0.5.0 adds the Sources mode, fragmented-MP4 HLS, separate audio
+> tracks, AES-128 HLS and web files; these are host-tested and still need a
+> console run. Please keep reporting with the
 > [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md).
 
 German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
@@ -32,7 +36,8 @@ German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
 | | |
 | --- | --- |
 | ![Home](docs/screenshots/01-home.jpg) | ![Anime](docs/screenshots/03-anime.jpg) |
-| ![Player with stream information](docs/screenshots/19-player-info.jpg) | ![Diagnostics](docs/screenshots/15-diagnostics.jpg) |
+| ![Sources](docs/screenshots/14-sources.jpg) | ![A source's entries](docs/screenshots/15-source-list.jpg) |
+| ![Player with stream information](docs/screenshots/23-player-info.jpg) | ![Diagnostics](docs/screenshots/19-diagnostics.jpg) |
 
 *Rendered by the real interface code on the build machine (`make screenshots`)
 with recorded API responses and generated placeholder artwork; more in
@@ -49,10 +54,14 @@ into `eboot.bin`, not yet tried on the console.
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Launch, 1080p interface, Inter fonts, DualSense navigation | **Console** | |
-| Mode switching with L1/R1 (Home, Anime, YouTube, Library, Settings) | **Console** | The last mode is restored at the next start |
+| Mode switching with L1/R1 (Home, Anime, YouTube, Library, Sources, Settings) | **Console** (Sources tab new in 0.5.0) | The last mode is restored at the next start |
 | HTTPS with certificate verification | **Console** | Console CA list; example.com and mux.dev answered |
 | HLS playback (MPEG-TS segments) | **Console** | Big Buck Bunny played; resume position saved |
-| HLS with fMP4/CMAF segments | Not supported | Refused with a clear message (seen on the console) |
+| HLS with fMP4/CMAF segments (`EXT-X-MAP`) | Host-tested, PS5 build | New in 0.5.0; remuxed by FFmpeg to MPEG-TS for the hardware pipeline |
+| HLS with a separate audio rendition (`EXT-X-MEDIA`) | Host-tested, PS5 build | New in 0.5.0; video and audio playlists are merged by time |
+| HLS with AES-128 segment encryption, byte ranges | Host-tested, PS5 build | New in 0.5.0; the standard HLS method, not DRM. SAMPLE-AES/FairPlay/Widevine/PlayReady are refused |
+| MP4, MKV, MOV and TS files on web servers | Host-tested, PS5 build | New in 0.5.0; seeking with HTTP range requests (also works, slower, without them) |
+| Sources: M3U/M3U8 lists, AKENO JSON feeds, stream addresses you add | Host-tested, PS5 build | New in 0.5.0; see [docs/SOURCES.md](docs/SOURCES.md). The app ships no sources |
 | Hardware H.264 decoding (Videodec2) | **Console** | 720p30 clip: 360/360 frames presented, 0 dropped, 0 decoder errors |
 | Hardware HEVC decoding | PS5 build | |
 | AAC audio (Audiodec + AudioOut) | **Console** | 0 underruns, 0 output errors; A/V sync by eye not yet reported |
@@ -61,13 +70,14 @@ into `eboot.bin`, not yet tried on the console.
 | Stop, pause, seek ±10 s / ±60 s, replay, quality change | Stop: **Console**; rest host-tested | |
 | Resume where you left off, history, favourites, settings | **Console** | Files written on the console |
 | Offline test clips (no network needed) | **Console** | 2 s 360p clip and a 12 s 720p A/V sync clip |
-| Public DRM-free test streams | Big Buck Bunny **Console** | Third-party streams may go offline or use fMP4 |
-| Your own streams (`streams.json`) | Host-tested, PS5 build | |
+| Public DRM-free test streams | Big Buck Bunny **Console** | Third-party streams may go offline |
+| Your own streams (`streams.json`) | Host-tested, PS5 build | Still read; Sources is the more flexible way |
 | Anime mode: AniList catalogue, search, details, official links (QR) | **Console** (catalogue and artwork loaded) | Discovery only - AniList has no video |
 | YouTube: trending, search, channels (Data API v3, your key) | Host-tested, PS5 build | **No YouTube playback** - see below |
 | Crunchyroll | **Unsupported** | Status page explains why and lists legitimate options |
 | Diagnostics: network test, FFmpeg self-test, report export | **Console** | Reports exclude keys and tokens |
 | Crash reporter, previous-crash notice | PS5 build | No crash since 0.4.1 to test it with |
+| On-screen keyboard with symbols, secret masking | Host-tested, PS5 build | 0.4.3 fixed the crash while typing a key (seen on the console with 0.4.2); long addresses scroll to the cursor |
 | USB drives in the library | PS5 build | Title sandbox access is unverified; the app reports what it can reach |
 | Subtitles | Not implemented | |
 | HDR | Not implemented | HDR streams play without tone mapping |
@@ -85,7 +95,8 @@ into `eboot.bin`, not yet tried on the console.
 4. Refresh ShadowMountPlus (or restart it) and start **AKENO STREAM**.
 
 The folder contains `eboot.bin`, `sce_sys/` (param.json, icon, backgrounds),
-`sce_module/libc.prx` and `assets/` (fonts and the offline test clips).
+`sce_module/libc.prx`, `assets/` (fonts and the offline test clips) and
+`sources-example.txt` (a template, see *Sources* below).
 
 ## Using the app
 
@@ -95,8 +106,8 @@ The folder contains `eboot.bin`, `sce_sys/` (param.json, icon, backgrounds),
 | D-pad, left stick | Move | Left/right: seek -10 s / +10 s; up/down: volume |
 | Cross | Select | Pause / play (replay at the end, retry after an error) |
 | Circle | Back | Stop and close the player |
-| Triangle | Search (Anime, YouTube) | Subtitles (shows "not available") |
-| Square | Add / remove favourite | Change maximum quality (HLS) |
+| Triangle | Search (Anime, YouTube, inside a source) | Subtitles (shows "not available") |
+| Square | Add / remove favourite (Sources: remove a source) | Change maximum quality (HLS) |
 | OPTIONS | Service information | Stream information panel |
 
 **First test:** Home -> *Offline Test Clips* -> *A/V Sync Test Clip*. It plays
@@ -117,7 +128,8 @@ with [UFS2Tool](https://github.com/SvenGDK/UFS2Tool)).
 | What | Copy to (from a PC) |
 | --- | --- |
 | Your video files | `/data/homebrew/PPSA99276/media/` |
-| Your stream list | `/data/homebrew/PPSA99276/streams.json` |
+| Your sources | `/data/homebrew/PPSA99276/sources.txt` (or `sources.json`) |
+| Your stream list (older format) | `/data/homebrew/PPSA99276/streams.json` |
 | YouTube API key (optional) | `/data/homebrew/PPSA99276/youtube-key.txt` |
 
 | What | Read from (while the app runs) |
@@ -149,14 +161,42 @@ new `PPSA99276/` folder over the old one.
   `ts`. Only add streams you are allowed to watch. The list appears in Home ->
   *Open Streams*.
 
+### Sources (your own lists, feeds and addresses)
+
+The **Sources** mode lets you add what you want to watch; the app itself ships
+no sources and does not look for any. You decide what to add and you are
+responsible for having the right to watch it.
+
+- **On the console:** Sources -> *Add a Source*, type the address (the keyboard
+  has a symbols page on R1 for `:/?=&`), then a name. *Play an Address* plays a
+  link once without saving it.
+- **From a PC (easier):** put `sources.txt` into
+  `/data/homebrew/PPSA99276/` (start from the packaged `sources-example.txt`),
+  one source per line:
+
+  ```text
+  # Name = address
+  My TV list = https://example.com/lists/tv.m3u
+  Club videos = https://example.com/feeds/club.json
+  https://example.com/live/stream.m3u8
+  ```
+
+A source can be an **M3U/M3U8 list** (entries grouped by `group-title`, logos
+from `tvg-logo`), an **AKENO JSON feed**, an **HLS playlist**, an **MPEG-TS
+stream** or an **MP4/MKV file**. Open a source to browse it, Triangle searches
+inside it. DRM-protected entries, MPEG-DASH (`.mpd`) and non-HTTP protocols
+(rtmp, udp) are skipped with a note. Nothing is read out of web pages and no
+site protection is bypassed. Details and the feed format:
+[docs/SOURCES.md](docs/SOURCES.md).
+
 ### YouTube
 
 YouTube mode uses the official YouTube Data API v3 with **your own free API
 key** (Google Cloud Console -> enable "YouTube Data API v3" -> create an API
 key). Enter it in YouTube mode or Settings with the on-screen keyboard, or put
-it in `/data/homebrew/PPSA99276/youtube-key.txt` and press Square in YouTube
-mode; delete the file afterwards (the app cannot delete files in its install
-folder). The key is stored in the app's data folder (`secrets.json`), never
+it in `/data/homebrew/PPSA99276/youtube-key.txt`: the app imports it at the
+next start (or when you press Square in YouTube mode); delete the file
+afterwards (the app cannot delete files in its install folder). The key is stored in the app's data folder (`secrets.json`), never
 shown in logs or diagnostics reports. A search costs 100 of the default 10,000
 daily quota units, a trending page 1 unit.
 
@@ -183,7 +223,7 @@ Anime mode.
 
 The app shows its startup steps on screen ("Loading fonts...", "Starting
 network...") and catches crashes: before the system's error dialog appears,
-a notification reads for example *"AKENO STREAM 0.4.2 crashed: SIGSEGV (invalid
+a notification reads for example *"AKENO STREAM 0.5.0 crashed: SIGSEGV (invalid
 memory access) at eboot+0x1a2b3c, address 0x0, during startup: fonts"*. A
 photo of it is the most useful bug report. At the next start the app says that
 the last session crashed, lists the first line under Settings -> Diagnostics
@@ -203,17 +243,23 @@ redacted.
 
 ## Limitations
 
-- HLS: clear (unencrypted) MPEG-TS segments only. Encrypted (AES-128,
-  SAMPLE-AES, DRM), fMP4/CMAF (`EXT-X-MAP`) and byte-range playlists are
-  refused with a message. Variants whose audio is only in a separate
-  rendition play without sound when no muxed variant exists.
+- HLS: MPEG-TS and fragmented-MP4 segments, byte ranges, separate audio
+  renditions and AES-128. SAMPLE-AES and every DRM system (FairPlay,
+  Widevine, PlayReady) are refused with a message - DRM is not circumvented.
+  Packed-audio renditions (raw `.aac` segments) carry no timestamps the app
+  reads, so their sync is not guaranteed. The first audio rendition chosen
+  (default > autoselect > first) is used; there is no audio-track menu yet.
+- MPEG-DASH (`.mpd`) is not supported.
+- Web pages are never searched for videos: a source must be a list, feed,
+  playlist or media address.
 - MP3 audio inside MPEG-TS is not supported (the stream plays without audio
   with a notice); MP2 is.
 - Video: H.264 and HEVC (8/10-bit 4:2:0). VP9/AV1 are not supported.
 - No subtitles, no HDR tone mapping, no picture-in-picture, no download
   manager.
 - Third-party test streams can disappear at any time.
-- USB access from inside the title sandbox has not been confirmed on 12.20.
+- USB access from inside the title sandbox has not been confirmed on the
+  console (firmware 13.09).
 
 ## Building from source
 

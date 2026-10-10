@@ -518,6 +518,31 @@ void Player::run()
             s.finished.store(true);
             return;
         }
+        const std::string_view lead = std::string_view(first).substr(
+            std::min(first.find_first_not_of(" \t\r\n\xEF\xBB\xBF"), first.size()));
+        const auto lead_is = [&](std::string_view prefix)
+        {
+            if (lead.size() < prefix.size())
+                return false;
+            for (std::size_t i = 0; i < prefix.size(); ++i)
+                if (std::tolower(static_cast<unsigned char>(lead[i])) != prefix[i])
+                    return false;
+            return true;
+        };
+        if (lead_is("<mpd") || (lead_is("<?xml") && first.find("<MPD") != std::string::npos))
+        {
+            set_error("MPEG-DASH (.mpd) streams are not supported. Use the HLS (.m3u8) address "
+                      "if there is one.");
+            s.finished.store(true);
+            return;
+        }
+        if (lead_is("<!doctype html") || lead_is("<html"))
+        {
+            set_error("This address is a web page, not a stream. AKENO STREAM plays stream and "
+                      "file addresses; it does not read videos out of web pages.");
+            s.finished.store(true);
+            return;
+        }
         s.request.kind = sniff_source(response.content_type, first);
         std::lock_guard<std::mutex> guard(status_lock_);
         status_.container = container_label(s.request.kind);
@@ -558,6 +583,18 @@ void Player::run()
         if (!fetch(s.request.url, &body, &error))
         {
             set_error("Could not load the playlist: " + error);
+            s.finished.store(true);
+            return;
+        }
+        // An M3U list of channels or videos is not a stream: no EXT-X tags,
+        // and IPTV-style entries (duration -1, tvg-/group-title attributes).
+        if (body.find("#EXT-X-") == std::string::npos &&
+            (body.find("#EXTINF:-1") != std::string::npos ||
+             body.find("tvg-") != std::string::npos ||
+             body.find("group-title") != std::string::npos))
+        {
+            set_error("This address is a list of channels or videos (M3U), not a single stream. "
+                      "Add it in Sources to browse its entries.");
             s.finished.store(true);
             return;
         }

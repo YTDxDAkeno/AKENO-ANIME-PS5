@@ -31,6 +31,8 @@ const char *mode_stage(Mode mode) noexcept
         return "YouTube mode";
     case Mode::library:
         return "Library";
+    case Mode::sources:
+        return "Sources";
     case Mode::settings:
         return "Settings";
     }
@@ -50,6 +52,8 @@ const char *mode_name(Mode mode) noexcept
         return "YouTube";
     case Mode::library:
         return "Library";
+    case Mode::sources:
+        return "Sources";
     case Mode::settings:
         return "Settings";
     }
@@ -68,6 +72,8 @@ const char *mode_id(Mode mode) noexcept
         return "youtube";
     case Mode::library:
         return "library";
+    case Mode::sources:
+        return "sources";
     case Mode::settings:
         return "settings";
     }
@@ -86,6 +92,8 @@ ui::Pixel mode_accent(Mode mode) noexcept
         return th::kAccentYouTube;
     case Mode::library:
         return th::kAccentLibrary;
+    case Mode::sources:
+        return th::kAccentSources;
     case Mode::settings:
         return th::kAccentSettings;
     }
@@ -147,6 +155,7 @@ void App::start(std::uint64_t now_ms)
     stacks_[static_cast<int>(Mode::anime)].push_back(make_anime_screen(*this));
     stacks_[static_cast<int>(Mode::youtube)].push_back(make_youtube_screen(*this));
     stacks_[static_cast<int>(Mode::library)].push_back(make_library_screen(*this));
+    stacks_[static_cast<int>(Mode::sources)].push_back(make_sources_screen(*this));
     stacks_[static_cast<int>(Mode::settings)].push_back(make_settings_screen(*this));
     const std::string last = store_.settings().last_mode;
     for (int m = 0; m < kModeCount; ++m)
@@ -266,6 +275,15 @@ void App::open_item(const MediaItem &item)
             show_provider_status(crunchyroll_);
             return;
         }
+        return;
+    }
+    if (item.provider == "source")
+    {
+        // Entries of a user source: lists open as a source, streams play.
+        if (item.kind == ItemKind::folder)
+            push(make_source_screen(*this, SourceEntry{item.title, item.id, false}));
+        else
+            play(item);
         return;
     }
     Provider *provider = nullptr;

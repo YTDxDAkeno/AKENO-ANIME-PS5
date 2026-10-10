@@ -430,9 +430,33 @@ std::string generated_png(int width, int height, unsigned seed)
     return png;
 }
 
+// A user source as the Sources screenshots show it (public test streams).
+std::string example_source_list()
+{
+    return "#EXTM3U\n"
+           "#EXTINF:-1 tvg-logo=\"https://lists.example/logo/bbb.png\" group-title=\"Open "
+           "Movies\",Big Buck Bunny\n"
+           "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8\n"
+           "#EXTINF:-1 tvg-logo=\"https://lists.example/logo/sintel.png\" group-title=\"Open "
+           "Movies\",Sintel\n"
+           "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8\n"
+           "#EXTINF:-1 tvg-logo=\"https://lists.example/logo/tos.png\" group-title=\"Open "
+           "Movies\",Tears of Steel\n"
+           "https://test-streams.mux.dev/tos_ismc/main.m3u8\n"
+           "#EXTINF:-1 tvg-logo=\"https://lists.example/logo/bipbop.png\" group-title=\"Test "
+           "Channels\",BipBop 16:9\n"
+           "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/"
+           "bipbop_16x9_variant.m3u8\n"
+           "#EXTINF:-1 tvg-logo=\"https://lists.example/logo/live.png\" group-title=\"Test "
+           "Channels\",Live Test Channel\n"
+           "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8\n";
+}
+
 net::Response canned_transport(const net::Request &request)
 {
     const std::string &url = request.url;
+    if (url.starts_with("https://lists.example/") && url.ends_with(".m3u"))
+        return ok(example_source_list(), "audio/x-mpegurl");
     if (url.starts_with("https://graphql.anilist.co"))
     {
         if (request.body.find("Media(id") != std::string::npos)
