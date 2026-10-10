@@ -22,7 +22,8 @@ std::unique_ptr<Screen> make_details_screen(App &app, MediaItem item, Provider *
                                             ui::Pixel accent);
 std::unique_ptr<Screen> make_search_screen(App &app, Provider &provider, ui::Pixel accent,
                                            std::string title);
-std::unique_ptr<Screen> make_player_screen(App &app, MediaItem item);
+std::unique_ptr<Screen> make_player_screen(App &app, MediaItem item,
+                                           std::shared_ptr<PlayerContext> context = nullptr);
 std::unique_ptr<Screen> make_qr_screen(App &app, MediaItem item);
 std::unique_ptr<Screen> make_status_screen(App &app, ProviderInfo info);
 std::unique_ptr<Screen> make_diagnostics_screen(App &app);
@@ -97,4 +98,19 @@ void open_secure_drm_record(App &app);
 
 // Websites > Playback Lab (screen_lab.cpp).
 std::unique_ptr<Screen> make_lab_screen(App &app);
+
+// Anime (screen_anime.cpp): a series with its seasons and episodes, from an
+// episode provider or from AniList (catalogue only unless a provider maps it).
+std::unique_ptr<Screen> make_series_screen(App &app, std::string provider_id,
+                                           std::string series_id);
+std::unique_ptr<Screen> make_anilist_series_screen(App &app, MediaItem item);
+std::unique_ptr<Screen> make_anime_search_screen(App &app);
+std::unique_ptr<Screen> make_anime_providers_screen(App &app);
+std::unique_ptr<Screen> make_add_provider_screen(App &app, std::string address = {},
+                                                 std::string name = {});
+// What a provider check found, with Import when it is importable.
+void show_provider_report(App &app, const anime::ProviderReport &report,
+                          const anime::ProviderConfig &config);
+// Crunchyroll: what a native integration would need and what is missing.
+std::unique_ptr<Screen> make_crunchyroll_native_screen(App &app);
 } // namespace akeno

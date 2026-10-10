@@ -6,6 +6,8 @@
 // tool both drive it with input events and render it into a 1920x1080 surface.
 #pragma once
 
+#include "anime/library.hpp"
+#include "anime/registry.hpp"
 #include "app/diagnostics.hpp"
 #include "app/input.hpp"
 #include "app/store.hpp"
@@ -31,6 +33,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -136,6 +139,17 @@ struct AppConfig
     std::function<void(int)> set_volume;
 };
 
+// What the player knows beyond the media address: sidecar subtitles and,
+// for an anime episode, the episodes before and after it.
+struct PlayerContext
+{
+    std::vector<anime::SubtitleTrack> subtitles;
+    std::string next_label;     // "S1 E4 - Title"; empty: no next episode
+    std::string previous_label; // empty: no previous episode
+    std::function<void()> play_next;
+    std::function<void()> play_previous;
+};
+
 // One visit to the embedded browser (platform/web_view.hpp).
 struct WebSession
 {
@@ -197,7 +211,25 @@ class App final
     void push(std::unique_ptr<Screen> screen);
     void pop();
     void open_item(const MediaItem &item);
-    void play(const MediaItem &item, double start_seconds = -1.0);
+    void play(const MediaItem &item, double start_seconds = -1.0,
+              std::shared_ptr<PlayerContext> context = nullptr);
+    // Anime: loads the episode providers that are not loaded yet (all of
+    // them with force) in the background; anime_generation() changes when
+    // one finished.
+    void refresh_anime(bool force);
+    [[nodiscard]] std::uint64_t anime_generation() const noexcept
+    {
+        return anime_generation_;
+    }
+    [[nodiscard]] bool anime_loading() const noexcept
+    {
+        return !anime_loading_.empty();
+    }
+    // Resolves an episode with its provider, checks it and plays it in the
+    // native player with its subtitles and the next episode; explains why
+    // when it cannot play. start < 0: resume from history.
+    void play_episode(const std::string &provider_id, const std::string &series_id,
+                      anime::EpisodeRef ref, double start = -1.0);
     void show_qr(const MediaItem &item);
     void show_provider_status(const Provider &provider);
     // The embedded browser: websites, the official YouTube player and the
@@ -307,6 +339,14 @@ class App final
     {
         return playback_checks_;
     }
+    anime::Registry &anime_registry()
+    {
+        return anime_;
+    }
+    anime::Library &anime_library()
+    {
+        return anime_library_;
+    }
     [[nodiscard]] const AppConfig &config() const
     {
         return config_;
@@ -355,6 +395,10 @@ class App final
     web::WebTestLog web_tests_;
     web::LocalPages pages_;
     web::PlaybackLog playback_checks_;
+    anime::Registry anime_;
+    anime::Library anime_library_;
+    std::uint64_t anime_generation_ = 0;
+    std::set<std::string> anime_loading_;
     bool browser_active_ = false;
 
     Mode mode_ = Mode::home;

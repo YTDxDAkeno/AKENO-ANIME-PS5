@@ -434,6 +434,25 @@ class WebsitesScreen final : public BrowseScreen
                            });
     }
 
+    // What a saved site really is: a website (browser only) or a source the
+    // Anime mode can play from natively. Nothing from the browser (cookies,
+    // sessions) is used; one plain request and the provider check decide.
+    void check_native(const std::string &url, const std::string &name)
+    {
+        app_.toast("Checking " + web::display_host(url) + "...", th::kInfo);
+        App &app = app_;
+        const anime::ProviderContext context = app_.anime_registry().context;
+        app_.jobs().run(
+            [url, name, context, &app]
+            {
+                anime::ProviderConfig config;
+                anime::ProviderReport report =
+                    anime::check_source(url, name, context, net::make_cancel_flag(), &config);
+                app.jobs().post([report = std::move(report), config, &app]
+                                { show_provider_report(app, report, config); });
+            });
+    }
+
     void site_menu(const std::string &id)
     {
         const web::Website *found = app_.websites().find(id);
@@ -515,6 +534,13 @@ class WebsitesScreen final : public BrowseScreen
                            {
                                if (*alive)
                                    fetch_icon(id, url, true);
+                           }});
+        options.push_back({"Check for native streaming",
+                           "Is it a catalogue or API AKENO can play from, or a website?",
+                           [this, alive, url = site.url, name = site.name]
+                           {
+                               if (*alive)
+                                   check_native(url, name);
                            }});
         options.push_back({"Remove", "Removes it from Websites", [this, alive, id, name = site.name]
                            {
@@ -738,8 +764,9 @@ class CrunchyrollScreen final : public Screen
                   th::kCaption, th::kTextSecondary, lw, 5);
 
         static const char *labels[] = {"Open crunchyroll.com", "Record what happened",
-                                       "Playback Lab", "Back"};
-        static const Icon icons[] = {Icon::spark, Icon::check, Icon::refresh, Icon::home};
+                                       "Playback Lab", "Native integration", "Back"};
+        static const Icon icons[] = {Icon::spark, Icon::check, Icon::refresh, Icon::info,
+                                     Icon::home};
         int x = th::kMarginX;
         for (int i = 0; i < kActions; ++i)
             x += p.button(x, 920, labels[i], i == action_, accent, icons[i]) + 18;
@@ -784,7 +811,7 @@ class CrunchyrollScreen final : public Screen
     }
 
   private:
-    static constexpr int kActions = 4;
+    static constexpr int kActions = 5;
     static constexpr char kKey[] = "crunchyroll.com";
 
     struct Row
@@ -855,6 +882,9 @@ class CrunchyrollScreen final : public Screen
             return;
         case 2:
             app_.push(make_lab_screen(app_));
+            return;
+        case 3:
+            app_.push(make_crunchyroll_native_screen(app_));
             return;
         default:
             app_.pop();

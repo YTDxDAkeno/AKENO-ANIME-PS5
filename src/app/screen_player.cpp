@@ -2,6 +2,8 @@
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/screens.hpp"
+#include "core/fs.hpp"
+#include "media/subtitles.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -18,12 +20,21 @@ namespace
 {
 constexpr std::uint64_t kOsdTimeoutMs = 4500;
 constexpr std::uint64_t kSeekCommitMs = 650;
+constexpr std::uint64_t kUpNextMs = 8000;
 
 class PlayerScreen final : public Screen
 {
   public:
-    PlayerScreen(App &app, MediaItem item) : Screen{app}, item_{std::move(item)}
+    PlayerScreen(App &app, MediaItem item, std::shared_ptr<PlayerContext> context)
+        : Screen{app}, item_{std::move(item)}, context_{std::move(context)}
     {
+        // Subtitles start on (the first track) when the episode has any.
+        if (context_ && !context_->subtitles.empty())
+            select_subtitles(0, false);
+    }
+    ~PlayerScreen() override
+    {
+        *alive_ = false;
     }
 
     [[nodiscard]] bool full_screen() const override
@@ -41,8 +52,18 @@ class PlayerScreen final : public Screen
         const media::PlayerState state = status_.state;
         const bool finished =
             state == media::PlayerState::ended || state == media::PlayerState::error;
+        const bool up_next = state == media::PlayerState::ended && has_next();
         switch (b)
         {
+        case input::Button::l2:
+        case input::Button::r2:
+            if (b == input::Button::r2 ? has_next() : has_previous())
+                step_episode(b == input::Button::r2);
+            else if (context_)
+                app_.toast(b == input::Button::r2 ? "This is the last episode"
+                                                  : "This is the first episode",
+                           th::kInfo);
+            return;
         case input::Button::circle:
             if (show_info_)
             {
@@ -53,6 +74,11 @@ class PlayerScreen final : public Screen
             app_.pop();
             return;
         case input::Button::cross:
+            if (up_next)
+            {
+                step_episode(true);
+                return;
+            }
             if (finished)
             {
                 restart(state == media::PlayerState::ended ? 0.0 : status_.position);
@@ -93,6 +119,11 @@ class PlayerScreen final : public Screen
         }
         case input::Button::square:
         {
+            if (up_next)
+            {
+                restart(0.0); // replay this episode instead
+                return;
+            }
             // Cycle the quality cap and restart at the current position.
             Settings s = app_.store().settings();
             s.max_height = s.max_height >= 1080 ? 720 : s.max_height >= 720 ? 480 : 1080;
@@ -103,7 +134,15 @@ class PlayerScreen final : public Screen
             return;
         }
         case input::Button::triangle:
-            app_.toast("Subtitles are not available for this stream", th::kInfo);
+            if (!context_ || context_->subtitles.empty())
+            {
+                app_.toast("This video has no subtitles", th::kInfo);
+                return;
+            }
+            // Off -> first track -> ... -> off.
+            select_subtitles(
+                subtitle_ + 1 >= static_cast<int>(context_->subtitles.size()) ? -1 : subtitle_ + 1,
+                true);
             return;
         case input::Button::options:
             show_info_ = !show_info_;
@@ -115,7 +154,20 @@ class PlayerScreen final : public Screen
 
     void update(std::uint64_t now_ms) override
     {
+        const media::PlayerState before = status_.state;
         status_ = app_.player().status();
+        // The episode ended: the next one starts after a short countdown.
+        if (status_.state == media::PlayerState::ended && before != media::PlayerState::ended &&
+            has_next())
+            up_next_at_ = now_ms + kUpNextMs;
+        if (status_.state != media::PlayerState::ended)
+            up_next_at_ = 0;
+        if (up_next_at_ && now_ms >= up_next_at_)
+        {
+            up_next_at_ = 0;
+            step_episode(true);
+            return;
+        }
         if (seek_pending_at_ && now_ms - seek_pending_at_ >= kSeekCommitMs)
         {
             app_.player().seek_to(seek_target_);
@@ -157,9 +209,13 @@ class PlayerScreen final : public Screen
             p.s.fill_circle(th::kWidth / 2, th::kHeight / 2, 70, gfx::rgba(0, 0, 0, 150));
             p.icon(Icon::pause, th::kWidth / 2, th::kHeight / 2, 64, th::kText);
         }
+        if (subtitle_ >= 0 && !finished)
+            render_subtitles(p, osd);
         if (now_ms < volume_until_)
             render_volume(p);
-        if (finished)
+        if (finished && s.state == media::PlayerState::ended && has_next())
+            render_up_next(p, now_ms);
+        else if (finished)
             render_finished(p);
         if (show_info_)
             render_info(p);
@@ -172,8 +228,131 @@ class PlayerScreen final : public Screen
     {
         App &app = app_;
         const MediaItem item = item_;
+        const auto context = context_;
         app.pop();
-        app.play(item, position);
+        app.play(item, position, context);
+    }
+
+    [[nodiscard]] bool has_next() const
+    {
+        return context_ && context_->play_next;
+    }
+    [[nodiscard]] bool has_previous() const
+    {
+        return context_ && context_->play_previous;
+    }
+
+    // Stops this episode (its progress is saved) and opens the next or
+    // previous one. The screen leaves after the current update (it may be
+    // running inside App::update's loop over screens); the episode opens on
+    // the next frame.
+    void step_episode(bool next)
+    {
+        if (closing())
+            return;
+        std::function<void()> go = next ? context_->play_next : context_->play_previous;
+        app_.player().stop();
+        close_later();
+        app_.jobs().post(std::move(go));
+    }
+
+    void select_subtitles(int index, bool announce)
+    {
+        subtitle_ = index;
+        cues_.clear();
+        if (index < 0)
+        {
+            if (announce)
+                app_.toast("Subtitles off", th::kInfo);
+            return;
+        }
+        const anime::SubtitleTrack track = context_->subtitles[static_cast<std::size_t>(index)];
+        if (announce)
+            app_.toast("Subtitles: " + track.label, th::kInfo);
+        auto alive = alive_;
+        App &app = app_;
+        app_.jobs().run(
+            [track, index, alive, &app, this]
+            {
+                std::string text;
+                if (!track.url.empty() && track.url.front() == '/')
+                {
+                    if (fs::safe_path(track.url))
+                        text = fs::read_text(track.url, 4u * 1024u * 1024u).value_or("");
+                }
+                else
+                {
+                    const net::Response r = net::get(track.url, {}, 4u * 1024u * 1024u);
+                    if (r.ok())
+                        text = r.body;
+                }
+                media::SubtitleDocument doc = media::parse_subtitles(text, track.format);
+                app.jobs().post(
+                    [doc = std::move(doc), index, alive, &app, this]() mutable
+                    {
+                        if (!*alive || index != subtitle_)
+                            return;
+                        if (!doc.ok)
+                        {
+                            app.toast("Subtitles could not be read: " + doc.error, th::kWarning);
+                            return;
+                        }
+                        cues_ = std::move(doc.cues);
+                    });
+            });
+    }
+
+    void render_subtitles(ui::Painter &p, bool osd)
+    {
+        const std::string text = media::cue_text_at(cues_, status_.position);
+        if (text.empty())
+            return;
+        std::vector<std::string> lines;
+        std::size_t start = 0;
+        while (start <= text.size() && lines.size() < 3)
+        {
+            const std::size_t end = text.find('\n', start);
+            lines.push_back(
+                text.substr(start, end == std::string::npos ? std::string::npos : end - start));
+            if (end == std::string::npos)
+                break;
+            start = end + 1;
+        }
+        const int line_h = p.line_height(th::kHeading) + 6;
+        int y =
+            (osd ? th::kHeight - 330 : th::kHeight - 120) - line_h * static_cast<int>(lines.size());
+        for (const std::string &line : lines)
+        {
+            const int w = std::min(p.measure(line, th::kHeading), th::kWidth - 240);
+            const Rect box{(th::kWidth - w) / 2 - 18, y - 4, w + 36, line_h};
+            p.s.fill_rounded(box, 10, gfx::rgba(0, 0, 0, 170));
+            p.text_center(th::kWidth / 2, y, line, th::kHeading, th::kText, th::kWidth - 240);
+            y += line_h;
+        }
+    }
+
+    void render_up_next(ui::Painter &p, std::uint64_t now_ms)
+    {
+        const Rect panel{360, 300, 1200, 330};
+        p.s.dim(p.s.bounds(), 120);
+        p.panel(panel, 28, gfx::with_alpha(th::kSurface, 245));
+        p.text(panel.x + 60, panel.y + 44, "Up next", th::kCaptionStrong, th::kAccentAnime);
+        p.text(panel.x + 60, panel.y + 82, context_->next_label, th::kHeading, th::kText,
+               panel.w - 120);
+        p.text(panel.x + 60, panel.y + 136, item_.title, th::kBody, th::kTextSecondary,
+               panel.w - 120);
+        const double left =
+            up_next_at_ > now_ms ? static_cast<double>(up_next_at_ - now_ms) / 1000.0 : 0.0;
+        p.progress({panel.x + 60, panel.y + 196, panel.w - 120, 8},
+                   1.0 - left / (kUpNextMs / 1000.0), th::kAccentAnime,
+                   gfx::rgba(255, 255, 255, 50));
+        int x = panel.x + 60;
+        const int y = panel.bottom() - 70;
+        x += p.hint(x, y, Glyph::cross,
+                    "Play now (" + std::to_string(static_cast<int>(left + 0.99)) + " s)") +
+             40;
+        x += p.hint(x, y, Glyph::square, "Watch again") + 40;
+        p.hint(x, y, Glyph::circle, "Back");
     }
 
     void render_osd(ui::Painter &p, std::uint64_t now_ms)
@@ -221,6 +400,18 @@ class PlayerScreen final : public Screen
             x += p.hint(x, y, Glyph::r1, "1 min") + 34;
         }
         x += p.hint(x, y, Glyph::square, "Quality") + 34;
+        if (context_ && !context_->subtitles.empty())
+            x += p.hint(x, y, Glyph::triangle,
+                        subtitle_ < 0
+                            ? "Subtitles: off"
+                            : "Subtitles: " +
+                                  context_->subtitles[static_cast<std::size_t>(subtitle_)].label) +
+                 34;
+        if (has_previous() || has_next())
+        {
+            x += p.hint(x, y, Glyph::l2, "") - 4;
+            x += p.hint(x, y, Glyph::r2, "Episode") + 34;
+        }
         x += p.hint(x, y, Glyph::options, "Info") + 34;
         p.hint(x, y, Glyph::circle, "Stop");
         (void)now_ms;
@@ -320,6 +511,11 @@ class PlayerScreen final : public Screen
     }
 
     MediaItem item_;
+    std::shared_ptr<PlayerContext> context_;
+    int subtitle_ = -1; // the track shown, -1: off
+    std::vector<media::Cue> cues_;
+    std::uint64_t up_next_at_ = 0;
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     media::PlayerStatus status_;
     std::uint64_t osd_until_ = 0;
     std::uint64_t volume_until_ = 0;
@@ -329,8 +525,9 @@ class PlayerScreen final : public Screen
 };
 } // namespace
 
-std::unique_ptr<Screen> make_player_screen(App &app, MediaItem item)
+std::unique_ptr<Screen> make_player_screen(App &app, MediaItem item,
+                                           std::shared_ptr<PlayerContext> context)
 {
-    return std::make_unique<PlayerScreen>(app, std::move(item));
+    return std::make_unique<PlayerScreen>(app, std::move(item), std::move(context));
 }
 } // namespace akeno

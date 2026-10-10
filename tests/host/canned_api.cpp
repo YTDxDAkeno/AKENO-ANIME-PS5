@@ -215,10 +215,13 @@ json::Value media_json(const Anime &a, bool details)
         links.push(tw);
         m.set("externalLinks", links);
         json::Value eps = json::Value::array();
+        static const char *const kEpisodeTitles[] = {"To You, in 2000 Years", "That Day",
+                                                     "A Dim Light Amid Despair",
+                                                     "The Night of the Closing Ceremony"};
         for (int e = 1; e <= 4; ++e)
         {
             json::Value ep = json::Value::object();
-            ep.set("title", "Episode " + std::to_string(e) + " - To You, in 2000 Years");
+            ep.set("title", "Episode " + std::to_string(e) + " - " + kEpisodeTitles[e - 1]);
             ep.set("thumbnail",
                    "https://img1.ak.crunchyroll.com/i/spire2-tmb/ep" + std::to_string(e) + ".jpg");
             ep.set("url", "https://www.crunchyroll.com/watch/ep" + std::to_string(e));
