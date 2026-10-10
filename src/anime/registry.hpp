@@ -2,11 +2,13 @@
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// <data>/anime-providers.json lists the providers the user added (AKENO
-// catalogues, PeerTube channels or playlists). Two more are built in: the
-// AKENO sample series shipped in the app (assets/anime/sample) and, when
-// present, the user's own library catalogue anime-catalog.json in the
-// install folder (written over FTP, like websites.txt).
+// <data>/anime-providers.json lists the catalogues and PeerTube channels or
+// playlists the user added; <data>/anime-website-providers.json lists the
+// website providers (anime/provider_store.hpp explains why they are apart).
+// Two more are built in: the AKENO sample series shipped in the app
+// (assets/anime/sample) and, when present, the user's own library catalogue
+// anime-catalog.json in the install folder (written over FTP, like
+// websites.txt).
 //
 // Loading a provider and checking its media runs on a worker thread
 // (load_provider, check_source); the results are installed on the UI thread.
@@ -16,6 +18,7 @@
 
 #include "anime/probe.hpp"
 #include "anime/provider.hpp"
+#include "anime/provider_store.hpp"
 
 #include <cstdint>
 #include <string>
@@ -57,23 +60,40 @@ struct SeriesHit
 class Registry final
 {
   public:
+    // Built-in providers and anime-providers.json together (as in 1.0.0).
     static constexpr std::size_t kMaxProviders = 30;
+    static constexpr std::size_t kMaxWebsiteProviders = 30;
     static constexpr char kSampleId[] = "akeno-sample";
     static constexpr char kPersonalId[] = "personal";
 
     Registry(std::string data_dir, std::string app_dir);
 
-    // Reads anime-providers.json and adds the built-in providers.
+    // Adds the built-in providers and reads both provider files.
     void load();
     [[nodiscard]] const std::vector<ProviderConfig> &configs() const noexcept
     {
         return configs_;
     }
     [[nodiscard]] const ProviderConfig *config(std::string_view id) const;
-    // False with a reason for a duplicate address, a full list or a bad id.
-    bool add(ProviderConfig config, std::string *why);
+    // The provider at this address (or the address it led to), if any.
+    [[nodiscard]] const ProviderConfig *find_by_address(std::string_view address) const;
+    // False with a reason for a duplicate address, a full list or a file this
+    // version may not write; *existing receives the id of the provider that
+    // already has the address. *added receives the new provider's id.
+    bool add(ProviderConfig config, std::string *why, std::string *existing = nullptr,
+             std::string *added = nullptr);
     bool remove(std::string_view id); // built-in providers stay
     void set_anilist_id(std::string_view id, int anilist_id);
+    // Website providers: keep one without loading it, or load it again.
+    bool set_enabled(std::string_view id, bool enabled);
+    // Website providers: what the last check of the catalogue found.
+    void set_summary(std::string_view id, int series, int episodes);
+    // Entries the provider files hold but this version does not load, and
+    // other problems found while reading them (one sentence each).
+    [[nodiscard]] const std::vector<std::string> &storage_problems() const noexcept
+    {
+        return problems_;
+    }
 
     // Worker thread: loads a provider and probes up to max_probes episodes
     // (the first of each series first) so availability is measured.
@@ -115,13 +135,19 @@ class Registry final
     }
 
   private:
-    void save();
+    // Writes the file that holds this kind of provider, and only that one.
+    bool save(ProviderType type, std::string *why = nullptr);
+    [[nodiscard]] bool id_taken(const std::string &id) const;
+    [[nodiscard]] std::size_t count_of(bool websites) const;
     Series *find_mutable(std::string_view provider, std::string_view series);
 
     std::string data_dir_;
     std::string app_dir_;
+    ProviderFile catalogs_file_;
+    ProviderFile websites_file_;
     std::vector<ProviderConfig> configs_;
     std::vector<ProviderState> states_;
+    std::vector<std::string> problems_;
     std::string last_error_;
 };
 

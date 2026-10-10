@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "anime/registry.hpp"
 
+#include "anime/address.hpp"
+#include "anime/website.hpp"
 #include "core/fs.hpp"
 #include "core/json.hpp"
 #include "core/url.hpp"
@@ -11,13 +13,12 @@
 
 #include <algorithm>
 #include <cctype>
+#include <set>
 
 namespace akeno::anime
 {
 namespace
 {
-constexpr char kFile[] = "anime-providers.json";
-
 std::string lower(std::string_view text)
 {
     std::string out(text);
@@ -207,13 +208,17 @@ void describe(const std::vector<Series> &series, ProviderReport &r)
 } // namespace
 
 Registry::Registry(std::string data_dir, std::string app_dir)
-    : data_dir_{std::move(data_dir)}, app_dir_{std::move(app_dir)}
+    : data_dir_{std::move(data_dir)}, app_dir_{std::move(app_dir)},
+      catalogs_file_{data_dir_, ProviderFile::Kind::catalogs},
+      websites_file_{data_dir_, ProviderFile::Kind::websites}
 {
 }
 
 void Registry::load()
 {
     configs_.clear();
+    problems_.clear();
+    last_error_.clear();
     ProviderConfig sample;
     sample.id = kSampleId;
     sample.name = "AKENO Sample Series";
@@ -232,60 +237,45 @@ void Registry::load()
         personal.builtin = true;
         configs_.push_back(personal);
     }
-    const std::string path = fs::join(data_dir_, kFile);
-    const auto text = fs::read_text(path, 1024 * 1024);
-    if (!text)
-        return;
-    const auto parsed = json::parse(*text);
-    if (!parsed.ok || !parsed.value["providers"].is_array())
+    std::set<std::string> taken;
+    for (const ProviderConfig &c : configs_)
+        taken.insert(c.id);
+    // Catalogues and PeerTube, as 1.0.0 keeps them (at most kMaxProviders in all).
+    StoredProviders catalogs =
+        catalogs_file_.load(taken, kMaxProviders - std::min(kMaxProviders, configs_.size()));
+    for (ProviderConfig &c : catalogs.providers)
     {
-        last_error_ = std::string{kFile} + " is damaged; kept as " + kFile + ".corrupt";
-        (void)fs::write_atomic(path + ".corrupt", *text);
-        return;
-    }
-    for (const auto &p : parsed.value["providers"].items())
-    {
-        ProviderConfig c;
-        c.id = p["id"].str();
-        c.name = p["name"].str();
-        c.type = provider_type_from_id(p["type"].str());
-        c.address = p["address"].str();
-        c.added = static_cast<std::uint64_t>(p["added"].integer());
-        c.anilist_id = static_cast<int>(p["anilistId"].integer());
-        if (c.id.empty() || c.address.empty() || c.type == ProviderType::bundled || config(c.id) ||
-            configs_.size() >= kMaxProviders)
-            continue;
-        // Added providers come from the web only; files are the built-in ones.
-        const auto u = url::parse(c.address);
-        if (!u || !u->is_http())
-            continue;
+        taken.insert(c.id);
         configs_.push_back(std::move(c));
     }
+    for (const std::string &id : catalogs_file_.reserved_ids())
+        taken.insert(id);
+    StoredProviders websites =
+        websites_file_.load(taken, kMaxWebsiteProviders, [](const std::string &adapter)
+                            { return website_adapter_version(adapter); });
+    for (ProviderConfig &c : websites.providers)
+        configs_.push_back(std::move(c));
+    for (StoredProviders *stored : {&catalogs, &websites})
+        for (std::string &problem : stored->problems)
+            problems_.push_back(std::move(problem));
+    if (!problems_.empty())
+        last_error_ = problems_.front();
 }
 
-void Registry::save()
+bool Registry::save(ProviderType type, std::string *why)
 {
-    json::Value list = json::Value::array();
+    const bool websites = type == ProviderType::website;
+    std::vector<ProviderConfig> list;
     for (const ProviderConfig &c : configs_)
-    {
-        if (c.builtin)
-            continue;
-        json::Value p = json::Value::object();
-        p.set("id", c.id);
-        p.set("name", c.name);
-        p.set("type", provider_type_id(c.type));
-        p.set("address", c.address);
-        p.set("added", static_cast<long long>(c.added));
-        if (c.anilist_id)
-            p.set("anilistId", c.anilist_id);
-        list.push(std::move(p));
-    }
-    json::Value root = json::Value::object();
-    root.set("version", 1);
-    root.set("providers", std::move(list));
+        if (!c.builtin && (c.type == ProviderType::website) == websites)
+            list.push_back(c);
     std::string error;
-    if (!fs::write_atomic(fs::join(data_dir_, kFile), root.dump(true), &error))
-        last_error_ = "Could not save " + std::string{kFile} + ": " + error;
+    if ((websites ? websites_file_ : catalogs_file_).save(list, &error))
+        return true;
+    last_error_ = error;
+    if (why)
+        *why = error;
+    return false;
 }
 
 const ProviderConfig *Registry::config(std::string_view id) const
@@ -296,7 +286,31 @@ const ProviderConfig *Registry::config(std::string_view id) const
     return nullptr;
 }
 
-bool Registry::add(ProviderConfig c, std::string *why)
+const ProviderConfig *Registry::find_by_address(std::string_view address) const
+{
+    if (address.empty())
+        return nullptr;
+    for (const ProviderConfig &c : configs_)
+        if (!c.builtin && (same_site_address(c.address, address) ||
+                           (!c.original_url.empty() && same_site_address(c.original_url, address))))
+            return &c;
+    return nullptr;
+}
+
+bool Registry::id_taken(const std::string &id) const
+{
+    return config(id) || id == kSampleId || id == kPersonalId ||
+           catalogs_file_.reserved_ids().count(id) || websites_file_.reserved_ids().count(id);
+}
+
+std::size_t Registry::count_of(bool websites) const
+{
+    return static_cast<std::size_t>(
+        std::count_if(configs_.begin(), configs_.end(), [websites](const ProviderConfig &c)
+                      { return (c.type == ProviderType::website) == websites; }));
+}
+
+bool Registry::add(ProviderConfig c, std::string *why, std::string *existing, std::string *added)
 {
     const auto fail = [why](std::string text)
     {
@@ -307,28 +321,58 @@ bool Registry::add(ProviderConfig c, std::string *why)
     const auto u = url::parse(c.address);
     if (!u || !u->is_http())
         return fail("A provider needs an http(s) address.");
-    if (configs_.size() >= kMaxProviders)
-        return fail("At most " + std::to_string(kMaxProviders) + " providers can be added.");
-    for (const ProviderConfig &x : configs_)
-        if (x.address == c.address)
-            return fail("This address is already a provider: " + x.name);
+    if (c.type == ProviderType::bundled)
+        c.type = ProviderType::catalog;
+    const bool website = c.type == ProviderType::website;
+    if (website && c.adapter.empty())
+        return fail("A website provider needs a website adapter.");
+    for (const std::string &address : {c.address, c.original_url})
+        if (const ProviderConfig *x = find_by_address(address))
+        {
+            if (existing)
+                *existing = x->id;
+            return fail("This address is already a provider: " + x->name);
+        }
+    ProviderFile &file = website ? websites_file_ : catalogs_file_;
+    if (file.read_only())
+        return fail(file.read_only_reason());
+    if (website ? count_of(true) >= kMaxWebsiteProviders
+                : configs_.size() - count_of(true) >= kMaxProviders)
+        return fail("At most " + std::to_string(website ? kMaxWebsiteProviders : kMaxProviders) +
+                    (website ? " website providers" : " providers") + " can be added.");
     if (c.name.empty())
         c.name = u->host;
     if (c.name.size() > 60)
         c.name.resize(60);
     std::string base = slug(c.name);
     if (base.empty())
-        base = "provider";
+        base = website ? "site" : "provider";
+    // Website ids carry a prefix 1.0.0 never creates (it uses letters, digits
+    // and '-' only), so the two files can never hand out the same id.
+    if (website)
+        base = kWebsiteIdPrefix + base;
     c.id = base;
-    for (int n = 2; config(c.id) || c.id == kSampleId || c.id == kPersonalId; ++n)
+    for (int n = 2; id_taken(c.id); ++n)
         c.id = base + "-" + std::to_string(n);
     c.builtin = false;
-    if (c.type == ProviderType::bundled)
-        c.type = ProviderType::catalog;
+    if (website)
+    {
+        if (c.original_url.empty())
+            c.original_url = c.address;
+        c.adapter_version = std::max(1, website_adapter_version(c.adapter));
+    }
     if (!c.added)
         c.added = platform::wall_clock_seconds();
+    const std::string id = c.id;
+    const ProviderType type = c.type;
     configs_.push_back(std::move(c));
-    save();
+    if (!save(type, why))
+    {
+        configs_.pop_back();
+        return false;
+    }
+    if (added)
+        *added = id;
     return true;
 }
 
@@ -338,21 +382,62 @@ bool Registry::remove(std::string_view id)
                                  [id](const ProviderConfig &c) { return c.id == id; });
     if (it == configs_.end() || it->builtin)
         return false;
+    const ProviderConfig removed = *it;
+    const auto index = it - configs_.begin();
     configs_.erase(it);
+    if (!save(removed.type))
+    {
+        // The file could not be written (or may not be): keep the provider.
+        configs_.insert(configs_.begin() + index, removed);
+        return false;
+    }
     states_.erase(std::remove_if(states_.begin(), states_.end(),
                                  [id](const ProviderState &s) { return s.config.id == id; }),
                   states_.end());
-    save();
     return true;
+}
+
+bool Registry::set_enabled(std::string_view id, bool enabled)
+{
+    for (ProviderConfig &c : configs_)
+        if (c.id == id && c.type == ProviderType::website && c.enabled != enabled)
+        {
+            c.enabled = enabled;
+            if (!save(ProviderType::website))
+            {
+                c.enabled = !enabled;
+                return false;
+            }
+            if (!enabled)
+                states_.erase(std::remove_if(states_.begin(), states_.end(),
+                                             [id](const ProviderState &s)
+                                             { return s.config.id == id; }),
+                              states_.end());
+            return true;
+        }
+    return false;
+}
+
+void Registry::set_summary(std::string_view id, int series, int episodes)
+{
+    for (ProviderConfig &c : configs_)
+        if (c.id == id && c.type == ProviderType::website &&
+            (c.known_series != series || c.known_episodes != episodes))
+        {
+            c.known_series = series;
+            c.known_episodes = episodes;
+            c.checked = platform::wall_clock_seconds();
+            (void)save(ProviderType::website);
+        }
 }
 
 void Registry::set_anilist_id(std::string_view id, int anilist_id)
 {
     for (ProviderConfig &c : configs_)
-        if (c.id == id && !c.builtin)
+        if (c.id == id && !c.builtin && c.type != ProviderType::website)
         {
             c.anilist_id = anilist_id;
-            save();
+            (void)save(c.type);
         }
     for (ProviderState &s : states_)
         if (s.config.id == id && s.config.type == ProviderType::peertube)

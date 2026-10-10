@@ -26,9 +26,19 @@ std::optional<std::string> valid_file(const std::string &path)
 const std::vector<std::string> &files()
 {
     static const std::vector<std::string> kFiles = {
-        "settings.json",        "history.json",       "favorites.json", "sources.json",
-        "streams.json",         "websites.json",      "web-tests.json", "playback-checks.json",
-        "anime-providers.json", "anime-library.json",
+        "settings.json",
+        "history.json",
+        "favorites.json",
+        "sources.json",
+        "streams.json",
+        "websites.json",
+        "web-tests.json",
+        "playback-checks.json",
+        "anime-providers.json",
+        "anime-library.json",
+        // 1.1.0: website providers. 1.0.0 does not back it up, restore it or
+        // delete it; it stays in the data folder untouched by a rollback.
+        "anime-website-providers.json",
     };
     return kFiles;
 }

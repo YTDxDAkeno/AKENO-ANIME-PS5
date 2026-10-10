@@ -21,7 +21,9 @@
 #include "net/http.hpp"
 
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,20 +34,39 @@ enum class ProviderType : std::uint8_t
     bundled,  // the AKENO sample series shipped in the app (offline)
     catalog,  // an AKENO catalogue (JSON) from the web or console storage
     peertube, // a PeerTube channel (playlists = seasons) or one playlist
+    // A website read by one of AKENO's website adapters (anime/website.hpp).
+    // Stored in anime-website-providers.json, never in anime-providers.json:
+    // 1.0.0 reads that file and would rewrite an unknown type as "catalog".
+    website,
 };
 const char *provider_type_id(ProviderType t) noexcept;
 const char *provider_type_label(ProviderType t) noexcept;
-ProviderType provider_type_from_id(std::string_view id) noexcept;
+// nullopt for a type this version does not know: such an entry is kept as it
+// is and never reinterpreted as another type.
+std::optional<ProviderType> provider_type_from_id(std::string_view id) noexcept;
 
 struct ProviderConfig
 {
     std::string id;
     std::string name;
     ProviderType type = ProviderType::catalog;
-    std::string address;     // URL, or an absolute console path for catalogues
+    // URL, or an absolute console path for catalogues. A website provider's
+    // homepage as it answered (after redirects).
+    std::string address;
     std::uint64_t added = 0; // Unix seconds
     int anilist_id = 0;      // PeerTube: the AniList entry this channel is (optional)
     bool builtin = false;    // shipped or found in the install folder; cannot be removed
+
+    // Website providers only.
+    std::string original_url;                    // the address the user entered (normalised)
+    std::string adapter;                         // the website adapter that reads it ("schema-org")
+    int adapter_version = 0;                     // the adapter's format version when it was added
+    bool enabled = true;                         // a disabled provider is kept but not loaded
+    std::map<std::string, std::string> settings; // the adapter's own configuration
+    // What the last check found (shown before the provider has loaded).
+    int known_series = 0;
+    int known_episodes = 0;
+    std::uint64_t checked = 0; // Unix seconds of that check
 };
 
 // What a source turned out to be (Websites and the provider check use it).

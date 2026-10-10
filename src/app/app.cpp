@@ -209,8 +209,10 @@ void App::start(std::uint64_t now_ms)
     web_tests_.load();
     playback_checks_.load();
     anime_.load();
-    if (!anime_.last_error().empty())
-        report_error("anime providers", anime_.last_error());
+    // Entries kept but not loaded (a newer type or adapter, damage) are
+    // reported, never dropped (anime/provider_store.hpp).
+    for (const std::string &problem : anime_.storage_problems())
+        report_error("anime providers", problem);
     anime_library_.load();
     if (!anime_library_.last_error().empty())
         report_error("anime library", anime_library_.last_error());
@@ -562,6 +564,8 @@ void App::refresh_anime(bool force)
         if (anime_loading_.count(config.id))
             continue;
         if (!force && anime_.state(config.id))
+            continue;
+        if (!config.enabled)
             continue;
         anime_loading_.insert(config.id);
         const anime::ProviderContext context = anime_.context;

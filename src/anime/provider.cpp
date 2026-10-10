@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "anime/provider.hpp"
 
+#include "anime/website.hpp"
 #include "core/fs.hpp"
 #include "core/json.hpp"
 #include "core/url.hpp"
@@ -425,6 +426,8 @@ const char *provider_type_id(ProviderType t) noexcept
         return "catalog";
     case ProviderType::peertube:
         return "peertube";
+    case ProviderType::website:
+        return "website";
     }
     return "catalog";
 }
@@ -439,17 +442,23 @@ const char *provider_type_label(ProviderType t) noexcept
         return "AKENO catalogue (JSON)";
     case ProviderType::peertube:
         return "PeerTube channel or playlist";
+    case ProviderType::website:
+        return "Website provider";
     }
     return "";
 }
 
-ProviderType provider_type_from_id(std::string_view id) noexcept
+std::optional<ProviderType> provider_type_from_id(std::string_view id) noexcept
 {
     if (id == "bundled")
         return ProviderType::bundled;
+    if (id == "catalog")
+        return ProviderType::catalog;
     if (id == "peertube")
         return ProviderType::peertube;
-    return ProviderType::catalog;
+    if (id == "website")
+        return ProviderType::website;
+    return std::nullopt;
 }
 
 const char *source_class_label(SourceClass c) noexcept
@@ -515,6 +524,8 @@ PeerTubeAddress parse_peertube_address(const std::string &address)
 std::unique_ptr<SourceProvider> make_provider(const ProviderConfig &config,
                                               const ProviderContext &context)
 {
+    if (config.type == ProviderType::website)
+        return make_website_provider(config, context);
     if (config.type == ProviderType::peertube)
         return std::make_unique<PeerTubeSeriesProvider>(config, context);
     return std::make_unique<CatalogueProvider>(config, context);
