@@ -22,7 +22,21 @@ carries `LICENSE` and this file next to `eboot.bin`.
 
 The bundled test clips in `assets/selftest/` were generated with FFmpeg's
 built-in `testsrc`/`testsrc2` and `sine` sources and contain no third-party
-material. The README screenshots use generated placeholder artwork.
+material (`h264-aac-360p.mp4` is the `.ts` clip remuxed without re-encoding).
+The README screenshots use generated placeholder artwork.
+
+The embedded browser (0.7.0) is the console's own `libSceWebBrowserDialog`,
+which AKENO STREAM only calls; no part of it is shipped. Its parameter
+layouts and call order were taken, as facts and not as code, from two
+GPL-3.0 projects:
+[SvenGDK/SharpProspero](https://github.com/SvenGDK/SharpProspero)
+(`Interop/Dialog/WebBrowserDialog.cs`, `Platform/WebBrowser.cs`) and
+[sainsaji/EVO-PLAYER-PS5](https://github.com/sainsaji/EVO-PLAYER-PS5)
+(`src/evo_webui.c`, `docs/research/web-browser-dialog.md`), whose author
+verified them on hardware. The YouTube player page uses Google's
+[IFrame Player API](https://developers.google.com/youtube/iframe_api_reference)
+under the YouTube API Services Terms; the player itself is loaded from
+youtube.com at run time.
 
 Catalogue data shown at run time comes from [AniList](https://anilist.co)
 (public GraphQL API; data under AniList's terms) and from the
@@ -41,7 +55,8 @@ AKENO STREAM is built on ps5-native-app-boilerplate; its notices follow.
 | --- | --- |
 | [ps5-payload-dev/sdk](https://github.com/ps5-payload-dev/sdk) | Public PS5 headers, libc++ headers, sysroot, and Clang target support |
 | [ps5-payload-dev/pacbrew-repo](https://github.com/ps5-payload-dev/pacbrew-repo) | Optional prebuilt PS5 ports and static libraries |
-| [SvenGDK/SharpProspero](https://github.com/SvenGDK/SharpProspero) | Source of the ELF converter and FSELF writer in `tooling/native/` (GPL-3.0) |
+| [SvenGDK/SharpProspero](https://github.com/SvenGDK/SharpProspero) | Source of the ELF converter and FSELF writer in `tooling/native/` (GPL-3.0); browser-dialog layouts for 0.7.0 |
+| [sainsaji/EVO-PLAYER-PS5](https://github.com/sainsaji/EVO-PLAYER-PS5) | Hardware results for `libSceWebBrowserDialog` in a native title (GPL-3.0) |
 | [SvenGDK/UFS2Tool](https://github.com/SvenGDK/UFS2Tool) | Optional UFS2 `.ffpkg` generation |
 | [PSBrew/MkPFS](https://github.com/PSBrew/MkPFS) | Optional compressed `.ffpfsc` generation |
 | [sinajet/PSFFPKG](https://github.com/sinajet/PSFFPKG) | Public `.ffpkg` procedure used as a format reference |

@@ -1,4 +1,4 @@
-# AKENO STREAM 0.6.0 – Installation (Kurzfassung auf Deutsch)
+# AKENO STREAM 0.7.0 – Installation (Kurzfassung auf Deutsch)
 
 Ausführliche Dokumentation (Englisch): [README.md](README.md).
 
@@ -10,9 +10,17 @@ noch nicht auf der Konsole ausprobiert wurde, steht in der README. 0.5.0
 der Konsole. Neu in 0.6.0 (bisher nur automatisch auf dem PC getestet): der
 Modus **Discover** (PeerTube und gemeinfreie Filme aus dem Internet Archive,
 direkt in der App abspielbar), **Quellen per Handy** hinzufügen und im
-YouTube-Modus **YouTube-App starten** bzw. **im Browser öffnen**
-(experimentell). Bitte die [Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md)
-weiter durchgehen.
+YouTube-Modus **YouTube-App starten** (experimentell). **Neu in 0.7.0**
+(automatisch auf dem PC getestet, für die PS5 gebaut, noch nicht auf der
+Konsole): der Modus **Websites** – eigene Webseiten im PS5-Browser *innerhalb*
+von AKENO STREAM –, der **offizielle eingebettete YouTube-Player** und die
+**Crunchyroll-Webseite** mit ihrer eigenen Anmeldung. Bitte die
+[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) weiter durchgehen,
+besonders Abschnitt 10.
+
+> **Wichtig für 0.7.0:** Die App bindet zwei weitere Systemmodule ein (den
+> Browser-Dialog). Startet sie auf einer Firmware gar nicht mehr (Fehlercode,
+> keine Meldung „starting“), bitte melden und wieder 0.6.0 verwenden.
 
 ## Herunterladen
 
@@ -69,6 +77,7 @@ läuft: `/mnt/sandbox/PPSA99276_000/download0/akeno/`.
 | Eigene Quellen | `/data/homebrew/PPSA99276/sources.txt` (oder `sources.json`) |
 | Eigene Stream-Liste (älteres Format) | `/data/homebrew/PPSA99276/streams.json` |
 | YouTube-API-Schlüssel (optional) | `/data/homebrew/PPSA99276/youtube-key.txt` |
+| Webseiten (optional) | `/data/homebrew/PPSA99276/websites.txt` (eine pro Zeile: `Name = https://…`) |
 | Diagnoseberichte abholen | `/mnt/sandbox/PPSA99276_000/download0/akeno/` (App muss laufen) |
 
 Videos erscheinen unter *Library* -> *Media in the install folder*. Nur
@@ -113,25 +122,47 @@ Im Modus **Discover** laufen Videos direkt in der App:
 
 Dreieck sucht in beiden. Eintrag öffnen, dann *Play*.
 
+## Websites (neu in 0.7.0)
+
+Mit R1 bis **Websites** wechseln (zwischen YouTube und Discover).
+
+- **Search or Enter Address** (oder Dreieck): Adresse eintippen (z. B.
+  `crunchyroll.com`) – sie öffnet sich; andere Wörter werden gesucht
+  (DuckDuckGo, in den Settings änderbar).
+- **Add Website**: Adresse und Namen mit der Bildschirmtastatur eingeben
+  (R1 = Sonderzeichen wie `:/.`). Die Seite erscheint mit ihrem Symbol unter
+  *Your Websites*. **Quadrat** auf einer Seite: umbenennen, Adresse ändern,
+  auf Home anzeigen, privat, *Record what works*, entfernen.
+- Die Seite öffnet sich im **PS5-eigenen Browser über AKENO STREAM**. Dort
+  gelten die Bedienelemente des Browsers (Cursor, Scrollen, Zurück, Tastatur).
+  Browser schließen = zurück in AKENO STREAM. **Den PS-Knopf im Browser
+  besser nicht benutzen**; gibt es keinen Ausweg, L3 und R3 gleichzeitig
+  drücken.
+- Anmeldungen bleiben im Browser – AKENO STREAM sieht keine Passwörter oder
+  Cookies.
+- **Browser Test** misst, was der Browser kann (Formate, DRM, Speicher,
+  Wiedergabe mit Ton) und speichert jedes Ergebnis einzeln (Settings ->
+  Diagnostics -> Browser).
+
 ## YouTube und Crunchyroll
 
-- **YouTube**: Suchen und Stöbern über die offizielle YouTube Data API mit
-  einem **eigenen** kostenlosen API-Schlüssel (Anleitung in der App).
-  Videos laufen **nicht** im App-eigenen Player – YouTube erlaubt das nur in
-  den eigenen Playern. Stattdessen gibt es in den Video-Details **YouTube app**
-  (startet die offizielle YouTube-App der PS5), **Browser** (öffnet das Video
-  im PS5-Browser) und einen QR-Code fürs Handy. Beide Übergaben sind
-  experimentell und noch nicht auf der Konsole getestet.
-- **Crunchyroll**: nicht möglich. Es gibt keine öffentliche Schnittstelle,
-  und die Videos sind DRM-geschützt; eine Umgehung kommt nicht in Frage. Bitte
-  die offizielle Crunchyroll-App der PS5 nutzen. Der Anime-Modus zeigt
-  Katalogdaten von AniList mit Links zu offiziellen Anbietern.
+- **YouTube**: Videos laufen im **offiziellen eingebetteten YouTube-Player**
+  innerhalb von AKENO STREAM (*Play* in den Video-Details, *Play uploads* bei
+  Kanälen). Ohne API-Schlüssel: **Play a link** (YouTube-Link oder Video-ID)
+  und **youtube.com** (die komplette Seite). Suchen und Stöbern brauchen wie
+  bisher einen **eigenen** kostenlosen API-Schlüssel (Anleitung in der App).
+  Es wird nichts aus YouTube „herausgezogen“.
+- **Crunchyroll**: Home -> *Crunchyroll* öffnet die echte Webseite im Browser
+  innerhalb von AKENO STREAM; anmelden auf Crunchyrolls eigener Seite (AKENO
+  fragt nie nach dem Passwort). Die Folgen sind DRM-geschützt und laufen nur,
+  wenn der Browser der Konsole ein DRM-System anbietet – der Browser-Test
+  misst das, der Abschnitt zeigt das Ergebnis. DRM wird nicht umgangen.
 
 ## Wenn die App abstürzt
 
 Die App zeigt beim Start die einzelnen Schritte auf dem Bildschirm an und
 meldet einen Absturz vor dem Fehlerdialog als Benachrichtigung, z. B. *„AKENO
-STREAM 0.6.0 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*.
+STREAM 0.7.0 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*.
 Bitte diesen Text (gern als Foto) schicken. Beim nächsten Start weist die App
 selbst auf den Absturz hin und zeigt ihn unter Settings -> Diagnostics.
 

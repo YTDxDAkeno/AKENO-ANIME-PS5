@@ -35,6 +35,31 @@
   contains it; files: FFmpeg seek before remuxing). Pause is applied in the
   backend (`set_paused`).
 
+## The embedded browser (0.7.0)
+
+```
+ main thread                                   system (separate component)
+ ───────────                                   ───────────────────────────
+ BrowserScreen::update -> WebView::update ───> libSceWebBrowserDialog: WebKit page drawn
+   (UpdateStatus every frame)                  over AKENO's VideoOut output, its own
+ App::render + Display::present every frame    cursor, keyboard, TLS, cookies
+        ▲                                                │
+        │ events, report, close                          │ AKENO's own pages only
+ LocalPages thread (127.0.0.1:8095/s/<token>/) <─────────┘ (YouTube player, capability test)
+```
+
+- `platform/web_view.hpp` is the engine interface; `platform/ps5/web_view.cpp`
+  drives `libSceWebBrowserDialog` through positional imports
+  (`tooling/stubs/`), `tests/host/host_web_view.cpp` is a scripted stand-in.
+  Research and evidence: [BROWSER_RESEARCH.md](BROWSER_RESEARCH.md).
+- `BrowserScreen` (`app/screen_browser.cpp`) is one visit: optional site check
+  (`web/site_probe.cpp`), open, pump, close, then per-capability results in
+  `web::WebTestLog`. It is a full-screen overlay, so mode switching is off,
+  and it removes itself with `Screen::close_later()` after its update.
+- Third-party sites are opened directly; AKENO's own pages come from
+  `web/local_pages.cpp` (loopback only, token, Host check, CSP, size limits,
+  known events only) with the HTML/JS in `web/pages.cpp`.
+
 ## Source layout
 
 | Path | Contents |
@@ -47,6 +72,8 @@
 | `src/media/native/` | PS5 hardware decode sink |
 | `src/net/` | libcurl HTTP client (TLS verification on, size and time limits, cancellation) |
 | `src/providers/` | Open catalogue, AniList, YouTube Data API, Crunchyroll status |
+| `src/web/` | Addresses and search, saved websites, site check, loopback page server and pages, browser test results |
+| `tooling/stubs/` | Link-only stubs for the system browser dialog and common-dialog modules |
 | `src/core/` | JSON, URLs, files, background jobs |
 | `src/platform/` | Platform interfaces; `ps5/` implements them for the console |
 | `third_party/` | ProsperoTV backend and demuxer, stb, qrcodegen, minimp3 (unmodified) |
@@ -64,12 +91,14 @@ FTP at `/mnt/sandbox/PPSA99276_000/download0/akeno/` but not write to it):
 | `settings.json` | Versioned settings (`"version": 1`); unknown or corrupt files are moved aside and defaults used |
 | `history.json`, `favorites.json` | Watch history with positions, favourites |
 | `secrets.json` | YouTube API key only; never logged or exported |
+| `websites.json` | Saved websites, Recently Visited, your per-site test marks |
+| `web-tests.json` | Browser capability test, YouTube player and Crunchyroll results |
 | `akeno-diagnostics-*.txt` | Exported reports |
 | `crash.txt`, `crash-previous.txt` | Crash report of the last session; shown and renamed at the next start |
 
 Files a user provides are read from the install folder, which a PC can write
 (`/data/homebrew/PPSA99276/`, `/app0` in the app; read-only to the app):
-`media/`, `streams.json` and `youtube-key.txt`.
+`media/`, `streams.json`, `youtube-key.txt` and `websites.txt`.
 
 Writes go to a temporary file first and are renamed into place.
 
@@ -85,3 +114,9 @@ Writes go to a temporary file first and are renamed into place.
   official players with QR codes.
 - Responses are size-limited (playlists 4 MB, JSON 8 MB, images 12 MB,
   segments 48 MB) and parsers are depth- and length-limited.
+- Websites run in the system's browser engine, a separate component: AKENO
+  never sees their content, cookies or input, adds no proxy or script, and
+  makes no certificate exceptions. Only http(s) addresses are opened; no
+  credentials in addresses; loopback addresses are reserved for AKENO's own
+  pages, which are served only while open, with a random token, and can only
+  report results and ask to close the browser.

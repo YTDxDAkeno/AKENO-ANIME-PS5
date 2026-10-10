@@ -241,7 +241,7 @@ int main()
     press(app, input::Button::circle);
     // Play the bundled clip through the software decoder.
     press(app, input::Button::r1); // home, focus still on the Explore row
-    press(app, input::Button::down, 2);
+    press(app, input::Button::down, 3); // past Your Websites and Open Movies
     press(app, input::Button::cross);
     shot(app, "25-details-offline-clip");
     press(app, input::Button::cross);
