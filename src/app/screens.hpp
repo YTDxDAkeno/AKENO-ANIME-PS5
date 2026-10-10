@@ -106,6 +106,9 @@ std::unique_ptr<Screen> make_series_screen(App &app, std::string provider_id,
 std::unique_ptr<Screen> make_anilist_series_screen(App &app, MediaItem item);
 std::unique_ptr<Screen> make_anime_search_screen(App &app);
 std::unique_ptr<Screen> make_anime_providers_screen(App &app);
+// A provider's home: its catalogue (more pages for website providers), search
+// on the provider, what it offers, Turn Off / Remove.
+std::unique_ptr<Screen> make_provider_home_screen(App &app, std::string provider_id);
 std::unique_ptr<Screen> make_add_provider_screen(App &app, std::string address = {},
                                                  std::string name = {});
 // What a provider check found, with Import when it is importable.

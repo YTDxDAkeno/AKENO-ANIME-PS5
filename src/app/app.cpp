@@ -4,6 +4,7 @@
 #include "app/app.hpp"
 
 #include "anime/session.hpp"
+#include "anime/website.hpp"
 #include "app/backup.hpp"
 
 #include "app/screens.hpp"
@@ -393,6 +394,22 @@ void App::push(std::unique_ptr<Screen> screen)
     dirty_ = true;
 }
 
+bool App::showing(const Screen *screen) const
+{
+    if (!overlay_.empty())
+        return overlay_.back().get() == screen;
+    const auto &screens = stacks_[static_cast<int>(mode_)];
+    return !screens.empty() && screens.back().get() == screen;
+}
+
+std::string App::top_screen_id() const
+{
+    if (!overlay_.empty())
+        return overlay_.back()->screen_id();
+    const auto &screens = stacks_[static_cast<int>(mode_)];
+    return screens.empty() ? std::string{} : screens.back()->screen_id();
+}
+
 void App::pop()
 {
     if (!overlay_.empty())
@@ -559,8 +576,15 @@ void App::play(const MediaItem &item, double start_seconds, std::shared_ptr<Play
 
 void App::refresh_anime(bool force)
 {
+    refresh_anime_provider(force, {});
+}
+
+void App::refresh_anime_provider(bool force, const std::string &only)
+{
     for (const anime::ProviderConfig &config : anime_.configs())
     {
+        if (!only.empty() && config.id != only)
+            continue;
         if (anime_loading_.count(config.id))
             continue;
         if (!force && anime_.state(config.id))
@@ -582,12 +606,106 @@ void App::refresh_anime(bool force)
                         anime_loading_.erase(state.config.id);
                         if (!state.loaded)
                             report_error("anime provider " + state.config.name, state.error);
+                        else if (state.config.type == anime::ProviderType::website)
+                        {
+                            int episodes = 0;
+                            for (const anime::Series &s : state.series)
+                                episodes += anime::episode_total(s);
+                            anime_.set_summary(state.config.id,
+                                               state.total > 0
+                                                   ? state.total
+                                                   : static_cast<int>(state.series.size()),
+                                               episodes);
+                        }
                         anime_.install(std::move(state));
                         ++anime_generation_;
                         dirty_ = true;
                     });
             });
     }
+}
+
+void App::load_anime_series(const std::string &provider_id, const std::string &series_id)
+{
+    const std::string key = anime::series_key(provider_id, series_id);
+    const anime::ProviderConfig *config = anime_.config(provider_id);
+    const anime::Series *entry = anime_.find_series(provider_id, series_id);
+    if (anime_series_loading_.count(key) || !config || !entry ||
+        config->type != anime::ProviderType::website || !entry->details_pending)
+        return;
+    anime_series_loading_.insert(key);
+    anime_series_errors_.erase(key);
+    const anime::ProviderConfig provider = *config;
+    const anime::Series series = *entry;
+    const anime::ProviderContext context = anime_.context;
+    jobs_.run(
+        [this, provider, series, context, key]
+        {
+            const auto cancel = net::make_cancel_flag();
+            anime::SiteSeries full = anime::load_website_series(provider, series, context, cancel);
+            // A few episodes are checked so the series shows what plays.
+            if (full.ok)
+                anime::Registry::check_series(provider, context, full.series, cancel, 6);
+            jobs_.post(
+                [this, full = std::move(full), id = provider.id, name = provider.name,
+                 key]() mutable
+                {
+                    anime_series_loading_.erase(key);
+                    if (!full.ok)
+                    {
+                        anime_series_errors_[key] = full.error;
+                        report_error("anime provider " + name, full.error);
+                    }
+                    else
+                        anime_.install_series(id, std::move(full.series));
+                    ++anime_generation_;
+                    dirty_ = true;
+                });
+        });
+}
+
+bool App::anime_series_loading(const std::string &provider_id, const std::string &series_id) const
+{
+    return anime_series_loading_.count(anime::series_key(provider_id, series_id)) > 0;
+}
+
+std::string App::anime_series_error(const std::string &provider_id,
+                                    const std::string &series_id) const
+{
+    const auto it = anime_series_errors_.find(anime::series_key(provider_id, series_id));
+    return it == anime_series_errors_.end() ? std::string{} : it->second;
+}
+
+void App::load_more_anime(const std::string &provider_id)
+{
+    const anime::ProviderConfig *config = anime_.config(provider_id);
+    const anime::ProviderState *state = anime_.state(provider_id);
+    if (anime_more_loading_.count(provider_id) || !config || !state ||
+        config->type != anime::ProviderType::website || state->next_page.empty())
+        return;
+    anime_more_loading_.insert(provider_id);
+    const anime::ProviderConfig provider = *config;
+    const std::string page = state->next_page;
+    const anime::ProviderContext context = anime_.context;
+    jobs_.run(
+        [this, provider, page, context]
+        {
+            anime::SiteListing more =
+                anime::load_website_page(provider, page, context, net::make_cancel_flag());
+            jobs_.post(
+                [this, more = std::move(more), id = provider.id, name = provider.name]() mutable
+                {
+                    anime_more_loading_.erase(id);
+                    if (!more.ok)
+                    {
+                        toast("Could not load more from " + name + ": " + more.error, th::kWarning);
+                        return;
+                    }
+                    anime_.merge_series(id, std::move(more.series), &more.next_page);
+                    ++anime_generation_;
+                    dirty_ = true;
+                });
+        });
 }
 
 void App::play_episode(const std::string &provider_id, const std::string &series_id,
@@ -635,7 +753,8 @@ void App::play_episode(const std::string &provider_id, const std::string &series
             anime::Resolution r = source->resolve(series, season, ep, cancel);
             anime::ProbeResult probe{r.availability, r.detail, {}};
             if (r.ok)
-                probe = checked && provider.type != anime::ProviderType::peertube
+                probe = checked && provider.type != anime::ProviderType::peertube &&
+                                provider.type != anime::ProviderType::website
                             ? anime::ProbeResult{anime::Availability::playable,
                                                  ep.availability_detail,
                                                  {}}

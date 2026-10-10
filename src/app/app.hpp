@@ -32,6 +32,7 @@
 
 #include <array>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -110,6 +111,12 @@ class Screen
     // Called when the screen becomes visible again (after a pop).
     virtual void resumed()
     {
+    }
+    // What the screen shows, for diagnostics and tests ("provider-home:web_x");
+    // empty for screens that do not say.
+    [[nodiscard]] virtual std::string screen_id() const
+    {
+        return {};
     }
     // Asks the app to remove this screen once the current update is done
     // (a screen cannot pop itself from inside update()).
@@ -210,6 +217,10 @@ class App final
     [[nodiscard]] ui::Pixel accent() const;
     void push(std::unique_ptr<Screen> screen);
     void pop();
+    // True when this screen is the one on top (it may replace itself).
+    [[nodiscard]] bool showing(const Screen *screen) const;
+    // The screen_id() of the screen on top.
+    [[nodiscard]] std::string top_screen_id() const;
     void open_item(const MediaItem &item);
     void play(const MediaItem &item, double start_seconds = -1.0,
               std::shared_ptr<PlayerContext> context = nullptr);
@@ -217,6 +228,8 @@ class App final
     // them with force) in the background; anime_generation() changes when
     // one finished.
     void refresh_anime(bool force);
+    // The same for one provider (only: its id; empty: all of them).
+    void refresh_anime_provider(bool force, const std::string &only);
     [[nodiscard]] std::uint64_t anime_generation() const noexcept
     {
         return anime_generation_;
@@ -224,6 +237,24 @@ class App final
     [[nodiscard]] bool anime_loading() const noexcept
     {
         return !anime_loading_.empty();
+    }
+    [[nodiscard]] bool anime_provider_loading(const std::string &provider_id) const
+    {
+        return anime_loading_.count(provider_id) > 0;
+    }
+    // Website providers: loads a catalogue entry's seasons and episodes and
+    // checks a few of its episodes in the background; anime_generation()
+    // changes when it is done, anime_series_error() says why it failed.
+    void load_anime_series(const std::string &provider_id, const std::string &series_id);
+    [[nodiscard]] bool anime_series_loading(const std::string &provider_id,
+                                            const std::string &series_id) const;
+    [[nodiscard]] std::string anime_series_error(const std::string &provider_id,
+                                                 const std::string &series_id) const;
+    // Website providers: the next page of the site's catalogue.
+    void load_more_anime(const std::string &provider_id);
+    [[nodiscard]] bool anime_more_loading(const std::string &provider_id) const
+    {
+        return anime_more_loading_.count(provider_id) > 0;
     }
     // Resolves an episode with its provider, checks it and plays it in the
     // native player with its subtitles and the next episode; explains why
@@ -407,6 +438,9 @@ class App final
     anime::Library anime_library_;
     std::uint64_t anime_generation_ = 0;
     std::set<std::string> anime_loading_;
+    std::set<std::string> anime_series_loading_; // "provider/series"
+    std::map<std::string, std::string> anime_series_errors_;
+    std::set<std::string> anime_more_loading_;
     bool browser_active_ = false;
     std::string backup_status_;
 
