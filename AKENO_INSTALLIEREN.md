@@ -1,28 +1,33 @@
-# AKENO STREAM 0.7.0 – Installation (Kurzfassung auf Deutsch)
+# AKENO STREAM 1.0.0 – Installation (Kurzfassung auf Deutsch)
 
 Ausführliche Dokumentation (Englisch): [README.md](README.md).
 
-**Stand:** 0.4.1 läuft auf einer PS5 mit Firmware 13.09 und ShadowMountPlus:
-Oberfläche, Controller, HTTPS, Hardware-Video (H.264) mit Ton, ein HLS-Stream,
-der Anime-Katalog und der Diagnose-Export funktionierten auf der Konsole. Was
-noch nicht auf der Konsole ausprobiert wurde, steht in der README. 0.5.0
-(Sources, fMP4-HLS, getrennte Tonspuren, Web-Dateien) lief laut Tester auf
-der Konsole. Neu in 0.6.0 (bisher nur automatisch auf dem PC getestet): der
-Modus **Discover** (PeerTube und gemeinfreie Filme aus dem Internet Archive,
-direkt in der App abspielbar), **Quellen per Handy** hinzufügen und im
-YouTube-Modus **YouTube-App starten** (experimentell). **Neu in 0.7.0**
-(automatisch auf dem PC getestet, für die PS5 gebaut, noch nicht auf der
-Konsole): der Modus **Websites** – eigene Webseiten im PS5-Browser *innerhalb*
-von AKENO STREAM –, der **offizielle eingebettete YouTube-Player** und die
-**Crunchyroll-Webseite** mit ihrer eigenen Anmeldung. Bitte die
-[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) weiter durchgehen,
-besonders Abschnitt 10.
+**Stand (1.0.0, Release Candidate):** Auf einer PS5 mit Firmware 12.20
+(Jailbreak) liefen mit der Version vor 1.0.0: Start, DualSense-Steuerung,
+natives HLS, PeerTube-Videos mit Bild und Ton, YouTube-Videos im
+eingebetteten Browser, eigene Webseiten sowie die Crunchyroll-Webseite mit
+Anmeldung. Crunchyroll-Folgen brechen mit **KAT-6005** ab, bei AnikotoTV lädt
+der Player, startet aber nicht (siehe *Bekannte Einschränkungen* in der
+README). **Neu in 1.0.0** (automatisch auf dem PC getestet, für die PS5
+gebaut, noch nicht auf der Konsole): die neue **Home**-Seite, **Webseiten als
+eigene Modi** (eigener Tab) und das **Playback Lab**, das jetzt auch ein mit
+Clear Key verschlüsseltes Testvideo abspielt. Bitte die
+[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) durchgehen, besonders
+Abschnitt 11. Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
-> **Wichtig für 0.7.0:** Die App bindet zwei weitere Systemmodule ein (den
-> Browser-Dialog). Startet sie auf einer Firmware gar nicht mehr (Fehlercode,
-> keine Meldung „starting“), bitte melden und wieder 0.6.0 verwenden.
+> **Rückweg:** Vor dem Update eine Kopie des alten Ordners
+> `/data/homebrew/PPSA99276/` behalten. Startet 1.0.0 nicht, den alten Ordner
+> zurückkopieren – Webseiten, Verlauf und Einstellungen liegen im
+> Datenordner der App und bleiben erhalten.
 
 ## Herunterladen
+
+**Release:** Auf GitHub unter **Releases** `AKENO-STREAM-PS5-v1.0.0-rc.1.zip`
+und `SHA256SUMS` herunterladen, die Prüfsumme vergleichen
+(`sha256sum -c SHA256SUMS`) und die ZIP entpacken: darin liegt der Ordner
+`PPSA99276/`.
+
+**Entwicklungsstand** (statt Release):
 
 1. Auf GitHub **Actions** -> Workflow **Build** öffnen.
 2. Den neuesten grünen Lauf für den Branch bzw. Pull Request auswählen.
@@ -45,15 +50,15 @@ Der Ordner enthält `eboot.bin`, `sce_sys/`, `sce_module/libc.prx` und
 
 ## Erster Test
 
-Home -> *Offline Test Clips* -> **A/V Sync Test Clip**: Testbild mit
+Home -> *Local Library* -> **A/V Sync Test Clip**: Testbild mit
 Sekundenzähler, Dauerton und einem Piepton pro Sekunde. Läuft ohne Internet.
 Sind Bild und Ton synchron, funktionieren Hardware-Videodecoder und
 Tonausgabe.
 
 ## Steuerung
 
-- **L1/R1**: Modus wechseln (Home, Anime, YouTube, Discover, Library, Sources,
-  Settings);
+- **L1/R1**: Modus wechseln (Home, YouTube, Anime, Websites, eigene
+  Webseiten-Modi, Discover, Library, Sources, Settings);
   im Player ±60 s spulen
 - **Steuerkreuz/linker Stick**: navigieren; im Player links/rechts ±10 s,
   hoch/runter Lautstärke
@@ -122,7 +127,14 @@ Im Modus **Discover** laufen Videos direkt in der App:
 
 Dreieck sucht in beiden. Eintrag öffnen, dann *Play*.
 
-## Websites (neu in 0.7.0)
+## Home (neu in 1.0.0)
+
+Reihen: *Continue Watching*, *YouTube*, *Anime*, *My Websites*, *Discover*,
+*Local Library*, *Recently Added Websites*, *Favorites*. Leere Reihen werden
+ausgeblendet; YouTube-Trends (mit API-Schlüssel), Anime und Discover laden
+nach, sobald Home angezeigt wird.
+
+## Websites
 
 Mit R1 bis **Websites** wechseln (zwischen YouTube und Discover).
 
@@ -132,7 +144,9 @@ Mit R1 bis **Websites** wechseln (zwischen YouTube und Discover).
 - **Add Website**: Adresse und Namen mit der Bildschirmtastatur eingeben
   (R1 = Sonderzeichen wie `:/.`). Die Seite erscheint mit ihrem Symbol unter
   *Your Websites*. **Quadrat** auf einer Seite: umbenennen, Adresse ändern,
-  auf Home anzeigen, privat, *Record what works*, entfernen.
+  *Save to Home* (Reihe *My Websites*), **Pin as Mode** (eigener Tab nach
+  *Websites* mit Name, Symbol oder Buchstabe, Farbe und Startseite; höchstens
+  vier), privat, *Record video playback*, *Record what works*, entfernen.
 - Die Seite öffnet sich im **PS5-eigenen Browser über AKENO STREAM**. Dort
   gelten die Bedienelemente des Browsers (Cursor, Scrollen, Zurück, Tastatur).
   Browser schließen = zurück in AKENO STREAM. **Den PS-Knopf im Browser
@@ -140,9 +154,10 @@ Mit R1 bis **Websites** wechseln (zwischen YouTube und Discover).
   drücken.
 - Anmeldungen bleiben im Browser – AKENO STREAM sieht keine Passwörter oder
   Cookies.
-- **Browser Test** misst, was der Browser kann (Formate, DRM, Speicher,
-  Wiedergabe mit Ton) und speichert jedes Ergebnis einzeln (Settings ->
-  Diagnostics -> Browser).
+- **Playback Lab** misst, was der Browser kann (MP4, MediaSource, HLS,
+  Video in fremden Frames, verschlüsseltes Video mit Clear Key, DRM-Systeme,
+  Vollbild, Ton) und ordnet aufgezeichnete Fehler einer Seite (z. B.
+  KAT-6005) einer von acht Ursachen zu – nur so weit die Messungen reichen.
 
 ## YouTube und Crunchyroll
 
@@ -152,7 +167,7 @@ Mit R1 bis **Websites** wechseln (zwischen YouTube und Discover).
   und **youtube.com** (die komplette Seite). Suchen und Stöbern brauchen wie
   bisher einen **eigenen** kostenlosen API-Schlüssel (Anleitung in der App).
   Es wird nichts aus YouTube „herausgezogen“.
-- **Crunchyroll**: Home -> *Crunchyroll* öffnet die echte Webseite im Browser
+- **Crunchyroll**: Home -> Reihe *Anime* -> *Crunchyroll* öffnet die echte Webseite im Browser
   innerhalb von AKENO STREAM; anmelden auf Crunchyrolls eigener Seite (AKENO
   fragt nie nach dem Passwort). Die Folgen sind DRM-geschützt und laufen nur,
   wenn der Browser der Konsole ein DRM-System anbietet – der Browser-Test
@@ -162,7 +177,7 @@ Mit R1 bis **Websites** wechseln (zwischen YouTube und Discover).
 
 Die App zeigt beim Start die einzelnen Schritte auf dem Bildschirm an und
 meldet einen Absturz vor dem Fehlerdialog als Benachrichtigung, z. B. *„AKENO
-STREAM 0.7.0 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*.
+STREAM 1.0.0 crashed: SIGSEGV … at eboot+0x1a2b3c … during startup: fonts“*.
 Bitte diesen Text (gern als Foto) schicken. Beim nächsten Start weist die App
 selbst auf den Absturz hin und zeigt ihn unter Settings -> Diagnostics.
 

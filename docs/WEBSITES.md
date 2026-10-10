@@ -1,16 +1,18 @@
-# Websites, the YouTube player and Crunchyroll (0.7.0)
+# Websites, website modes, the Playback Lab and Crunchyroll (1.0.0)
 
-AKENO STREAM 0.7.0 opens websites **inside the app**, in the PS5's own web
+AKENO STREAM opens websites **inside the app**, in the PS5's own web
 browser engine, shown over AKENO STREAM as a system dialog. When you close the
 browser you are back where you were. The separate browser app is not started.
 For what this engine is and what was verified where, see
 [BROWSER_RESEARCH.md](BROWSER_RESEARCH.md).
 
-> **Status: built and host-tested, not yet run on a console.** The engine
-> was opened from another native homebrew title on firmware 12.70 with the
-> same layouts. Whether it opens on your firmware, and what plays in it, is
-> what the [hardware checklist](HARDWARE_ACCEPTANCE.md) (section 10) finds
-> out. AKENO records every result separately.
+> **Status.** On firmware 12.20 the browser opens inside AKENO STREAM,
+> user-entered websites load, YouTube videos and PeerTube play, and
+> Crunchyroll's website and sign-in work; Crunchyroll episodes stop with
+> KAT-6005 and AnikotoTV's player never starts. 1.0.0's website modes and
+> Playback Lab are host-tested and need their console run
+> ([hardware checklist](HARDWARE_ACCEPTANCE.md), sections 10 and 11). AKENO
+> records every result separately.
 
 ## Websites mode
 
@@ -20,14 +22,32 @@ Press R1 until **Websites** (between YouTube and Discover).
 | --- | --- |
 | Browse → *Search or Enter Address* (or Triangle anywhere in Websites) | Type an address (`youtube.com`, `https://example.com/page`) or words to search for. Addresses open directly; other text is searched with the engine chosen in Settings (DuckDuckGo by default; Google, Bing or Startpage) |
 | Browse → *Add Website* | Type the address, then a name. The site's icon is found automatically |
-| Browse → *Browser Test* | Measures what the browser supports and saves each result (see below) |
+| Browse → *Playback Lab* | Measures what the browser can play and why a site's video does not (see below) |
+| Browse → *Play a Video Link* | A DRM-free HLS, MP4, MKV or TS address in AKENO's own player instead of the browser |
+| Browse → *Clear Browser Data* | Asks the system browser to forget every cookie (signs out of all sites); experimental, offered only where the firmware has the function |
 | Your Websites | Your saved sites. Cross opens; **Square** opens the options |
 | Sections | YouTube and Crunchyroll, which have their own sections |
 | Recently Visited | Sites you opened, newest first (private sites excluded). Square: open, save, remove, clear |
 
-Options for a saved website (Square): Open, Rename, Change address, Show on
-Home / Remove from Home, Private (on: visits stay out of Recently Visited and
-the site is hidden from Home), Record what works, Refresh icon, Remove.
+Options for a saved website (Square): Open, Rename, Change address, **Pin as
+Mode** (see below), Save to Home / Remove from Home (Home's *My Websites*
+row), Private (on: visits stay out of Recently Visited and the site is hidden
+from Home), Record video playback (what you saw and the error code), Record
+what works, Refresh icon, Remove.
+
+### Websites as modes
+
+*Pin as Mode* gives a saved website its own tab in the mode bar, right after
+Websites (at most four). The mode screen shows its icon, name and start page
+with **Open**, **Open homepage**, **Record video** and **Mode settings**
+(Square). Mode settings: shown as a mode yes/no (no removes only the tab; the
+site stays saved), tab name (up to 16 characters; otherwise the site's
+name), the site's icon or a letter tile, an icon image address of your own,
+a colour (chosen, the site's `theme-color`, or one derived from its name),
+the start page (the saved address or the homepage), and whether it is on
+Home. The last mode, a website mode included, is restored at the next start.
+A website mode is still the system browser: AKENO cannot see which page was
+open when the browser closed, so the mode always starts at its start page.
 
 There is no list of allowed or blocked sites. Any `http://` or `https://`
 address you enter can be opened. `javascript:`, `data:`, `file:` and other
@@ -112,27 +132,59 @@ option (starting another app from a homebrew title is unconfirmed).
 
 ## Crunchyroll
 
-Home → *Crunchyroll*, Anime → *Streaming Services → Crunchyroll*, or Websites
-→ Sections.
+Home → *Anime* row → *Crunchyroll*, Anime → *Streaming Services → Crunchyroll*,
+or Websites → Sections.
 
 - **Open crunchyroll.com** opens Crunchyroll's own website in the browser.
   Sign in on Crunchyroll's own page. AKENO never shows a login form and never
   sees your password, cookies or session.
-- **Run browser test** measures whether the browser offers a DRM system
+- **Playback Lab** measures whether the browser offers a DRM system
   (Widevine, PlayReady, FairPlay) to web pages. Crunchyroll's episodes are
   DRM-protected and play only if one is offered. AKENO does not and will not
   work around DRM.
-- **Record results** lets you record, item by item, what happened on your
+- **Record what happened → Website, sign-in and session** lets you record, item by item, what happened on your
   console: website renders, sign-in, still signed in next time, video player
   starts, episode plays with sound. A page that renders or a successful sign-in
   is **not** counted as playback.
-- The section shows a verdict from these measurements. Until the browser test
-  has run it says "Not measured yet".
+- **Record what happened → Episode playback** takes what the player showed, including its
+  error code (for example `KAT-6005`). AKENO puts it next to the Playback
+  Lab's measurements and names the measured cause - or says "not
+  determined". An error code alone is never treated as proof of missing DRM.
+- The section shows a verdict from these measurements. Until the lab has run
+  it says "Not measured yet".
 
-## Browser test
+### KAT-6005
 
-Websites → *Browser Test*, or Settings → Diagnostics → *Browser* → Cross.
-AKENO serves a test page to the browser that checks and reports:
+On firmware 12.20 Crunchyroll's site and sign-in work, but episodes stop with
+KAT-6005. Crunchyroll does not document its error codes; the code says the
+player could not start playback, not why. The Playback Lab separates the
+possible causes on this console:
+
+| Lab result | What it means for Crunchyroll |
+| --- | --- |
+| MediaSource missing or not playing | Its web player cannot stream at all |
+| EME present, **Clear Key clip plays**, no Widevine/PlayReady/FairPlay | Decryption works, but none of the DRM systems Crunchyroll licenses is offered - protected episodes cannot play in this browser |
+| Clear Key clip does not play, no commercial DRM confirmed | The browser cannot decrypt video at all ("DRM unavailable", measured) |
+| A commercial DRM system is offered and Clear Key plays | The cause lies elsewhere: Crunchyroll refusing this browser or its DRM security level, the account or region. Not determined |
+
+None of these can be changed from an app: AKENO cannot add a DRM system to the
+console's browser and does not work around DRM.
+
+## Playback Lab
+
+Websites → *Playback Lab*. Its first entry, *Run the AKENO playback lab*
+(also Settings → Diagnostics → *Browser* → Cross), serves a test page to the
+browser that checks and reports the items below - every playback test uses
+AKENO's own short clip from the app folder, nothing from the internet. Then:
+
+- *Secure DRM check*: Shaka Player's public support page over HTTPS (a secure
+  context) lists the DRM systems the browser offers; you record what it shows.
+- *Public tests* - an MP4 file, an HLS stream played natively, HLS through
+  HLS.js and DASH through dash.js - each followed by "what did you see".
+- *Play a video link in AKENO's player*.
+
+The *This browser* panel summarises the key results and what they mean for
+websites.
 
 | Group | Items |
 | --- | --- |
@@ -143,12 +195,25 @@ AKENO serves a test page to the browser that checks and reports:
 | Streaming (MSE) | MediaSource, ManagedMediaSource, H.264/VP9/AV1/HEVC support |
 | DRM (EME) | EME present; Widevine, PlayReady, FairPlay, Clear Key key systems |
 | Audio | Web Audio |
-| HTML5 playback | Plays the bundled H.264 + AAC MP4 with sound: video plays, audio decoded, starts with sound without a click, starts muted |
+| Playback (AKENO's clip) | MP4 file plays, audio decoded, starts with sound / muted without a click; **fragmented MP4 through MediaSource** (as HLS.js, DASH and Shaka do); **the clip encrypted with Clear Key through EME** (`assets/selftest/h264-aac-360p-cenc.m4s`, ISO 'cenc'; Clear Key is the W3C test key system, its key is published in the page and protects nothing - "yes" only when the decrypted clip plays, "unknown" when Clear Key is not offered); an HLS playlist natively; video inside a frame from another origin; full screen on a button press |
 | Controller | The keys the page receives when you press buttons |
 
-The results are saved in `web-tests.json` and appear in Settings →
-Diagnostics → Browser, in the Crunchyroll section and in the exported
-diagnostics report.
+The results are saved in `web-tests.json` and appear in the Playback Lab,
+Settings → Diagnostics → Browser, the Crunchyroll section and the exported
+diagnostics report. Nothing is reported as working unless it played: a
+refused, timed-out or unanswered test is "no" or "unknown" with its reason.
+
+### Why a site's video does not play
+
+Square on a website → *Record video playback* (or *Record video* on its
+mode) asks what you saw: plays, page did not load, no player, the player
+never starts, an error message (with its code), a format message, or "not
+allowed here". AKENO combines it with the lab into one of eight states -
+works, page failed, player failed to initialize, no compatible resource,
+codec unsupported, media API unsupported, DRM unavailable, embedding denied -
+or "not determined" when the evidence does not decide. A state that rests on
+a measurement says so; a likely one says "likely". Records are kept per host
+name in `playback-checks.json`.
 
 ## Settings
 
@@ -164,7 +229,8 @@ diagnostics report.
 | File in `/download0/akeno/` | Contents |
 | --- | --- |
 | `websites.json` | Your websites (name, address, icon address, pinned/private, your test marks, visit count) and Recently Visited |
-| `web-tests.json` | Browser test, YouTube player and Crunchyroll results |
+| `web-tests.json` | Playback Lab, YouTube player and Crunchyroll results |
+| `playback-checks.json` | What you recorded per site (host name, what you saw, error code) |
 
 - AKENO never sees what happens inside the browser: no page content,
   passwords, cookies, storage or keystrokes. Sign-ins are kept (or not) by the
@@ -197,8 +263,8 @@ diagnostics report.
 - Whether sign-ins persist across browser sessions and app restarts depends
   on the system browser (EVO-PLAYER-PS5 saw `localStorage` emptied at each
   opening; cookies were not measured). The browser test measures both.
-- AKENO cannot clear the browser's cookies: the function exists in the system
-  library but was never called on hardware, and importing an unverified
-  function could stop the app from starting.
+- *Clear Browser Data* calls the system's cookie reset, looked up at run time
+  (never imported, so a firmware without it only loses this option). It
+  clears every site's cookies at once; AKENO cannot clear one site.
 - Sites that require a DRM system the browser lacks will load but not play.
   Sites can also refuse the console's browser.

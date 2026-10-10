@@ -1,4 +1,4 @@
-# Hardware acceptance checklist (AKENO STREAM 0.7.x)
+# Hardware acceptance checklist (AKENO STREAM 1.0.x)
 
 Run this on the console before calling a build "working". Note the result of
 each step (pass / fail / not tested) and, when anything fails, export a
@@ -13,31 +13,31 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
       `sce_module/libc.prx` and `assets/` (fonts and `selftest/`)
 - [ ] No old `/data/homebrew/PPSA99999/` remains
 - [ ] The tile is named **AKENO STREAM** and shows the icon
-- [ ] Notifications "AKENO STREAM 0.7.0 starting" and, within ~5 s,
-      "AKENO STREAM 0.7.0 ready" appear; the splash screen shows the startup
+- [ ] Notifications "AKENO STREAM 1.0.0 starting" and, within ~5 s,
+      "AKENO STREAM 1.0.0 ready" appear; the splash screen shows the startup
       steps in between
-- [ ] **0.7.0 imports two more system modules (the browser dialog). If the
-      app no longer starts at all (an error code like CE-108255-1 and no
-      "starting" notification), note it: it means this firmware lacks one of
-      them. Go back to 0.6.0 and report the firmware version.**
+- [ ] **If the app no longer starts at all (an error code like CE-108255-1
+      and no "starting" notification), note it and go back to the previous
+      version's folder (keep a copy before updating). 1.0.0 imports no new
+      system modules: *Clear Browser Data* looks its function up at run time.**
 - [ ] If it crashes instead: note the "crashed: ..." notification text
       (signal, `eboot+0x…`, stage) and the last splash message
-- [ ] Home shows the AKENO STREAM header, mode tabs and shelves; text is
+- [ ] Home shows the AKENO STREAM header, mode tabs and rows; text is
       smooth (Inter font). Blocky pixel text means the fonts were not found.
 - [ ] No "Controller disconnected" chip while the DualSense is on
 
 ## 2. Navigation
 
 - [ ] D-pad and left stick move focus; holding repeats
-- [ ] L1/R1 cycle Home -> Anime -> YouTube -> Websites -> Discover -> Library ->
-      Sources -> Settings and wrap
+- [ ] L1/R1 cycle Home -> YouTube -> Anime -> Websites -> (your website
+      modes) -> Discover -> Library -> Sources -> Settings and wrap
 - [ ] Cross opens, Circle goes back; the last mode is restored after restart
 - [ ] PS button / home menu and returning to the app do not freeze it
 
 ## 3. Offline playback (no network)
 
 Disconnect the network (or skip this if not possible) and open
-Home -> *Offline Test Clips*.
+Home -> *Local Library* (the bundled clips are at the end of that row).
 
 - [ ] **H.264 + AAC 360p clip**: picture appears within 2 s, sound plays
 - [ ] **A/V Sync Test Clip** (12 s): a steady tone with a short, higher
@@ -62,7 +62,7 @@ Settings -> *Diagnostics*:
 
 ## 5. Network playback
 
-- [ ] Home -> *Open Movies & Test Streams* -> **Big Buck Bunny**: plays with
+- [ ] Home -> *Discover* row -> **Big Buck Bunny** (Blender Foundation - adaptive HLS): plays with
       sound, quality chosen per Settings -> Maximum video quality
 - [ ] Square changes the maximum quality; playback continues near the same position
 - [ ] L1/R1 seek ±60 s
@@ -180,14 +180,14 @@ AKENO recorded (Settings -> Diagnostics -> Browser shows them too).
 - [ ] Do L3 + R3 together close the browser? (emergency exit; fine if not): ______
 - [ ] Website check: `https://no-such-site.invalid/` shows "The site's name
       could not be found (DNS)" before opening; Cross opens it anyway
-- [ ] Square -> Show on Home: the site appears on Home under *Your Websites*;
+- [ ] Square -> Save to Home: the site appears on Home under *My Websites*;
       Private: on -> it leaves Home and Recently Visited
 - [ ] Rename, Change address, Remove work and survive an app restart
 - [ ] `websites.txt` in `/data/homebrew/PPSA99276/` (lines `Name = https://…`):
       the sites appear after a restart, once
 - [ ] Copy the new build over the old one: your websites are still there
 
-**Browser test** (Websites -> *Browser Test*). Wait for "Done", press
+**Browser test** (Websites -> *Playback Lab* -> *Run the AKENO playback lab*). Wait for "Done", press
 *Back to AKENO*, then note from Settings -> Diagnostics -> Browser:
 
 - [ ] Secure context: ______ ; user agent: ______
@@ -226,8 +226,8 @@ Buck Bunny on the Blender channel). With a key: a video's details -> *Play*.
 
 ## 10c. Crunchyroll website (new in 0.7.0)
 
-Home -> *Crunchyroll* -> *Open crunchyroll.com*. Record each separately in
-*Record results*:
+Home -> *Anime* row -> *Crunchyroll* -> *Open crunchyroll.com*. Record each separately in
+*Record what happened* -> *Website, sign-in and session*:
 
 - [ ] Website renders ______
 - [ ] Sign-in on Crunchyroll's own page works ______ (AKENO never asks for it)
@@ -237,6 +237,64 @@ Home -> *Crunchyroll* -> *Open crunchyroll.com*. Record each separately in
       the browser test found no Widevine/PlayReady/FairPlay; note any error
       message the player shows: ______)
 - [ ] The verdict line in the Crunchyroll section matches what you saw
+
+## 11. New in 1.0.0 (release candidate)
+
+Do sections 1-3 first. **Critical for the stable 1.0.0 release:** 11.1,
+11.2 and 11.3, plus sections 1, 2, 3, 10 (main acceptance test) and 10b
+(YouTube plays) still passing - nothing that worked before may break.
+
+**11.1 Home**
+
+- [ ] Rows in this order, with no empty row: *Continue Watching* (only after
+      a video was stopped part-way), *YouTube*, *Anime*, *My Websites* (only
+      with a site saved to Home), *Discover*, *Local Library*, *Recently Added
+      Websites* (only with saved sites), *Favorites* (only with favourites)
+- [ ] With network: within a few seconds the *Anime* row shows AniList
+      posters and *Discover* shows PeerTube / Internet Archive videos before
+      the open movies; without network Home still opens at once
+- [ ] *YouTube* row -> *Play a YouTube Link* (`aqz-KE-bpKQ`) plays in the
+      official player; the video then leads the YouTube row
+- [ ] A PeerTube video from the *Discover* row plays with picture and sound
+- [ ] A video file copied to `/data/homebrew/PPSA99276/media/` appears in
+      *Local Library* (after returning to Home) and plays
+- [ ] Square on a video card adds it to *Favorites*; Square on a website
+      opens its settings
+- [ ] Moving through all rows and switching modes quickly does not crash
+
+**11.2 Website modes**
+
+- [ ] Websites -> Square on a site -> *Pin as Mode*: a tab with its name
+      appears after *Websites*; R1/L1 reach it
+- [ ] Its settings: change the tab name, letter tile / site icon, colour,
+      start page (homepage or saved address) - the tab follows each change
+- [ ] *Open* on the mode screen opens the site; closing the browser returns
+      to the mode
+- [ ] Restart AKENO STREAM while the mode is shown: it starts on that mode
+- [ ] *Shown as a mode: no*: the tab disappears, the site stays in Websites
+      (and on Home if saved there)
+- [ ] Copy the new build over the old one: websites and modes are kept
+
+**11.3 Playback Lab** (Websites -> *Playback Lab*)
+
+- [ ] *Run the AKENO playback lab*: wait for "Done", press *Test full
+      screen*, then *Back to AKENO*. Note from *This browser*:
+      MP4 ___ MediaSource present ___ MediaSource plays ___ HLS native ___
+      frame from another site ___ cookies in frames ___ secure context ___
+      EME ___ **Encrypted video plays (Clear Key)** ___ Widevine ___
+      PlayReady ___ FairPlay ___
+- [ ] *Secure DRM check*: the support page lists which DRM systems; record
+      what it shows ______
+- [ ] Each public test (MP4 file, HLS native, HLS.js, DASH): what you saw
+      ______ ; record it when asked
+- [ ] Home -> *Anime* row -> *Crunchyroll* -> *Record what happened* ->
+      *Episode playback*: choose what the player showed (an error message),
+      code `KAT-6005`; note the state and reason AKENO shows ______
+- [ ] AnikotoTV saved as a website -> Square -> *Record video playback*:
+      choose what you saw (the player never starts, or its error); note the
+      state ______
+- [ ] Settings -> Diagnostics -> *Export report* and attach it: it holds
+      every lab result
 
 ## 9. Stability
 
@@ -257,3 +315,4 @@ Result: ______ passed, ______ failed, ______ not tested.
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1 | Starts; UI, controller, fonts; network test passed (HTTPS 200, HLS master with 5 variants); FFmpeg self-test passed; A/V sync clip 360/360 frames presented, 0 dropped, 0 decoder errors, 0 audio underruns/errors; Big Buck Bunny HLS played and resumed; AniList artwork loaded; report export works; a fMP4/CMAF stream was refused as designed |
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1/0.4.2 | Crash while typing a YouTube key on the on-screen keyboard (fixed in 0.4.3); `youtube-key.txt` was not read from the install folder (fixed in 0.4.2/0.4.3) |
 | 2026-10-10 | fw 13.09, ShadowMountPlus | 0.5.0 | Tester: "everything works" (not itemised); anime and YouTube videos cannot be watched in the app, as designed |
+| 2026-10-10 | fw 12.20, jailbroken | build before 1.0.0 | Launches; DualSense navigation; native HLS plays; PeerTube videos play with picture and sound; YouTube videos play in the embedded browser; Crunchyroll's website loads and sign-in works; user-entered websites open. Crunchyroll episodes fail with **KAT-6005**; AnikotoTV's player loads but playback never starts |

@@ -18,40 +18,33 @@ library, watch history, favourites and a diagnostics screen.
 | | |
 | --- | --- |
 | Title ID | `PPSA99276` (unchanged since v0.1) |
-| Version | 0.7.0 (`contentVersion` 01.007.000) |
-| Tested on | PS5 firmware 13.09 with ShadowMountPlus (0.4.1); no PSN account, no PC needed after install |
+| Version | 1.0.0 (`contentVersion` 01.100.000); first release candidate `v1.0.0-rc.1` |
+| Tested on | PS5 firmware 12.20 (builds before 1.0.0: browser, YouTube, PeerTube, websites) and 13.09 with ShadowMountPlus (0.4.1); no PSN account, no PC needed after install |
 | Install path | `/data/homebrew/PPSA99276/` |
 | Licence | GPL-3.0-or-later |
 
-> **Status.** 0.4.1 runs on a PS5 (firmware 13.09, ShadowMountPlus): the
-> interface, controller, HTTPS, the FFmpeg self-test, hardware H.264 decoding
-> with AAC audio (360 of 360 frames presented, nothing dropped, no audio
-> errors), an HLS stream (Big Buck Bunny), the AniList catalogue and the
-> diagnostics export all worked on the console. Earlier, 0.4.0 crashed at
-> launch because the system heap returns null for real allocations; 0.4.1
-> brought its own heap. Features not yet tried on the console are marked
-> below. 0.5.0 added the Sources mode, fragmented-MP4 HLS, separate audio
-> tracks, AES-128 HLS and web files; the tester reported that 0.5.0 works on
-> the console (not itemised). 0.6.0 adds Discover (PeerTube, Internet
-> Archive), adding sources from a phone and hand-offs to the YouTube app and
-> the web browser; these are host-tested and still need a console run.
-> **0.7.0 adds Websites mode, the official YouTube embedded player and the
-> Crunchyroll website inside the app** through the console's
-> `libSceWebBrowserDialog` (the system WebKit browser drawn over the app).
-> Another native homebrew title opened that dialog on firmware 12.70 with the
-> same layouts; AKENO's own use of it is host-tested and builds for the PS5,
-> and needs its first console run - see
-> [BROWSER_RESEARCH.md](docs/BROWSER_RESEARCH.md) and checklist section 10.
-> Please keep reporting with the
-> [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md).
+> **Status: 1.0.0 release candidate.** On a jailbroken PS5 with firmware
+> 12.20, the build before 1.0.0 launched, DualSense navigation worked, native HLS played,
+> PeerTube videos played with picture and sound, YouTube videos played in the
+> embedded browser, user-entered websites opened, and Crunchyroll's website
+> loaded with a working sign-in. Crunchyroll *episodes* stop with error
+> **KAT-6005** and AnikotoTV's player loads but never starts - see
+> *Known limitations*. 1.0.0 adds the redesigned Home, websites as their own
+> app modes and the Playback Lab (which now also plays an encrypted clip with
+> Clear Key to tell "no DRM system" apart from "no decryption at all"); these
+> are host-tested and build for the PS5, and need their console run with the
+> [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md) (section 11)
+> before 1.0.0 is published as stable. What changed: [CHANGELOG.md](CHANGELOG.md).
 
 German installation notes: [AKENO_INSTALLIEREN.md](AKENO_INSTALLIEREN.md).
 
 | | |
 | --- | --- |
-| ![Home](docs/screenshots/01-home.jpg) | ![Websites](docs/screenshots/28-websites.jpg) |
-| ![YouTube: official embedded player](docs/screenshots/08-youtube-setup.jpg) | ![Crunchyroll website test](docs/screenshots/32-crunchyroll.jpg) |
-| ![Browser test results](docs/screenshots/33-browser-tests.jpg) | ![Anime](docs/screenshots/03-anime.jpg) |
+| ![Home](docs/screenshots/01-home.jpg) | ![Home: Anime row](docs/screenshots/02-home-anime.jpg) |
+| ![Websites](docs/screenshots/28-websites.jpg) | ![A website as its own mode](docs/screenshots/38-website-mode.jpg) |
+| ![Playback Lab](docs/screenshots/37-playback-lab.jpg) | ![Crunchyroll website test](docs/screenshots/32-crunchyroll.jpg) |
+| ![YouTube: official embedded player](docs/screenshots/08-youtube-setup.jpg) | ![Anime](docs/screenshots/03-anime.jpg) |
+| ![Browser test results](docs/screenshots/33-browser-tests.jpg) | ![Home: Discover row](docs/screenshots/35-home-discover.jpg) |
 | ![Discover: PeerTube and Internet Archive](docs/screenshots/13-discover.jpg) | ![Add sources from a phone](docs/screenshots/21-sources-phone.jpg) |
 | ![Sources](docs/screenshots/17-sources.jpg) | ![A source's entries](docs/screenshots/18-source-list.jpg) |
 | ![Player with stream information](docs/screenshots/27-player-info.jpg) | ![Diagnostics](docs/screenshots/23-diagnostics.jpg) |
@@ -62,7 +55,8 @@ with recorded API responses and generated placeholder artwork; more in
 
 ## Feature status
 
-**Console** = seen working on a PS5 (firmware 13.09, version 0.4.1).
+**Console** = seen working on a PS5 (firmware 13.09 with 0.4.1, or firmware
+12.20 with a build before 1.0.0 where marked).
 **Host-tested** = automated tests on the build machine exercise the real code
 path (local HTTP server, generated media, FFmpeg's software decoder standing
 in for the console's hardware decoder). **PS5 build** = compiled and linked
@@ -70,13 +64,16 @@ into `eboot.bin`, not yet tried on the console.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Launch, 1080p interface, Inter fonts, DualSense navigation | **Console** | |
-| Mode switching with L1/R1 (Home, Anime, YouTube, Websites, Discover, Library, Sources, Settings) | **Console** (Discover new in 0.6.0, Websites new in 0.7.0) | The last mode is restored at the next start |
-| Embedded browser: websites inside AKENO STREAM (`libSceWebBrowserDialog`) | Host-tested (scripted stand-in), PS5 build | New in 0.7.0; the system's WebKit browser over the app; opened by another native title on fw 12.70; see [docs/WEBSITES.md](docs/WEBSITES.md) |
-| Websites: add, edit, remove, pin to Home, private, icons, recently visited, address bar with search, `websites.txt` | Host-tested, PS5 build | New in 0.7.0; no allow-list; http/https only |
-| YouTube: official embedded player (IFrame Player API), playlists, full screen, per-capability results | Host-tested (page server and events), PS5 build | New in 0.7.0; works without an API key (links); whether the console browser plays YouTube is what the console run decides |
-| Crunchyroll: real website with its own sign-in, DRM verdict from measurements | Host-tested, PS5 build | New in 0.7.0; protected episodes play only if the browser offers a DRM system to pages - never bypassed |
-| Browser capability test (codecs, MSE, EME/DRM, storage persistence, HTML5 playback with sound) | Host-tested, PS5 build | New in 0.7.0; results saved per item and in the diagnostics report |
+| Launch, 1080p interface, Inter fonts, DualSense navigation | **Console** (also fw 12.20) | |
+| Mode switching with L1/R1 (Home, YouTube, Anime, Websites, website modes, Discover, Library, Sources, Settings) | **Console** (Discover new in 0.6.0, Websites new in 0.7.0) | The last mode, a website mode included, is restored at the next start |
+| Home: Continue Watching, YouTube, Anime, My Websites, Discover, Local Library, Recently Added Websites, Favorites | Host-tested, PS5 build | New in 1.0.0; empty rows are hidden; online rows fill in after Home is shown |
+| Websites as app modes: own tab, name, icon or letter tile, colour, start page (at most four) | Host-tested (controller-driven), PS5 build | New in 1.0.0; still the system browser - a shortcut with a home, not a native integration |
+| Playback Lab: MP4, fragmented MP4 through MediaSource, Clear Key-encrypted video through EME, native HLS, cross-origin frame, DRM key systems, full screen, audio, codec support | Host-tested; lab page run in desktop Chromium; PS5 build | New in 1.0.0 (Clear Key step new in rc.1); per-site records classified into eight states |
+| Embedded browser: websites inside AKENO STREAM (`libSceWebBrowserDialog`) | **Console** (fw 12.20) | The system's WebKit browser over the app; see [docs/WEBSITES.md](docs/WEBSITES.md) |
+| Websites: add, edit, remove, pin to Home, private, icons, recently visited, address bar with search, `websites.txt` | Opening user-entered sites: **Console** (fw 12.20); rest host-tested | No allow-list; http/https only |
+| YouTube: official embedded player (IFrame Player API), playlists, full screen, per-capability results | **Console** (fw 12.20: videos play) | Works without an API key (links) |
+| Crunchyroll: real website with its own sign-in, DRM verdict from measurements | Website and sign-in **Console** (fw 12.20); episodes fail with KAT-6005 | Protected episodes play only if the browser offers a DRM system to pages - never bypassed |
+| Browser capability test (codecs, MSE, EME/DRM, storage persistence, HTML5 playback with sound) | Host-tested, PS5 build | Now part of the Playback Lab; results saved per item and in the diagnostics report |
 | HTTPS with certificate verification | **Console** | Console CA list; example.com and mux.dev answered |
 | HLS playback (MPEG-TS segments) | **Console** | Big Buck Bunny played; resume position saved |
 | HLS with fMP4/CMAF segments (`EXT-X-MAP`) | Host-tested, PS5 build | New in 0.5.0; remuxed by FFmpeg to MPEG-TS for the hardware pipeline |
@@ -85,7 +82,7 @@ into `eboot.bin`, not yet tried on the console.
 | MP4, MKV, MOV and TS files on web servers | Host-tested, PS5 build | New in 0.5.0; seeking with HTTP range requests (also works, slower, without them) |
 | Sources: M3U/M3U8 lists, AKENO JSON feeds, stream addresses you add | Host-tested, PS5 build; tester reports 0.5.0 works | See [docs/SOURCES.md](docs/SOURCES.md). The app ships no sources |
 | Add sources from a phone (QR code, page on the local network) | Host-tested, PS5 build | New in 0.6.0; works only while the screen is open, with a one-time code |
-| Discover: PeerTube (Sepia Search, instance API) with in-app playback | Host-tested (recorded responses), PS5 build | New in 0.6.0; the live services were not reachable from the build machine, so their real answers are untested |
+| Discover: PeerTube (Sepia Search, instance API) with in-app playback | **Console** (fw 12.20: picture and sound) | New in 0.6.0 |
 | Discover: Internet Archive public-domain films and cartoons with in-app playback | Host-tested (recorded responses, local playback test), PS5 build | New in 0.6.0; curated collections only |
 | Hardware H.264 decoding (Videodec2) | **Console** | 720p30 clip: 360/360 frames presented, 0 dropped, 0 decoder errors |
 | Hardware HEVC decoding | PS5 build | |
@@ -109,7 +106,12 @@ into `eboot.bin`, not yet tried on the console.
 
 ## Install
 
-1. Download `PPSA99276.zip` from the latest successful
+1. Download `AKENO-STREAM-PS5-<version>.zip` from
+   [Releases](https://github.com/YTDxDAkeno/AKENO-ANIME-PS5/releases) and check
+   it against the release's `SHA256SUMS` (`sha256sum -c SHA256SUMS`), then
+   unzip it: it contains the `PPSA99276/` folder. Release candidates
+   (`-rc.N`) are marked as pre-releases. Development builds: download
+   `PPSA99276.zip` from a successful
    [Build workflow run](https://github.com/YTDxDAkeno/AKENO-ANIME-PS5/actions/workflows/tooling.yml)
    (Artifacts section) and unzip it twice: the GitHub artifact ZIP contains
    `PPSA99276.zip`, which contains the `PPSA99276/` folder.
@@ -135,7 +137,7 @@ The folder contains `eboot.bin`, `sce_sys/` (param.json, icon, backgrounds),
 | Square | Add / remove favourite (Sources: remove a source; Websites: options) | Change maximum quality (HLS) |
 | OPTIONS | Service information | Stream information panel |
 
-**First test:** Home -> *Offline Test Clips* -> *A/V Sync Test Clip*. It plays
+**First test:** Home -> *Local Library* -> *A/V Sync Test Clip*. It plays
 from the app folder without network access: a test pattern with a seconds
 counter and a beep once a second. If you see the picture and hear the beeps in
 sync, hardware video and audio work.
@@ -185,7 +187,7 @@ new `PPSA99276/` folder over the old one.
 
   `title` and an `http(s)` `url` are required; `type` is `hls` (default) or
   `ts`. Only add streams you are allowed to watch. The list appears in Home ->
-  *Open Streams*.
+  *Discover* -> *Open Streams*.
 
 ### Sources (your own lists, feeds and addresses)
 
@@ -248,7 +250,7 @@ shown in logs or diagnostics reports. A search costs 100 of the default 10,000
 daily quota units, a trending page 1 unit.
 
 YouTube's terms allow playback only in YouTube's own players, and AKENO
-STREAM does not extract stream URLs. 0.7.0 plays videos in **YouTube's
+STREAM does not extract stream URLs. Videos play in **YouTube's
 official embedded player** (IFrame Player API) in the console's browser
 inside AKENO STREAM: a video's details offer **Play**, a channel **Play
 uploads** (a playlist), and without an API key YouTube mode offers **Play a
@@ -268,9 +270,11 @@ would need a registered client ID and is not part of this build.
 console's own browser engine, shown inside AKENO STREAM: an address bar
 (Triangle: an address opens, other text is searched for), *Add Website* with
 the on-screen keyboard, your saved websites with their icons, *Recently
-Visited*, and a *Browser Test* that measures what plays. Square on a website
-renames it, changes its address, pins it to Home, makes it private, records
-what works or removes it. There is no list of allowed sites - you decide
+Visited*, and the *Playback Lab* that measures what plays and why. Square on
+a website renames it, changes its address, saves it to Home (*My Websites*),
+**pins it as a mode** (its own tab after Websites, with a tab name, its icon
+or a letter tile, a colour and a start page; at most four), makes it
+private, records what works or removes it. There is no list of allowed sites - you decide
 what to open and are responsible for using it lawfully. From a PC, put
 `websites.txt` (`Name = https://…` per line) into the install folder.
 
@@ -289,7 +293,7 @@ public [AniList](https://anilist.co) API with descriptions, episode counts,
 trailers and the official streaming sites for each title (as QR codes).
 AniList provides no video, and AKENO STREAM does not scrape video sites.
 
-The **Crunchyroll** section (Home, Anime -> Streaming Services, Websites)
+The **Crunchyroll** section (Home's Anime row, Anime -> Streaming Services, Websites)
 opens Crunchyroll's own website in the browser inside AKENO STREAM. Sign in
 on Crunchyroll's own page - AKENO never shows a login form. Crunchyroll's
 episodes are DRM-protected (Widevine/PlayReady/FairPlay): they play only if
@@ -303,7 +307,7 @@ Open animated films (Blender Foundation, CC BY) are playable in Anime mode.
 
 The app shows its startup steps on screen ("Loading fonts...", "Starting
 network...") and catches crashes: before the system's error dialog appears,
-a notification reads for example *"AKENO STREAM 0.7.0 crashed: SIGSEGV (invalid
+a notification reads for example *"AKENO STREAM 1.0.0 crashed: SIGSEGV (invalid
 memory access) at eboot+0x1a2b3c, address 0x0, during startup: fonts"*. A
 photo of it is the most useful bug report. At the next start the app says that
 the last session crashed, lists the first line under Settings -> Diagnostics
@@ -334,11 +338,22 @@ redacted.
   playlist or media address, and no site-specific extractors will be added.
   Websites play their videos in their own web players in the browser
   (Websites mode), as far as the console's browser supports them.
-- The browser is the system's dialog: AKENO cannot draw over it or control
-  navigation inside it, and cannot read or clear its cookies.
+- The browser is the system's dialog: AKENO cannot draw over it, control
+  navigation inside it or read its cookies, and cannot tell which page was
+  open when it closed (a website mode always starts at its start page).
+  *Clear Browser Data* asks the system to forget all cookies; firmwares
+  without that function only lose this option.
 - DRM-protected web video (Crunchyroll episodes and similar) plays only if the
   console's browser offers a DRM system to web pages; AKENO measures this but
-  cannot add one.
+  cannot add one, and never bypasses it. On firmware 12.20 Crunchyroll
+  episodes stop with **KAT-6005** while the site and sign-in work; run the
+  Playback Lab and the secure DRM check, then record the episode result in
+  the Crunchyroll section - it names the measured cause.
+- Some sites' players load but never start (seen with AnikotoTV on firmware
+  12.20). Typical causes are a player that refuses this browser, a video host
+  that forbids playback inside other sites' frames, or a missing streaming
+  feature; record it with *Record video playback* and compare with the
+  Playback Lab. AKENO adds no site-specific extractors.
 - MP3 audio inside MPEG-TS is not supported (the stream plays without audio
   with a notice); MP2 is.
 - Video: H.264 and HEVC (8/10-bit 4:2:0). VP9/AV1 are not supported.
@@ -357,7 +372,7 @@ tests) FFmpeg's command-line tools, FreeType and libcurl development files:
 sudo apt-get install clang-18 lld-18 clang-format-18 libclang-rt-18-dev ninja-build ccache \
   pkg-config python3 ffmpeg libfreetype-dev libcurl4-openssl-dev
 make            # PS5 build: dist/PPSA99276/ and dist/PPSA99276.zip
-make test-unit  # 139 host tests (ASan/UBSan), local HTTP server, generated media, browser stand-in
+make test-unit  # 166 host tests (ASan/UBSan), local HTTP server, generated media, browser stand-in
 make screenshots  # renders every screen to build/screenshots/*.png
 make lint
 ```
