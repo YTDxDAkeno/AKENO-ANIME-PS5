@@ -24,6 +24,7 @@
 #include "ui/painter.hpp"
 #include "web/address.hpp"
 #include "web/local_pages.hpp"
+#include "web/playback_check.hpp"
 #include "web/web_tests.hpp"
 #include "web/websites.hpp"
 
@@ -138,6 +139,9 @@ struct WebSession
     std::string site_id; // the saved website, if it is one
     web::YouTubeTarget youtube;
     bool check_first = true; // look at the site before opening (Settings)
+    // Runs on the next frame after the browser has closed (to ask what the
+    // user saw, for example).
+    std::function<void()> after;
 };
 
 class App final
@@ -180,6 +184,10 @@ class App final
     void open_address(const std::string &typed);
     void play_youtube(const web::YouTubeTarget &target, const std::string &title);
     void run_browser_test();
+    // A DRM-free video address played in AKENO STREAM's own player (HLS,
+    // MPEG-TS, MP4, MKV); asks for the address with the keyboard.
+    void ask_play_link();
+    void play_link(const std::string &address);
     [[nodiscard]] bool browser_active() const noexcept
     {
         return browser_active_;
@@ -268,6 +276,10 @@ class App final
     {
         return pages_;
     }
+    web::PlaybackLog &playback_checks()
+    {
+        return playback_checks_;
+    }
     [[nodiscard]] const AppConfig &config() const
     {
         return config_;
@@ -312,6 +324,7 @@ class App final
     web::WebsiteStore websites_;
     web::WebTestLog web_tests_;
     web::LocalPages pages_;
+    web::PlaybackLog playback_checks_;
     bool browser_active_ = false;
 
     Mode mode_ = Mode::home;

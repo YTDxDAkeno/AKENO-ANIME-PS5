@@ -198,7 +198,8 @@ int WebTestLog::accept_report(std::string_view json_text, std::uint64_t now, std
         if (taken >= 150)
             break;
         const std::string id = v["id"].str();
-        if (!valid_id(id) || id.starts_with("youtube.") || id.starts_with("crunchyroll."))
+        if (!valid_id(id) || id.starts_with("youtube.") || id.starts_with("crunchyroll.") ||
+            id == "drm.secure_check")
             continue; // those come from the player and from the user, not this page
         TestRecord r;
         r.id = id;
@@ -235,10 +236,23 @@ DrmVerdict drm_verdict(const WebTestLog &log, std::string_view playback_record_i
         return r ? r->outcome : Outcome::unknown;
     };
     using Level = DrmVerdict::Level;
-    if (outcome(playback_record_id) == Outcome::yes)
+    if (!playback_record_id.empty() && outcome(playback_record_id) == Outcome::yes)
         return {Level::confirmed, "You recorded that episodes play on this console."};
     const Outcome widevine = outcome("drm.widevine"), playready = outcome("drm.playready"),
                   fairplay = outcome("drm.fairplay"), fairplay1 = outcome("drm.fairplay_1");
+    // What the user read on a public DRM support page served over HTTPS (a
+    // secure context, where EME is never hidden for that reason).
+    const Outcome secure_check = outcome("drm.secure_check");
+    if (secure_check == Outcome::yes)
+        return {Level::possible,
+                "The secure DRM check listed a DRM system for this browser, so playback may "
+                "work - the service still decides which browsers it serves. Try an episode and "
+                "record the result."};
+    if (secure_check == Outcome::no)
+        return {Level::unavailable,
+                "Measured on a secure page: this browser offers no DRM system (Widevine, "
+                "PlayReady, FairPlay) to web pages. The website and sign-in may work, but "
+                "protected episodes cannot play here."};
     if (widevine == Outcome::yes || playready == Outcome::yes || fairplay == Outcome::yes ||
         fairplay1 == Outcome::yes)
         return {Level::possible,

@@ -6,9 +6,12 @@
 //   (https://developers.google.com/youtube/iframe_api_reference), large
 //   TV buttons, and reports of what the player did. Nothing is extracted:
 //   the video plays in YouTube's own embedded player.
-// captest: measures what the console's browser engine supports - codecs,
-//   Media Source Extensions, Encrypted Media Extensions (DRM), storage that
-//   survives a restart, real HTML5 playback with sound - and reports it.
+// captest: the playback lab - measures what the console's browser engine
+//   supports (codecs, Media Source Extensions, Encrypted Media Extensions,
+//   storage that survives a restart) and really plays AKENO STREAM's own clip
+//   as an MP4 file, through MediaSource, as an HLS playlist and inside a frame
+//   from another origin, reporting each result.
+// frame: the lab's cross-origin frame (localhost instead of 127.0.0.1).
 // The scripts send only these results; they read nothing from other sites.
 #include "web/local_pages.hpp"
 
@@ -231,17 +234,20 @@ std::string_view capability_page_html()
     return R"AKENO(<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AKENO STREAM - Browser capability test</title>
+<title>AKENO STREAM - Playback lab</title>
 <link rel="stylesheet" href="akeno.css">
 </head><body>
 <main>
 <div id="top"><button id="back" class="btn primary" type="button">&#9664; Back to AKENO</button>
+<button id="fs" class="btn" type="button">Test full screen</button>
 <span id="progress">Testing...</span></div>
-<h1>Browser capability test</h1>
-<p class="lead">What the PS5 browser inside AKENO STREAM supports: video and audio formats,
-streaming, DRM, storage and playback with sound. The results are saved in AKENO STREAM
-(Settings &rarr; Diagnostics &rarr; Browser). Nothing else is sent anywhere.</p>
-<p><video id="v" playsinline preload="auto"></video></p>
+<h1>Playback lab</h1>
+<p class="lead">What the PS5 browser inside AKENO STREAM can play: formats, streaming
+(MediaSource, HLS), video inside other sites' frames, DRM, storage and sound. Every test uses
+AKENO STREAM's own short clip on this console. The results are saved in AKENO STREAM
+(Websites &rarr; Playback Lab, and Settings &rarr; Diagnostics &rarr; Browser). Nothing else is
+sent anywhere.</p>
+<div id="lab"></div>
 <p id="keys">Press buttons on the controller: the keys the page receives are recorded too.</p>
 <table><tbody id="results"></tbody></table>
 </main>
@@ -257,7 +263,8 @@ std::string_view capability_page_js()
 var results = [], $ = function (id) { return document.getElementById(id); };
 var shownGroup = '';
 function add(id, group, name, status, detail) {
-  results.push({id: id, group: group, name: name, status: status, detail: String(detail == null ? '' : detail).slice(0, 280)});
+  var r = {id: id, group: group, name: name, status: status, detail: String(detail == null ? '' : detail).slice(0, 280)};
+  results.push(r);
   var body = $('results');
   if (group !== shownGroup) {
     shownGroup = group;
@@ -266,15 +273,58 @@ function add(id, group, name, status, detail) {
   }
   var tr = document.createElement('tr');
   var a = document.createElement('td'), b = document.createElement('td'), c = document.createElement('td');
-  a.textContent = name; b.textContent = status; b.className = 's ' + status; c.textContent = detail || '';
+  a.textContent = name; b.textContent = status; b.className = 's ' + status; c.textContent = r.detail;
   tr.appendChild(a); tr.appendChild(b); tr.appendChild(c); body.appendChild(tr);
+  return r;
 }
 function post(path, body) {
   try { var x = new XMLHttpRequest(); x.open('POST', path, true); x.setRequestHeader('Content-Type', 'application/json'); x.send(body); } catch (e) {}
 }
+// Results go to AKENO STREAM after every step, so leaving early keeps them.
+function report(list, done) { post('report', JSON.stringify({version: 2, done: !!done, results: list})); }
+function step(text) { $('progress').textContent = text; }
 function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 function timeout(p, ms) { return Promise.race([p, wait(ms).then(function () { throw new Error('timed out after ' + ms + ' ms'); })]); }
-$('back').onclick = function () { post('close', ''); $('progress').textContent = 'Returning to AKENO STREAM...'; };
+var mediaErrors = {1: 'aborted', 2: 'network error', 3: 'decode error', 4: 'format not supported'};
+function mediaError(v) { return v.error ? (mediaErrors[v.error.code] || v.error.code) + (v.error.message ? ' (' + v.error.message + ')' : '') : 'unknown'; }
+function makeVideo() {
+  var v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+  $('lab').appendChild(v);
+  return v;
+}
+function dispose(v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} if (v.parentNode) v.parentNode.removeChild(v); }
+function getBytes(path) {
+  return new Promise(function (resolve, reject) {
+    var x = new XMLHttpRequest();
+    x.open('GET', path, true); x.responseType = 'arraybuffer';
+    x.onload = function () { x.status === 200 && x.response ? resolve(x.response) : reject(new Error('HTTP ' + x.status)); };
+    x.onerror = function () { reject(new Error('network error')); };
+    x.send();
+  });
+}
+// Plays v until 1 s of media has passed; play() refusals are told apart from failures.
+function watch(v, name, onDone) {
+  var done = false, stage = 'load';
+  function finish(status, detail) { if (done) return; done = true; onDone(status, detail); }
+  v.addEventListener('timeupdate', function () { if (v.currentTime > 1.0) finish('yes', 'reached ' + v.currentTime.toFixed(1) + ' s'); });
+  v.addEventListener('error', function () { finish('no', 'media error during ' + stage + ': ' + mediaError(v)); });
+  setTimeout(function () { finish('no', 'no progress after 12 s (stage ' + stage + ', readyState ' + v.readyState + ')'); }, 12000);
+  return {
+    stage: function (s) { stage = s; },
+    play: function () {
+      stage = 'play';
+      var p; try { p = v.play(); } catch (e) { finish('no', 'play(): ' + e.name); return; }
+      if (p && p.then) p.then(null, function (e) {
+        if (e && e.name === 'NotAllowedError')
+          finish(v.readyState >= 2 ? 'partial' : 'unknown', 'loaded (readyState ' + v.readyState + ') but the browser refused to start without a click');
+        else finish('no', 'play(): ' + (e && e.name));
+      });
+    },
+    fail: finish
+  };
+}
+$('back').onclick = function () { post('close', ''); step('Returning to AKENO STREAM...'); };
 $('back').focus();
 
 var keys = 0;
@@ -287,18 +337,25 @@ function browserFacts() {
   var g = 'Browser';
   add('browser.ua', g, 'User agent', 'info', navigator.userAgent);
   add('browser.secure', g, 'Secure context (needed for DRM)', window.isSecureContext ? 'yes' : 'no',
-      window.isSecureContext ? 'this page counts as secure' : 'DRM results below cannot be trusted from this page');
+      window.isSecureContext ? 'this page counts as secure' : 'DRM results below cannot be trusted from this page - use the secure DRM check');
   add('browser.screen', g, 'Screen and window', 'info', screen.width + 'x' + screen.height + ', window ' +
       innerWidth + 'x' + innerHeight + ', pixel ratio ' + (window.devicePixelRatio || 1));
   add('browser.cookies', g, 'Cookies enabled', navigator.cookieEnabled ? 'yes' : 'no', '');
   add('browser.wasm', g, 'WebAssembly', typeof WebAssembly === 'object' ? 'yes' : 'no', '');
   var gl = null; try { gl = document.createElement('canvas').getContext('webgl'); } catch (e) {}
   add('browser.webgl', g, 'WebGL', gl ? 'yes' : 'no', gl ? String(gl.getParameter(gl.VERSION)) : '');
-  add('browser.fullscreen', g, 'Fullscreen API', (document.fullscreenEnabled || document.webkitFullscreenEnabled) ? 'yes' : 'no', '');
+  add('browser.fullscreen', g, 'Fullscreen API', (document.fullscreenEnabled || document.webkitFullscreenEnabled) ? 'yes' : 'no',
+      document.fullscreenEnabled ? 'standard' : document.webkitFullscreenEnabled ? 'webkit prefix' : 'press "Test full screen" to try it on a video');
   var pads = navigator.getGamepads ? Array.prototype.filter.call(navigator.getGamepads(), function (p) { return !!p; }).length : -1;
   add('browser.gamepad', g, 'Gamepad API', pads < 0 ? 'no' : 'info', pads < 0 ? '' : pads + ' controller(s) visible to pages');
   add('browser.sw', g, 'Service workers', 'serviceWorker' in navigator ? 'yes' : 'no', '');
   add('browser.mediasession', g, 'Media Session API', 'mediaSession' in navigator ? 'yes' : 'no', '');
+  var w = 'Web platform (what web players use)';
+  add('js.worker', w, 'Web Workers', typeof Worker === 'function' ? 'yes' : 'no', 'HLS.js and DASH players move work into workers');
+  add('js.fetch', w, 'fetch()', typeof fetch === 'function' ? 'yes' : 'no', '');
+  add('js.blob', w, 'Blob URLs', window.URL && URL.createObjectURL ? 'yes' : 'no', 'MediaSource players attach through them');
+  add('js.promise', w, 'Promises', typeof Promise === 'function' ? 'yes' : 'no', '');
+  add('browser.storage_access', w, 'Storage Access API', document.hasStorageAccess ? 'yes' : 'no', 'players in frames ask for cookies through it');
 }
 
 function storage() {
@@ -335,7 +392,8 @@ function codecs() {
                ['codec.vp9', 'VP9 (WebM)', 'video/webm; codecs="vp9"'],
                ['codec.vp9_mp4', 'VP9 (MP4)', 'video/mp4; codecs="vp09.00.10.08"'],
                ['codec.av1', 'AV1', 'video/mp4; codecs="av01.0.05M.08"'],
-               ['codec.hls', 'HLS played natively', 'application/vnd.apple.mpegurl']];
+               ['codec.hls', 'HLS played natively', 'application/vnd.apple.mpegurl'],
+               ['codec.dash', 'MPEG-DASH played natively', 'application/dash+xml']];
   var audio = [['codec.aac', 'AAC', 'audio/mp4; codecs="mp4a.40.2"'],
                ['codec.mp3', 'MP3', 'audio/mpeg'],
                ['codec.opus', 'Opus', 'audio/webm; codecs="opus"'],
@@ -347,16 +405,19 @@ function codecs() {
   audio.forEach(function (c) { var r = a.canPlayType(c[2]); add(c[0], 'Audio formats (canPlayType)', c[1], verdict(r), r || 'no answer'); });
   var g = 'Streaming (Media Source Extensions)';
   var MS = window.MediaSource || window.WebKitMediaSource, MMS = window.ManagedMediaSource;
-  add('mse.available', g, 'MediaSource', MS ? 'yes' : 'no', MS ? '' : 'adaptive web players (YouTube, most streaming sites) need it');
+  add('mse.available', g, 'MediaSource', MS ? 'yes' : (MMS ? 'partial' : 'no'),
+      MS ? '' : MMS ? 'only ManagedMediaSource' : 'adaptive web players (YouTube, most streaming sites) need it');
   add('mse.managed', g, 'ManagedMediaSource', MMS ? 'yes' : 'no', '');
   var src = MS || MMS;
   if (src && src.isTypeSupported) {
     [['mse.h264', 'H.264 + AAC', 'video/mp4; codecs="avc1.640028,mp4a.40.2"'],
+     ['mse.clip', 'The lab clip (H.264 High 3.0 + AAC)', 'video/mp4; codecs="avc1.64001e,mp4a.40.2"'],
+     ['mse.ts', 'MPEG-TS segments directly', 'video/mp2t; codecs="avc1.64001e,mp4a.40.2"'],
      ['mse.vp9', 'VP9', 'video/webm; codecs="vp9"'],
      ['mse.av1', 'AV1', 'video/mp4; codecs="av01.0.05M.08"'],
      ['mse.hevc', 'HEVC', 'video/mp4; codecs="hvc1.1.6.L120.90"']].forEach(function (c) {
       var ok = false; try { ok = src.isTypeSupported(c[2]); } catch (e) {}
-      add(c[0], g, c[1], ok ? 'yes' : 'no', '');
+      add(c[0], g, c[1], ok ? 'yes' : 'no', c[0] === 'mse.ts' && !ok ? 'normal: HLS.js converts TS to MP4 itself' : '');
     });
   }
 }
@@ -364,13 +425,14 @@ function codecs() {
 function drm() {
   var g = 'DRM (Encrypted Media Extensions)';
   var secure = window.isSecureContext;
+  if (window.WebKitMediaKeys && window.WebKitMediaKeys.isTypeSupported) {
+    var fps = false; try { fps = window.WebKitMediaKeys.isTypeSupported('com.apple.fps.1_0', 'video/mp4'); } catch (e) {}
+    add('drm.legacy_fps', g, 'Legacy WebKitMediaKeys (FairPlay)', fps ? 'yes' : 'no', 'the older Safari interface');
+  } else add('drm.legacy_fps', g, 'Legacy WebKitMediaKeys (FairPlay)', 'no', 'not present');
+  add('drm.legacy_ms', g, 'Legacy MSMediaKeys (PlayReady)', window.MSMediaKeys ? 'yes' : 'no', '');
   if (!navigator.requestMediaKeySystemAccess) {
     add('drm.eme', g, 'EME (requestMediaKeySystemAccess)', secure ? 'no' : 'unknown',
-        secure ? 'the browser offers no DRM to web pages' : 'not available to this page (not a secure context)');
-    if (window.WebKitMediaKeys && window.WebKitMediaKeys.isTypeSupported) {
-      var fps = false; try { fps = window.WebKitMediaKeys.isTypeSupported('com.apple.fps.1_0', 'video/mp4'); } catch (e) {}
-      add('drm.legacy_fps', g, 'Legacy WebKitMediaKeys (FairPlay)', fps ? 'yes' : 'no', '');
-    }
+        secure ? 'the browser offers no DRM to web pages' : 'not available to this page (not a secure context) - use the secure DRM check');
     return Promise.resolve();
   }
   add('drm.eme', g, 'EME (requestMediaKeySystemAccess)', 'yes', 'present; key systems below');
@@ -380,14 +442,27 @@ function drm() {
                  ['drm.fairplay', 'FairPlay', 'com.apple.fps'],
                  ['drm.fairplay_1', 'FairPlay 1.0', 'com.apple.fps.1_0'],
                  ['drm.clearkey', 'Clear Key (no protection, test only)', 'org.w3.clearkey']];
-  var config = [{initDataTypes: ['cenc', 'sinf', 'skd', 'keyids'],
-                 videoCapabilities: [{contentType: 'video/mp4; codecs="avc1.42E01E"'}],
-                 audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}]}];
+  // Several configurations: the browser takes the first one it supports.
+  var configs = [{initDataTypes: ['cenc', 'keyids'],
+                  videoCapabilities: [{contentType: 'video/mp4; codecs="avc1.42E01E"'}],
+                  audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}]},
+                 {initDataTypes: ['sinf', 'skd'],
+                  videoCapabilities: [{contentType: 'video/mp4'}]},
+                 {videoCapabilities: [{contentType: 'video/mp4'}]}];
   return systems.reduce(function (chain, s) {
     return chain.then(function () {
-      return timeout(navigator.requestMediaKeySystemAccess(s[2], config), 5000).then(function (access) {
+      step('Testing DRM: ' + s[1] + '...');
+      return timeout(navigator.requestMediaKeySystemAccess(s[2], configs), 5000).then(function (access) {
         var c = access.getConfiguration ? access.getConfiguration() : {};
-        add(s[0], g, s[1], 'yes', 'key system available' + (c.videoCapabilities && c.videoCapabilities[0] && c.videoCapabilities[0].robustness ? ', robustness ' + c.videoCapabilities[0].robustness : ''));
+        var robust = c.videoCapabilities && c.videoCapabilities[0] && c.videoCapabilities[0].robustness;
+        var detail = 'key system available' + (robust ? ', robustness ' + robust : '') +
+                     (c.initDataTypes ? ', init data ' + c.initDataTypes.join('/') : '');
+        if (!access.createMediaKeys) { add(s[0], g, s[1], 'yes', detail); return; }
+        return timeout(access.createMediaKeys(), 5000).then(function () {
+          add(s[0], g, s[1], 'yes', detail + ', keys created');
+        }, function (e) {
+          add(s[0], g, s[1], 'partial', detail + ', but creating keys failed: ' + (e && e.name));
+        });
       }, function (e) {
         add(s[0], g, s[1], secure ? 'no' : 'unknown', (e && (e.name + ': ' + e.message)) || 'refused');
       });
@@ -408,52 +483,204 @@ function webAudio() {
   } catch (e) { add('audio.webaudio', g, 'Web Audio', 'no', String(e)); return Promise.resolve(); }
 }
 
-function playback() {
-  var g = 'HTML5 playback (H.264 + AAC MP4 from AKENO STREAM)';
-  var v = $('v'), errors = {1: 'aborted', 2: 'network error', 3: 'decode error', 4: 'format not supported'};
+var PG = 'Playback (AKENO STREAM\'s own clip)';
+// 1. A plain MP4 file, first with sound: shows the autoplay rules too.
+function progressive() {
+  step('Playing an MP4 file...');
+  var v = makeVideo();
+  v.muted = false;
   return new Promise(function (resolve) {
-    var done = false, started = 0;
-    function finish(ok, how) {
-      if (done) return; done = true;
+    var w = watch(v, 'mp4', function (status, how) {
       var frames = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (v.webkitDecodedFrameCount || 0);
       var audioBytes = v.webkitAudioDecodedByteCount;
-      add('playback.video', g, 'Video plays', ok ? 'yes' : 'no', how + (frames ? ', ' + frames + ' frames' : ''));
-      add('playback.audio', g, 'Audio decoded', audioBytes === undefined ? 'unknown' : (audioBytes > 0 ? 'yes' : 'no'),
+      add('playback.video', PG, 'MP4 file plays', status, how + (frames ? ', ' + frames + ' frames' : ''));
+      add('playback.audio', PG, 'Audio decoded', audioBytes === undefined ? 'unknown' : (audioBytes > 0 ? 'yes' : 'no'),
           audioBytes === undefined ? 'this browser does not report it - listen for the tone' : audioBytes + ' bytes of audio decoded');
-      try { v.pause(); } catch (e) {}
+      dispose(v);
       resolve();
-    }
-    v.onerror = function () { finish(false, 'media error: ' + (v.error ? (errors[v.error.code] || v.error.code) + ' ' + (v.error.message || '') : 'unknown')); };
-    v.ontimeupdate = function () { if (v.currentTime > 1.0) finish(true, 'reached ' + v.currentTime.toFixed(1) + ' s'); };
+    });
     v.src = 'test.mp4';
-    v.muted = false;
-    var p = v.play();
+    var p; try { p = v.play(); } catch (e) { w.fail('no', 'play(): ' + e.name); return; }
     if (p && p.then) {
-      p.then(function () { add('playback.autoplay_sound', g, 'Starts with sound without a click', 'yes', ''); },
+      p.then(function () { add('playback.autoplay_sound', PG, 'Starts with sound without a click', 'yes', ''); },
              function (e) {
-               add('playback.autoplay_sound', g, 'Starts with sound without a click', 'no', e.name + ' - sites will ask for a click first');
+               add('playback.autoplay_sound', PG, 'Starts with sound without a click', 'no', (e && e.name) + ' - sites will ask for a click first');
                v.muted = true;
-               v.play().then(function () { add('playback.autoplay_muted', g, 'Starts muted without a click', 'yes', ''); },
-                             function (e2) { add('playback.autoplay_muted', g, 'Starts muted without a click', 'no', e2.name); });
+               v.play().then(function () { add('playback.autoplay_muted', PG, 'Starts muted without a click', 'yes', ''); },
+                             function (e2) { add('playback.autoplay_muted', PG, 'Starts muted without a click', 'no', e2 && e2.name);
+                                             w.fail('unknown', 'the browser refused to start the video without a click'); });
              });
     }
-    setTimeout(function () { finish(false, 'no progress after 12 s (state ' + v.readyState + ')'); }, 12000);
   });
 }
 
+// 2. MediaSource with a fragmented MP4: what HLS.js, DASH and Shaka players do.
+function msePlayback() {
+  var name = 'MediaSource plays fragmented MP4 (like HLS.js / DASH players)';
+  var MS = window.MediaSource || window.WebKitMediaSource || window.ManagedMediaSource;
+  if (!MS) { add('playback.mse', PG, name, 'no', 'no MediaSource in this browser'); return Promise.resolve(); }
+  step('Playing through MediaSource...');
+  var type = 'video/mp4; codecs="avc1.64001e,mp4a.40.2"';
+  return new Promise(function (resolve) {
+    var v = makeVideo();
+    var w = watch(v, 'mse', function (status, detail) { add('playback.mse', PG, name, status, detail); dispose(v); resolve(); });
+    var ms;
+    try { ms = new MS(); } catch (e) { w.fail('no', 'new MediaSource: ' + e.name); return; }
+    if (MS === window.ManagedMediaSource) v.disableRemotePlayback = true;
+    w.stage('sourceopen');
+    ms.addEventListener('sourceopen', function () {
+      var sb;
+      w.stage('addSourceBuffer');
+      try { sb = ms.addSourceBuffer(type); } catch (e) { w.fail('no', 'addSourceBuffer: ' + e.name); return; }
+      w.stage('download');
+      getBytes('test-frag.mp4').then(function (buffer) {
+        w.stage('appendBuffer');
+        sb.addEventListener('error', function () { w.fail('no', 'SourceBuffer error while appending'); });
+        sb.addEventListener('updateend', function () {
+          try { if (ms.readyState === 'open') ms.endOfStream(); } catch (e) {}
+          w.play();
+        });
+        try { sb.appendBuffer(buffer); } catch (e) { w.fail('no', 'appendBuffer: ' + e.name); }
+      }, function (e) { w.fail('no', 'download: ' + e.message); });
+    });
+    v.src = URL.createObjectURL(ms);
+  });
+}
+
+// 3. An HLS playlist given straight to the video element (Safari-style).
+function hlsNative() {
+  step('Playing an HLS playlist natively...');
+  return new Promise(function (resolve) {
+    var v = makeVideo();
+    var can = v.canPlayType('application/vnd.apple.mpegurl');
+    var w = watch(v, 'hls', function (status, detail) {
+      add('playback.hls_native', PG, 'HLS playlist plays natively', status, detail + '; canPlayType "' + (can || '') + '"');
+      dispose(v); resolve();
+    });
+    v.src = 'test.m3u8';
+    w.play();
+  });
+}
+
+// 4. Video inside a frame from another origin, the way most sites embed their
+// players; the frame also reports whether it may keep cookies.
+function framePlayback() {
+  step('Playing inside a frame from another site...');
+  var origin = 'http://localhost:' + location.port;
+  return new Promise(function (resolve) {
+    var f = document.createElement('iframe'), loaded = false, done = false, cookies = false;
+    function finish(status, detail) {
+      if (done) return; done = true;
+      add('playback.iframe', PG, 'Video plays in a frame from another site', status, detail);
+      if (!cookies) add('browser.third_party_cookies', 'Storage and sessions', 'Cookies inside frames from other sites', 'unknown', 'the test frame did not report');
+      setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 100);
+      resolve();
+    }
+    window.addEventListener('message', function (e) {
+      if (e.origin !== origin || !e.data || e.data.akeno !== 'frame') return;
+      if (e.data.kind === 'loaded') loaded = true;
+      else if (e.data.kind === 'cookies') {
+        cookies = true;
+        add('browser.third_party_cookies', 'Storage and sessions', 'Cookies inside frames from other sites',
+            e.data.status, String(e.data.detail || '').slice(0, 200));
+      } else if (e.data.kind === 'result') finish(e.data.status, String(e.data.detail || '').slice(0, 200));
+    });
+    setTimeout(function () {
+      finish(loaded ? 'no' : 'unknown', loaded ? 'the frame loaded but did not play within 16 s'
+                                                : 'the test frame did not load (this browser may not reach "localhost")');
+    }, 16000);
+    f.setAttribute('allow', 'autoplay; fullscreen; encrypted-media');
+    f.setAttribute('allowfullscreen', '');
+    f.width = 480; f.height = 270; f.style.border = '0';
+    f.src = origin + location.pathname.replace(/captest$/, 'frame');
+    $('lab').appendChild(f);
+  });
+}
+
+// Full screen needs a button press, so it has its own button.
+$('fs').onclick = function () {
+  var name = 'A video goes full screen';
+  var v = makeVideo(), done = false;
+  v.loop = true; v.src = 'test.mp4';
+  function finish(status, detail) {
+    if (done) return; done = true;
+    report([add('playback.fullscreen', PG, name, status, detail)], false);
+    setTimeout(function () {
+      try { (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document); } catch (e) {}
+      try { if (v.webkitExitFullscreen) v.webkitExitFullscreen(); } catch (e) {}
+      dispose(v); $('fs').focus();
+    }, 3000);
+  }
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+    document.addEventListener(ev, function () { if (document.fullscreenElement || document.webkitFullscreenElement) finish('yes', ev); });
+  });
+  v.addEventListener('webkitbeginfullscreen', function () { finish('yes', 'webkitbeginfullscreen'); });
+  var play = v.play(); if (play && play.then) play.then(null, function () {});
+  var request = v.requestFullscreen || v.webkitRequestFullscreen || v.webkitEnterFullscreen;
+  if (!request) { finish('no', 'the video element has no full-screen function'); return; }
+  try {
+    var r = request.call(v);
+    if (r && r.then) r.then(null, function (e) { finish('no', 'refused: ' + (e && e.name)); });
+  } catch (e) { finish('no', 'refused: ' + e.name); }
+  setTimeout(function () { finish('no', 'no full-screen change within 5 s'); }, 5000);
+};
+
 browserFacts();
 storage()
-  .then(function () { codecs(); return drm(); })
+  .then(function () { codecs(); report(results, false); return drm(); })
   .then(webAudio)
-  .then(playback)
+  .then(function () { report(results, false); return progressive(); })
+  .then(function () { report(results, false); return msePlayback(); })
+  .then(function () { report(results, false); return hlsNative(); })
+  .then(function () { report(results, false); return framePlayback(); })
   .then(function () {
-    post('report', JSON.stringify({version: 1, results: results}));
-    $('progress').textContent = 'Done: ' + results.length + ' results saved in AKENO STREAM.';
+    report(results, true);
+    step('Done: ' + results.length + ' results saved in AKENO STREAM. Try "Test full screen", then go back.');
     $('back').focus();
   }, function (e) {
     add('captest.failed', 'Test', 'The test stopped', 'no', String(e));
-    post('report', JSON.stringify({version: 1, results: results}));
+    report(results, true);
   });
+})();
+)AKENO";
+}
+
+std::string_view frame_page_html()
+{
+    return R"AKENO(<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>AKENO STREAM - frame test</title>
+<link rel="stylesheet" href="akeno.css">
+</head><body style="margin:0;background:#000">
+<video id="v" muted playsinline preload="auto" style="width:100%;height:100%;border-radius:0"></video>
+<script src="frame.js"></script>
+</body></html>
+)AKENO";
+}
+
+std::string_view frame_page_js()
+{
+    return R"AKENO((function () {
+'use strict';
+var parentOrigin = 'http://127.0.0.1:' + location.port;
+function send(kind, status, detail) {
+  try { parent.postMessage({akeno: 'frame', kind: kind, status: status, detail: String(detail || '').slice(0, 200)}, parentOrigin); } catch (e) {}
+}
+send('loaded', 'info', '');
+var stamp = String(Date.now());
+try { document.cookie = 'akeno_frame=' + stamp + '; Path=/'; } catch (e) {}
+var kept = document.cookie.indexOf('akeno_frame=' + stamp) >= 0;
+send('cookies', kept ? 'yes' : 'no', kept ? 'a frame from another site may set cookies' : 'blocked: players in frames cannot keep sign-ins');
+var v = document.getElementById('v'), done = false;
+function finish(status, detail) { if (done) return; done = true; send('result', status, detail); try { v.pause(); } catch (e) {} }
+v.addEventListener('timeupdate', function () { if (v.currentTime > 1.0) finish('yes', 'reached ' + v.currentTime.toFixed(1) + ' s'); });
+v.addEventListener('error', function () { finish('no', 'media error ' + (v.error ? v.error.code : '')); });
+v.src = 'test.mp4';
+var p; try { p = v.play(); } catch (e) { finish('no', 'play(): ' + e.name); }
+if (p && p.then) p.then(null, function (e) {
+  finish(e && e.name === 'NotAllowedError' ? 'partial' : 'no', 'play(): ' + (e && e.name) + (e && e.name === 'NotAllowedError' ? ' - frames need a click to start' : ''));
+});
+setTimeout(function () { finish('no', 'no progress after 12 s (readyState ' + v.readyState + ')'); }, 12000);
 })();
 )AKENO";
 }

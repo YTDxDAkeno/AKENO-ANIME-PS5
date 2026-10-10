@@ -5,3 +5,6 @@ Synthetic test clips generated with FFmpeg's built-in sources (no third-party co
 Used by Diagnostics (media self-test, hardware test clip) and Home > Offline Test Clips.
 - h264-aac-360p.mp4: the same 2 s clip remuxed (no re-encode) into MP4 with faststart. Played by
   the browser capability test (Settings > Diagnostics > Browser) to check HTML5 video and audio.
+- h264-aac-360p-frag.mp4: the same 2 s clip remuxed (no re-encode) into fragmented MP4
+  (frag_keyframe+empty_moov+default_base_moof, 0.5 s fragments). The playback lab feeds it to
+  MediaSource the way HLS.js and DASH players do; h264-aac-360p.ts is its HLS segment.

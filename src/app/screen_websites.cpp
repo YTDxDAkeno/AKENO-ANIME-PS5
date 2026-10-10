@@ -146,8 +146,10 @@ class WebsitesScreen final : public BrowseScreen
             with_notice([this] { ask_address(); });
         else if (item.id == "add-website")
             add_website();
-        else if (item.id == "browser-test")
-            with_notice([this] { app_.run_browser_test(); });
+        else if (item.id == "playback-lab")
+            with_notice([this] { app_.push(make_lab_screen(app_)); });
+        else if (item.id == "play-link")
+            app_.ask_play_link();
         else if (item.provider == "mode")
             app_.open_item(item);
     }
@@ -168,10 +170,15 @@ class WebsitesScreen final : public BrowseScreen
             "pins it to Home or removes it. From a PC: websites.txt in the install folder.",
             0x35c79a));
         start.items.push_back(action_card(
-            "browser-test", "Browser Test", "What plays here?",
-            "Checks what the console's browser supports - video and audio formats, streaming, "
-            "DRM, storage and playback with sound - and saves the results item by item.",
+            "playback-lab", "Playback Lab", "Why a video plays or not",
+            "Measures what the console's browser can play - MP4, streaming (MediaSource, HLS), "
+            "video in other sites' frames, DRM - and records what you see on each site.",
             0x5aa9ff));
+        start.items.push_back(action_card(
+            "play-link", "Play a Video Link", "In AKENO's own player",
+            "A DRM-free HLS, MP4, MKV or TS address plays in AKENO STREAM's native player "
+            "instead of the browser.",
+            0xb18cff));
         out.push_back(std::move(start));
 
         Shelf mine{"Your Websites", {}, false};
@@ -375,6 +382,15 @@ class WebsitesScreen final : public BrowseScreen
             {site.private_site ? "Private: on" : "Private: off",
              "Private sites stay out of Recently Visited and Home", [this, alive, id]
              { toggle(alive, id, [](web::Website &w) { w.private_site = !w.private_site; }); }});
+        options.push_back({"Record video playback",
+                           "What happened when a video played, and its error code",
+                           [this, alive, url = site.url, name = site.name]
+                           {
+                               if (!*alive)
+                                   return;
+                               const std::string key = web::check_key(url);
+                               open_playback_record(app_, key, name, key == "crunchyroll.com");
+                           }});
         options.push_back({"Record what works", "Page, sign-in, video and sound, for test reports",
                            [this, alive, id] { record(alive, id); }});
         options.push_back({"Refresh icon", "Looks at the site again for its icon",
@@ -549,7 +565,7 @@ class CrunchyrollScreen final : public Screen
             action_ = std::max(0, action_ - 1);
             return;
         case input::Button::right:
-            action_ = std::min(3, action_ + 1);
+            action_ = std::min(kActions - 1, action_ + 1);
             return;
         case input::Button::cross:
             run(action_);
@@ -568,50 +584,74 @@ class CrunchyrollScreen final : public Screen
         p.text(th::kMarginX, 150, "CRUNCHYROLL", th::kCaptionStrong, accent);
         p.text(th::kMarginX, 186, "crunchyroll.com in AKENO STREAM", th::kTitle, th::kText);
         const int lw = 820;
-        int y = 270;
+        int y = 262;
         y += p.wrapped(th::kMarginX, y,
                        "Opens Crunchyroll's own website in the PS5 browser inside AKENO STREAM. "
                        "Sign in on Crunchyroll's own page there - AKENO STREAM never asks for "
                        "and never sees your Crunchyroll password.",
-                       th::kBody, th::kTextSecondary, lw, 5) +
-             24;
+                       th::kBody, th::kTextSecondary, lw, 4) +
+             20;
         y += p.wrapped(th::kMarginX, y,
-                       "Crunchyroll protects its episodes with DRM. In a browser they play only "
-                       "if the browser offers a licensed DRM system (Widevine, PlayReady or "
-                       "FairPlay) to the page. AKENO STREAM does not and will not work around "
-                       "DRM. The browser test shows what this console's browser offers.",
+                       "Crunchyroll's episodes are DRM-protected: they play only if the browser "
+                       "offers a licensed DRM system (Widevine, PlayReady or FairPlay) to the "
+                       "page. AKENO STREAM does not and will not work around DRM. An error code "
+                       "such as KAT-6005 alone does not prove the cause - record it, and the "
+                       "Playback Lab's measurements show what is missing.",
                        th::kBody, th::kTextSecondary, lw, 7) +
-             24;
-        p.wrapped(th::kMarginX, y, verdict(), th::kBodyStrong, verdict_color(), lw, 5);
+             20;
+        const web::Classification cls = classification();
+        const Pixel color = cls.state == web::PlaybackState::works          ? th::kSuccess
+                            : cls.state == web::PlaybackState::not_tested   ? th::kTextSecondary
+                            : cls.state == web::PlaybackState::undetermined ? th::kWarning
+                                                                            : th::kError;
+        y += p.wrapped(th::kMarginX, y,
+                       std::string{"Episodes: "} + web::state_label(cls.state) +
+                           (cls.measured ? " (measured)" : ""),
+                       th::kBodyStrong, color, lw, 1) +
+             8;
+        p.wrapped(th::kMarginX, y,
+                  cls.state == web::PlaybackState::not_tested ? verdict().text : cls.reason,
+                  th::kCaption, th::kTextSecondary, lw, 5);
 
-        static const char *labels[] = {"Open crunchyroll.com", "Run browser test", "Record results",
-                                       "Back"};
-        static const Icon icons[] = {Icon::spark, Icon::refresh, Icon::check, Icon::home};
+        static const char *labels[] = {"Open crunchyroll.com", "Record what happened",
+                                       "Playback Lab", "Back"};
+        static const Icon icons[] = {Icon::spark, Icon::check, Icon::refresh, Icon::home};
         int x = th::kMarginX;
-        for (int i = 0; i < 4; ++i)
-            x += p.button(x, 900, labels[i], i == action_, accent, icons[i]) + 18;
+        for (int i = 0; i < kActions; ++i)
+            x += p.button(x, 920, labels[i], i == action_, accent, icons[i]) + 18;
 
-        const Rect panel{th::kMarginX + lw + 60, 150, th::kWidth - 2 * th::kMarginX - lw - 60, 720};
+        const Rect panel{th::kMarginX + lw + 60, 150, th::kWidth - 2 * th::kMarginX - lw - 60, 740};
         p.panel(panel, th::kPanelRadius, gfx::with_alpha(th::kSurface, 235));
         p.text(panel.x + 30, panel.y + 24, "On this console", th::kHeading, th::kText);
-        int ry = panel.y + 84;
+        int ry = panel.y + 80;
+        const auto line = [&](const std::string &label, const std::string &value, Pixel c,
+                              const std::string &detail)
+        {
+            p.s.fill_circle(panel.x + 40, ry + 15, 8, c);
+            p.text(panel.x + 62, ry, label, th::kCaptionStrong, th::kText, panel.w - 300);
+            p.text_right(panel.right() - 30, ry, value, th::kCaption, c);
+            if (!detail.empty())
+            {
+                p.text(panel.x + 62, ry + 27, detail, th::kSmall, th::kTextMuted, panel.w - 100);
+                ry += 56;
+            }
+            else
+                ry += 44;
+        };
         for (const Row &r : rows())
         {
             const web::TestRecord *rec = app_.web_tests().get(r.id);
             const web::Outcome o = rec ? rec->outcome : web::Outcome::unknown;
-            const Pixel color = o == web::Outcome::yes       ? th::kSuccess
-                                : o == web::Outcome::no      ? th::kError
-                                : o == web::Outcome::partial ? th::kWarning
-                                                             : th::kTextMuted;
-            p.s.fill_circle(panel.x + 40, ry + 15, 8, color);
-            p.text(panel.x + 62, ry, r.label, th::kCaptionStrong, th::kText, panel.w - 260);
-            p.text_right(panel.right() - 30, ry, rec ? web::outcome_label(o) : "Not tested",
-                         th::kCaption, color);
-            if (rec && !rec->detail.empty())
-                p.text(panel.x + 62, ry + 27, rec->detail, th::kSmall, th::kTextMuted,
-                       panel.w - 100);
-            ry += 52;
+            line(r.label, rec ? web::outcome_label(o) : "Not tested", outcome_color(o),
+                 rec && r.id[0] != 'c' ? rec->detail : std::string{});
         }
+        const web::PlaybackCheck *check = app_.playback_checks().get(kKey);
+        line("Episode playback (your test)",
+             check && check->seen != web::Seen::not_tested ? web::state_label(cls.state)
+                                                           : "Not tested",
+             color, check ? web::seen_label(check->seen) : std::string{});
+        line("Last error", check && !check->error_code.empty() ? check->error_code : "None",
+             check && !check->error_code.empty() ? th::kError : th::kTextMuted, {});
     }
 
     [[nodiscard]] std::vector<Hint> hints() const override
@@ -620,6 +660,9 @@ class CrunchyrollScreen final : public Screen
     }
 
   private:
+    static constexpr int kActions = 4;
+    static constexpr char kKey[] = "crunchyroll.com";
+
     struct Row
     {
         const char *id;
@@ -631,17 +674,23 @@ class CrunchyrollScreen final : public Screen
             {"crunchyroll.render", "Website renders (your test)"},
             {"crunchyroll.login", "Sign-in on Crunchyroll's page (your test)"},
             {"crunchyroll.session", "Still signed in next time (your test)"},
-            {"crunchyroll.player", "Video player starts (your test)"},
-            {"crunchyroll.playback", "Episode plays with sound (your test)"},
-            {"drm.eme", "DRM interface (EME) for pages"},
+            {"mse.available", "Streaming (MediaSource)"},
+            {"playback.mse", "MediaSource plays (lab)"},
+            {"drm.eme", "DRM interface (EME)"},
             {"drm.widevine", "Widevine"},
             {"drm.playready", "PlayReady"},
             {"drm.fairplay", "FairPlay"},
-            {"mse.available", "Streaming (Media Source Extensions)"},
-            {"codec.h264", "H.264 video"},
-            {"codec.aac", "AAC audio"},
+            {"drm.secure_check", "Secure DRM check"},
         };
         return list;
+    }
+
+    static Pixel outcome_color(web::Outcome o)
+    {
+        return o == web::Outcome::yes       ? th::kSuccess
+               : o == web::Outcome::no      ? th::kError
+               : o == web::Outcome::partial ? th::kWarning
+                                            : th::kTextMuted;
     }
 
     web::Outcome outcome(const char *id) const
@@ -650,23 +699,17 @@ class CrunchyrollScreen final : public Screen
         return r ? r->outcome : web::Outcome::unknown;
     }
 
-    std::string verdict() const
+    web::DrmVerdict verdict() const
     {
-        return web::drm_verdict(app_.web_tests(), "crunchyroll.playback").text;
+        return web::drm_verdict(app_.web_tests(), "");
     }
 
-    Pixel verdict_color() const
+    web::Classification classification() const
     {
-        switch (web::drm_verdict(app_.web_tests(), "crunchyroll.playback").level)
-        {
-        case web::DrmVerdict::Level::unavailable:
-            return th::kError;
-        case web::DrmVerdict::Level::possible:
-        case web::DrmVerdict::Level::confirmed:
-            return th::kSuccess;
-        default:
-            return th::kWarning;
-        }
+        web::PlaybackCheck check;
+        if (const web::PlaybackCheck *c = app_.playback_checks().get(kKey))
+            check = *c;
+        return web::classify(check, true, web::lab_facts(app_.web_tests()));
     }
 
     void run(int action)
@@ -684,52 +727,65 @@ class CrunchyrollScreen final : public Screen
             return;
         }
         case 1:
-            app_.run_browser_test();
+            record();
             return;
         case 2:
-        {
-            std::vector<RecordRow> marks;
-            for (std::size_t i = 0; i < 5; ++i)
-            {
-                const web::Outcome o = outcome(rows()[i].id);
-                marks.push_back({rows()[i].label, "",
-                                 o == web::Outcome::yes  ? web::Mark::works
-                                 : o == web::Outcome::no ? web::Mark::fails
-                                                         : web::Mark::untested});
-            }
-            marks[0].hint = "Crunchyroll's pages appear and can be navigated";
-            marks[1].hint = "With Crunchyroll's own sign-in page";
-            marks[2].hint = "Close the browser, open Crunchyroll again";
-            marks[3].hint = "The episode page shows the player";
-            marks[4].hint = "Picture and sound play";
-            App &app = app_;
-            app_.push(make_record_screen(
-                app_, "Crunchyroll on this console",
-                "Record what you saw. Website rendering or a successful sign-in alone does not "
-                "mean episodes play - record each item separately.",
-                std::move(marks),
-                [&app](const std::vector<RecordRow> &r)
-                {
-                    for (std::size_t i = 0; i < r.size() && i < 5; ++i)
-                    {
-                        web::TestRecord rec;
-                        rec.id = rows()[i].id;
-                        rec.group = "Crunchyroll (your test)";
-                        rec.name = rows()[i].label;
-                        rec.outcome = r[i].mark == web::Mark::works   ? web::Outcome::yes
-                                      : r[i].mark == web::Mark::fails ? web::Outcome::no
-                                                                      : web::Outcome::unknown;
-                        rec.at = platform::wall_clock_seconds();
-                        rec.source = "your test";
-                        app.web_tests().set(std::move(rec));
-                    }
-                }));
+            app_.push(make_lab_screen(app_));
             return;
-        }
         default:
             app_.pop();
             return;
         }
+    }
+
+    void record()
+    {
+        App &app = app_;
+        std::vector<MenuOption> options;
+        options.push_back({"Episode playback", "What the player did, and the error code it showed",
+                           [&app] { open_playback_record(app, kKey, "Crunchyroll", true); }});
+        options.push_back(
+            {"Website, sign-in and session", "Each item separately", [this] { record_site(); }});
+        app_.push(make_menu_screen(app_, "Record what happened", "Crunchyroll on this console",
+                                   std::move(options)));
+    }
+
+    void record_site()
+    {
+        std::vector<RecordRow> marks;
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            const web::Outcome o = outcome(rows()[i].id);
+            marks.push_back({rows()[i].label, "",
+                             o == web::Outcome::yes  ? web::Mark::works
+                             : o == web::Outcome::no ? web::Mark::fails
+                                                     : web::Mark::untested});
+        }
+        marks[0].hint = "Crunchyroll's pages appear and can be navigated";
+        marks[1].hint = "With Crunchyroll's own sign-in page";
+        marks[2].hint = "Close the browser, open Crunchyroll again";
+        App &app = app_;
+        app_.push(make_record_screen(
+            app_, "Crunchyroll on this console",
+            "Record what you saw. Website rendering or a successful sign-in alone does not mean "
+            "episodes play - record the episode separately.",
+            std::move(marks),
+            [&app](const std::vector<RecordRow> &r)
+            {
+                for (std::size_t i = 0; i < r.size() && i < 3; ++i)
+                {
+                    web::TestRecord rec;
+                    rec.id = rows()[i].id;
+                    rec.group = "Crunchyroll (your test)";
+                    rec.name = rows()[i].label;
+                    rec.outcome = r[i].mark == web::Mark::works   ? web::Outcome::yes
+                                  : r[i].mark == web::Mark::fails ? web::Outcome::no
+                                                                  : web::Outcome::unknown;
+                    rec.at = platform::wall_clock_seconds();
+                    rec.source = "your test";
+                    app.web_tests().set(std::move(rec));
+                }
+            }));
     }
 
     int action_ = 0;

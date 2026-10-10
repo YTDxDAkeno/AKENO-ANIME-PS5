@@ -5,10 +5,12 @@
 
 #include "app/screens.hpp"
 #include "core/fs.hpp"
+#include "core/url.hpp"
 #include "net/http.hpp"
 #include "platform/platform.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 
@@ -121,7 +123,8 @@ App::App(AppConfig config, gfx::FontEngine &fonts)
       images_{jobs_}, frames_{std::make_shared<media::FrameStore>(th::kWidth, th::kHeight)},
       open_{platform::app_dir(), platform::data_dir()},
       youtube_{[this] { return store_.youtube_api_key(); }}, web_{platform::make_web_view()},
-      websites_{platform::data_dir()}, web_tests_{platform::data_dir()}
+      websites_{platform::data_dir()}, web_tests_{platform::data_dir()},
+      playback_checks_{platform::data_dir()}
 {
     media::PlayerConfig pc;
     pc.frames = frames_;
@@ -187,6 +190,7 @@ void App::start(std::uint64_t now_ms)
     if (!websites_.last_error().empty())
         report_error("websites", websites_.last_error());
     web_tests_.load();
+    playback_checks_.load();
     apply_settings();
     stacks_[static_cast<int>(Mode::home)].push_back(make_home_screen(*this));
     stacks_[static_cast<int>(Mode::anime)].push_back(make_anime_screen(*this));
@@ -508,6 +512,41 @@ void App::run_browser_test()
     session.kind = WebSession::Kind::capability_test;
     session.title = "Browser capability test";
     open_web(std::move(session));
+}
+
+void App::ask_play_link()
+{
+    open_keyboard("Video address (DRM-free HLS, MP4, MKV or TS)", "https://", 2048, false,
+                  [this](bool ok, const std::string &text)
+                  {
+                      if (ok)
+                          play_link(text);
+                  });
+}
+
+void App::play_link(const std::string &typed)
+{
+    std::string address = typed;
+    while (!address.empty() && std::isspace(static_cast<unsigned char>(address.back())))
+        address.pop_back();
+    while (!address.empty() && std::isspace(static_cast<unsigned char>(address.front())))
+        address.erase(0, 1);
+    const auto parsed = url::parse(address);
+    if (!parsed || !parsed->is_http() || parsed->host.empty())
+    {
+        toast("Enter an address that starts with http:// or https://", th::kWarning);
+        return;
+    }
+    MediaItem m;
+    m.provider = "source";
+    m.id = address;
+    m.kind = ItemKind::video;
+    std::string title = parsed->path;
+    title = title.substr(title.find_last_of('/') + 1);
+    m.title = title.empty() ? parsed->host : url::decode_component(title);
+    m.subtitle = parsed->host;
+    m.playable = Playable{guess_source_kind(address), address};
+    play(m);
 }
 
 void App::show_provider_status(const Provider &provider)

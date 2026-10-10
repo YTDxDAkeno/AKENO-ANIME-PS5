@@ -12,6 +12,7 @@
 // into per-capability results.
 #include "app/screens.hpp"
 #include "core/fs.hpp"
+#include "core/json.hpp"
 #include "core/url.hpp"
 #include "platform/platform.hpp"
 #include "web/site_probe.hpp"
@@ -342,9 +343,11 @@ class BrowserScreen final : public Screen
         std::string error;
         if (s_.kind != WebSession::Kind::website)
         {
-            const std::string clip =
-                fs::join(platform::app_dir(), "assets/selftest/h264-aac-360p.mp4");
-            if (!app_.local_pages().start(clip, &error))
+            // The lab plays AKENO STREAM's own clips; the YouTube page needs none.
+            const std::string media = s_.kind == WebSession::Kind::capability_test
+                                          ? fs::join(platform::app_dir(), "assets/selftest")
+                                          : std::string{};
+            if (!app_.local_pages().start(media, &error))
             {
                 fail("AKENO STREAM's page could not be served: " + error);
                 return;
@@ -398,6 +401,7 @@ class BrowserScreen final : public Screen
             web::LocalPages &pages = app_.local_pages();
             for (const web::PageEvent &e : pages.take_events())
                 on_event(e);
+            take_lab_reports();
             const std::uint64_t now = mono_ms();
             if (phase_ == Phase::running)
             {
@@ -502,6 +506,30 @@ class BrowserScreen final : public Screen
             app_.report_error("YouTube page", e.value + ": " + e.detail);
     }
 
+    // The lab sends its results after every step: each report is saved at
+    // once, so leaving early (or a crash) keeps what was measured.
+    void take_lab_reports()
+    {
+        if (s_.kind != WebSession::Kind::capability_test || !owns_pages_)
+            return;
+        for (const std::string &report : app_.local_pages().take_reports())
+        {
+            std::string error;
+            const int taken =
+                app_.web_tests().accept_report(report, platform::wall_clock_seconds(), &error);
+            if (taken > 0)
+                lab_taken_ = std::max(lab_taken_, taken);
+            else
+                lab_error_ = error;
+            json::ParseLimits limits;
+            limits.max_bytes = 64 * 1024;
+            limits.max_depth = 8;
+            const auto parsed = json::parse(report, limits);
+            if (parsed.ok && parsed.value["done"].boolean() && taken > 0)
+                lab_done_ = true;
+        }
+    }
+
     void finish()
     {
         using web::Outcome;
@@ -513,28 +541,30 @@ class BrowserScreen final : public Screen
             web::LocalPages &pages = app_.local_pages();
             for (const web::PageEvent &e : pages.take_events())
                 on_event(e);
+            take_lab_reports();
             if (s_.kind == WebSession::Kind::capability_test)
             {
-                if (auto report = pages.take_report())
+                if (lab_done_)
                 {
-                    std::string error;
-                    const int taken = app_.web_tests().accept_report(
-                        *report, platform::wall_clock_seconds(), &error);
-                    summary = taken > 0 ? "Browser test: " + std::to_string(taken) +
-                                              " results saved (Settings > Diagnostics)"
-                                        : "Browser test: " + error;
-                    color = taken > 0 ? th::kSuccess : th::kWarning;
-                    record("captest.finished", "Browser", "Capability test completes",
-                           taken > 0 ? Outcome::yes : Outcome::no, error, "capability test");
+                    summary = "Playback lab: " + std::to_string(lab_taken_) +
+                              " results saved (Websites > Playback Lab)";
+                    color = th::kSuccess;
+                    record("captest.finished", "Browser", "Playback lab completes", Outcome::yes,
+                           std::to_string(lab_taken_) + " results", "capability test");
                 }
                 else
                 {
-                    summary = "The browser test did not finish - run it again and wait for "
-                              "\"Done\"";
+                    summary = lab_taken_ > 0
+                                  ? "Playback lab: closed early - " + std::to_string(lab_taken_) +
+                                        " results kept; run it again and wait for \"Done\""
+                                  : "The playback lab did not finish - run it again and wait "
+                                    "for \"Done\"";
                     color = th::kWarning;
-                    record("captest.finished", "Browser", "Capability test completes", Outcome::no,
-                           pages.page_loaded() ? "closed before the results were sent"
-                                               : "the test page did not load",
+                    record("captest.finished", "Browser", "Playback lab completes", Outcome::no,
+                           !lab_error_.empty()   ? lab_error_
+                           : lab_taken_ > 0      ? "closed before the last test finished"
+                           : pages.page_loaded() ? "closed before the results were sent"
+                                                 : "the test page did not load",
                            "capability test");
                 }
             }
@@ -593,6 +623,9 @@ class BrowserScreen final : public Screen
             app_.toast(summary, color);
         phase_ = Phase::closing;
         close_later(); // the app removes this screen after the update
+        // Screens cannot be pushed while the app updates its overlays.
+        if (s_.after)
+            app_.jobs().post(std::move(s_.after));
     }
 
     WebSession s_;
@@ -604,6 +637,9 @@ class BrowserScreen final : public Screen
     bool played_ = false;
     bool paused_ = false;
     bool playlist_pending_ = false;
+    bool lab_done_ = false;
+    int lab_taken_ = 0;
+    std::string lab_error_;
     std::uint64_t opened_ms_ = 0;
     std::uint64_t l3_ms_ = 0, r3_ms_ = 0;
     std::string error_;
@@ -757,6 +793,77 @@ class RecordScreen final : public Screen
 };
 
 // ---------------------------------------------------------------------------
+class ChoiceScreen final : public Screen
+{
+  public:
+    ChoiceScreen(App &app, std::string title, std::string note, ChoiceModel model)
+        : Screen{app}, title_{std::move(title)}, note_{std::move(note)}, m_{std::move(model)}
+    {
+        focus_ = std::max(0, m_.selected ? m_.selected() : 0);
+    }
+    [[nodiscard]] bool modal() const override
+    {
+        return true;
+    }
+    void handle(input::Button b) override
+    {
+        const int count = static_cast<int>(m_.options().size());
+        if (b == input::Button::up)
+            focus_ = std::max(0, focus_ - 1);
+        else if (b == input::Button::down)
+            focus_ = std::min(count - 1, focus_ + 1);
+        else if (b == input::Button::cross && focus_ < count && m_.choose)
+            m_.choose(focus_);
+        else if (b == input::Button::circle)
+            app_.pop();
+    }
+    void render(ui::Painter &p, std::uint64_t) override
+    {
+        p.s.dim(p.s.bounds(), 175);
+        const Rect panel{240, 70, 1440, 940};
+        p.panel(panel, 32, th::kSurface);
+        p.text(panel.x + 56, panel.y + 36, title_, th::kTitle, th::kText, panel.w - 112);
+        const int note_h = p.wrapped(panel.x + 56, panel.y + 96, note_, th::kCaption,
+                                     th::kTextSecondary, panel.w - 112, 2);
+        const std::vector<ChoiceOption> options = m_.options();
+        const int selected = m_.selected ? m_.selected() : -1;
+        const int row_h = 74;
+        const int top = panel.y + 116 + note_h;
+        const int footer_h = 150;
+        const int visible = std::max(1, (panel.bottom() - footer_h - top) / row_h);
+        const int first = std::clamp(focus_ - visible / 2, 0,
+                                     std::max(0, static_cast<int>(options.size()) - visible));
+        int y = top;
+        for (int i = first; i < static_cast<int>(options.size()) && i < first + visible; ++i)
+        {
+            const Rect r{panel.x + 40, y, panel.w - 80, row_h - 8};
+            const bool focused = i == focus_;
+            p.s.fill_rounded(r, 16, focused ? th::kSurfaceHighlight : th::kSurfaceRaised);
+            if (focused)
+                p.focus_ring(r, 16);
+            const auto &o = options[static_cast<std::size_t>(i)];
+            if (i == selected)
+                p.icon(Icon::check, r.x + 30, r.y + r.h / 2, 30, th::kSuccess);
+            p.text(r.x + 64, r.y + 6, o.label, th::kBodyStrong, th::kText, r.w - 100);
+            p.text(r.x + 64, r.y + 38, o.hint, th::kSmall, th::kTextMuted, r.w - 100);
+            y += row_h;
+        }
+        if (m_.footer)
+            p.wrapped(panel.x + 56, panel.bottom() - footer_h + 16, m_.footer(), th::kCaption,
+                      th::kTextSecondary, panel.w - 112, 4);
+    }
+    [[nodiscard]] std::vector<Hint> hints() const override
+    {
+        return {{Glyph::cross, "Choose"}, {Glyph::dpad, "Move"}, {Glyph::circle, "Done"}};
+    }
+
+  private:
+    std::string title_, note_;
+    ChoiceModel m_;
+    int focus_ = 0;
+};
+
+// ---------------------------------------------------------------------------
 // Settings > Diagnostics > Browser: the engine's start-up and every result.
 class BrowserTestsScreen final : public Screen
 {
@@ -892,6 +999,153 @@ std::unique_ptr<Screen> make_menu_screen(App &app, std::string title, std::strin
 {
     return std::make_unique<MenuScreen>(app, std::move(title), std::move(subtitle),
                                         std::move(options));
+}
+
+std::unique_ptr<Screen> make_choice_screen(App &app, std::string title, std::string note,
+                                           ChoiceModel model)
+{
+    return std::make_unique<ChoiceScreen>(app, std::move(title), std::move(note), std::move(model));
+}
+
+void open_playback_record(App &app, const std::string &key, const std::string &name,
+                          bool drm_expected)
+{
+    if (key.empty())
+        return;
+    const auto current = [&app, key]
+    {
+        const web::PlaybackCheck *c = app.playback_checks().get(key);
+        web::PlaybackCheck out;
+        if (c)
+            out = *c;
+        out.key = key;
+        return out;
+    };
+    const auto save = [&app, name](web::PlaybackCheck c)
+    {
+        c.name = name;
+        c.at = platform::wall_clock_seconds();
+        app.playback_checks().set(std::move(c));
+    };
+    const auto ask_code = [&app, current, save]
+    {
+        app.open_keyboard("Error code or message the player showed", current().error_code, 60,
+                          false,
+                          [current, save](bool ok, const std::string &text)
+                          {
+                              if (!ok)
+                                  return;
+                              web::PlaybackCheck c = current();
+                              c.error_code = web::clean_error_code(text);
+                              save(std::move(c));
+                          });
+    };
+    ChoiceModel model;
+    model.options = [current]
+    {
+        std::vector<ChoiceOption> out;
+        for (int i = 1; i < web::kSeenCount; ++i)
+        {
+            const auto seen = static_cast<web::Seen>(i);
+            out.push_back({web::seen_label(seen), web::seen_hint(seen)});
+        }
+        const std::string code = current().error_code;
+        out.push_back({code.empty() ? "Error code: none entered" : "Error code: " + code,
+                       "Enter exactly what the player shows (for example KAT-6005)"});
+        out.push_back({"Clear this record", "Removes what you recorded for this site"});
+        return out;
+    };
+    model.selected = [current] { return static_cast<int>(current().seen) - 1; };
+    model.choose = [&app, key, current, save, ask_code](int i)
+    {
+        if (i < web::kSeenCount - 1)
+        {
+            web::PlaybackCheck c = current();
+            c.seen = static_cast<web::Seen>(i + 1);
+            if (c.seen == web::Seen::plays)
+                c.error_code.clear();
+            save(c);
+            if (c.seen == web::Seen::error_message && c.error_code.empty())
+                ask_code();
+        }
+        else if (i == web::kSeenCount - 1)
+            ask_code();
+        else
+            app.playback_checks().remove(key);
+    };
+    model.footer = [&app, current, drm_expected]
+    {
+        const web::PlaybackCheck c = current();
+        const web::Classification cls =
+            web::classify(c, drm_expected, web::lab_facts(app.web_tests()));
+        return std::string{"Result: "} + web::state_label(cls.state) +
+               (cls.measured ? " (measured)" : "") + ". " + cls.reason;
+    };
+    app.push(make_choice_screen(
+        app, "Video on " + name,
+        "What happened when you played a video there? AKENO STREAM cannot see inside websites, "
+        "so your answer and the playback lab's measurements decide the result together.",
+        std::move(model)));
+}
+
+void open_secure_drm_record(App &app)
+{
+    struct Choice
+    {
+        const char *label;
+        const char *hint;
+        web::Outcome outcome;
+        const char *detail;
+    };
+    static const Choice kChoices[] = {
+        {"Widevine is listed as supported", "com.widevine.alpha shows a value, not null or false",
+         web::Outcome::yes, "Widevine listed"},
+        {"PlayReady is listed as supported", "com.microsoft.playready... shows a value",
+         web::Outcome::yes, "PlayReady listed"},
+        {"FairPlay is listed as supported", "com.apple.fps... shows a value", web::Outcome::yes,
+         "FairPlay listed"},
+        {"No DRM system is listed", "Every DRM entry shows null or false", web::Outcome::no,
+         "no DRM system listed"},
+        {"The page did not load or shows no list", "Blank page, script error, endless loading",
+         web::Outcome::unknown, "the support page did not show a result"},
+    };
+    ChoiceModel model;
+    model.options = []
+    {
+        std::vector<ChoiceOption> out;
+        for (const Choice &c : kChoices)
+            out.push_back({c.label, c.hint});
+        return out;
+    };
+    model.selected = [&app]
+    {
+        const web::TestRecord *r = app.web_tests().get("drm.secure_check");
+        if (!r)
+            return -1;
+        for (int i = 0; i < static_cast<int>(std::size(kChoices)); ++i)
+            if (r->detail == kChoices[i].detail)
+                return i;
+        return -1;
+    };
+    model.choose = [&app](int i)
+    {
+        const Choice &c = kChoices[static_cast<std::size_t>(i)];
+        web::TestRecord r;
+        r.id = "drm.secure_check";
+        r.group = "DRM (Encrypted Media Extensions)";
+        r.name = "Secure DRM check (public HTTPS support page)";
+        r.outcome = c.outcome;
+        r.detail = c.detail;
+        r.at = platform::wall_clock_seconds();
+        r.source = "your reading";
+        app.web_tests().set(std::move(r));
+    };
+    model.footer = [&app] { return web::drm_verdict(app.web_tests(), "").text; };
+    app.push(make_choice_screen(
+        app, "Secure DRM check",
+        "What did the support page list under DRM? It runs over HTTPS, so the browser cannot "
+        "hide DRM from it the way it may from AKENO STREAM's local page.",
+        std::move(model)));
 }
 
 std::unique_ptr<Screen> make_record_screen(App &app, std::string title, std::string note,

@@ -4,7 +4,10 @@
 #
 # AKENO STREAM: lint, host tests (GoogleTest with ASan/UBSan, local HTTP
 # server, software decoder), the PS5 build with its import-binding guard,
-# interface screenshots, and the installable PPSA99276 folder ZIP.
+# interface screenshots, and the installable PPSA99276 folder ZIP. A tag
+# vX.Y.Z (or vX.Y.Z-rc.N, published as a pre-release) whose version matches
+# src/app/version.hpp publishes AKENO-STREAM-PS5-vX.Y.Z.zip as a GitHub
+# release with its SHA-256 and the notes from docs/RELEASE_NOTES.md.
 
 name: Build
 
@@ -13,8 +16,10 @@ on:
     branches:
       - main
       - "claude/**"
+      - "release/**"
     tags:
-      - "[0-9][0-9].[0-9][0-9][0-9].[0-9][0-9][0-9]"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
   pull_request:
   workflow_dispatch:
 
@@ -84,12 +89,20 @@ jobs:
           read -r title_id content_version <<< "$metadata"
           [[ $title_id == PPSA99276 ]] || { echo "unexpected title ID: $title_id" >&2; exit 2; }
           [[ $content_version =~ ^[0-9]{2}\.[0-9]{3}\.[0-9]{3}$ ]] || exit 2
-          if [[ $GITHUB_REF_TYPE == tag && $GITHUB_REF_NAME != "$content_version" ]]; then
-            echo "Release tag must exactly match param.json contentVersion: $content_version" >&2
-            exit 2
+          app_version=$(sed -n 's/.*kAppVersion = "\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/p' src/app/version.hpp)
+          [[ $app_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no kAppVersion in version.hpp" >&2; exit 2; }
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            [[ $GITHUB_REF_NAME =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc\.([0-9]+))?$ ]] ||
+              { echo "Release tags are vX.Y.Z or vX.Y.Z-rc.N" >&2; exit 2; }
+            if [[ ${BASH_REMATCH[1]} != "$app_version" ]]; then
+              echo "Tag $GITHUB_REF_NAME does not match the app version $app_version" >&2
+              exit 2
+            fi
+            echo "RELEASE_CANDIDATE=${BASH_REMATCH[3]}" >> "$GITHUB_ENV"
           fi
           echo "TITLE_ID=$title_id" >> "$GITHUB_ENV"
           echo "CONTENT_VERSION=$content_version" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
 
       # A pull request's build is named by its number and its own commit, on the
       # artifact and inside the app (docs/PULL_REQUEST_BUILDS.md); the version in
@@ -107,7 +120,9 @@ jobs:
             echo "BUILD_LABEL=PR $PR_NUMBER, $short" >> "$GITHUB_ENV"
           else
             echo "artifact=AKENO-STREAM-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-            if [[ $GITHUB_REF_TYPE != tag ]]; then
+            if [[ $GITHUB_REF_TYPE == tag && -n $RELEASE_CANDIDATE ]]; then
+              echo "BUILD_LABEL=release candidate $RELEASE_CANDIDATE" >> "$GITHUB_ENV"
+            elif [[ $GITHUB_REF_TYPE != tag ]]; then
               branch=${GITHUB_REF_NAME##*/}
               branch=${branch//[^A-Za-z0-9._-]/-}
               echo "BUILD_LABEL=${branch:0:30} ${GITHUB_SHA:0:7}" >> "$GITHUB_ENV"
@@ -201,6 +216,12 @@ jobs:
       contents: write
 
     steps:
+      - name: Check out the release notes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: docs/RELEASE_NOTES.md
+          sparse-checkout-cone-mode: false
+
       - name: Download verified build
         env:
           GH_TOKEN: ${{ github.token }}
@@ -210,6 +231,8 @@ jobs:
           --name "AKENO-STREAM-$GITHUB_SHA"
           --dir release
 
+      # The app-folder ZIP (PPSA99276/...) is published as
+      # AKENO-STREAM-PS5-<tag>.zip with a SHA256SUMS for that name.
       - name: Prepare release assets
         id: package
         shell: bash
@@ -229,31 +252,45 @@ jobs:
             exit 1
           fi
           (cd "$(dirname "${checksums[0]}")" && sha256sum -c SHA256SUMS)
-          echo "folder_zip=${folder_zips[0]}" >> "$GITHUB_OUTPUT"
-          echo "checksum=${checksums[0]}" >> "$GITHUB_OUTPUT"
+          name="AKENO-STREAM-PS5-$GITHUB_REF_NAME.zip"
+          mkdir ../publish
+          cp "${folder_zips[0]}" "../publish/$name"
+          cd ../publish
+          python3 -m zipfile -l "$name" | grep -q 'PPSA99276/eboot.bin' ||
+            { echo "the ZIP does not hold the PPSA99276 folder" >&2; exit 1; }
+          sha256sum "$name" > SHA256SUMS
+          cat SHA256SUMS
+          echo "zip=publish/$name" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cut -d' ' -f1 SHA256SUMS)" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          FOLDER_ZIP: ${{ steps.package.outputs.folder_zip }}
-          CHECKSUM: ${{ steps.package.outputs.checksum }}
+          ZIP: ${{ steps.package.outputs.zip }}
+          SHA256: ${{ steps.package.outputs.sha256 }}
         shell: bash
         run: |
           set -euo pipefail
-          assets=("release/$FOLDER_ZIP" "release/$CHECKSUM")
-          folder_zip_name="${FOLDER_ZIP##*/}"
-          checksum_name="${CHECKSUM##*/}"
+          assets=("$ZIP" publish/SHA256SUMS)
+          prerelease=()
+          [[ $GITHUB_REF_NAME == *-rc.* ]] && prerelease=(--prerelease)
+          {
+            if [[ -f docs/RELEASE_NOTES.md ]]; then cat docs/RELEASE_NOTES.md; fi
+            printf '\n## Download\n\n`%s`\n\nSHA-256: `%s`\n' "${ZIP##*/}" "$SHA256"
+          } > notes.md
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             while IFS= read -r old_asset; do
-              if [[ $old_asset != "$folder_zip_name" && $old_asset != "$checksum_name" ]]; then
+              if [[ $old_asset != "${ZIP##*/}" && $old_asset != SHA256SUMS ]]; then
                 gh release delete-asset "$GITHUB_REF_NAME" "$old_asset" --yes --repo "$GITHUB_REPOSITORY"
               fi
             done < <(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
             gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
           else
             gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
-              --generate-notes \
-              --title "AKENO STREAM $GITHUB_REF_NAME"
+              "${prerelease[@]}" \
+              --notes-file notes.md \
+              --title "AKENO STREAM PS5 $GITHUB_REF_NAME"
           fi

@@ -492,10 +492,10 @@ TEST(LocalPages, ServesOnlyWithTheTokenAndTheRightHost)
 {
     net::Client::global_init();
     net::set_test_transport({});
-    const std::string clip = fs::join(platform::app_dir(), "assets/selftest/h264-aac-360p.mp4");
+    const std::string clips = fs::join(platform::app_dir(), "assets/selftest");
     web::LocalPages pages;
     std::string error;
-    ASSERT_TRUE(pages.start(clip, &error)) << error;
+    ASSERT_TRUE(pages.start(clips, &error)) << error;
     const std::string base = "http://127.0.0.1:" + std::to_string(pages.port());
     const std::string page = pages.page_url("youtube", "v=aqz-KE-bpKQ");
     EXPECT_TRUE(page.starts_with(base + "/s/"));
@@ -539,8 +539,18 @@ TEST(LocalPages, ServesOnlyWithTheTokenAndTheRightHost)
 
     EXPECT_EQ(request(pages.page_url("report"), "POST", R"({"version":1,"results":[]})").status,
               204);
-    ASSERT_TRUE(pages.take_report().has_value());
-    EXPECT_FALSE(pages.take_report().has_value());
+    EXPECT_EQ(pages.take_reports().size(), 1u);
+    EXPECT_TRUE(pages.take_reports().empty());
+    // The lab reports after every step: the newest are kept, oldest first.
+    for (int i = 0; i < 20; ++i)
+        EXPECT_EQ(request(pages.page_url("report"), "POST",
+                          R"({"version":2,"n":)" + std::to_string(i) + "}")
+                      .status,
+                  204);
+    const auto reports = pages.take_reports();
+    ASSERT_EQ(reports.size(), web::LocalPages::kMaxReports);
+    EXPECT_NE(reports.back().find(R"("n":19)"), std::string::npos);
+    EXPECT_NE(reports.front().find(R"("n":8)"), std::string::npos);
     EXPECT_FALSE(pages.take_close_request());
     EXPECT_EQ(request(pages.page_url("close"), "POST").status, 204);
     EXPECT_TRUE(pages.take_close_request());
@@ -562,11 +572,55 @@ TEST(LocalPages, ServesOnlyWithTheTokenAndTheRightHost)
     EXPECT_GT(r.body.size(), 100000u);
     r = request(pages.page_url("test.mp4"), "GET", {}, {"Range: bytes=99999999-"});
     EXPECT_EQ(r.status, 416);
+    // The lab's other clips: fragmented MP4 for MediaSource, an HLS playlist
+    // with its MPEG-TS segment.
+    r = request(pages.page_url("test-frag.mp4"));
+    EXPECT_EQ(r.status, 200);
+    EXPECT_NE(r.body.find("moof"), std::string::npos);
+    r = request(pages.page_url("test.m3u8"));
+    EXPECT_EQ(r.status, 200);
+    EXPECT_NE(r.body.find("#EXT-X-ENDLIST"), std::string::npos);
+    EXPECT_NE(r.body.find("test.ts"), std::string::npos);
+    r = request(pages.page_url("test.ts"), "GET", {}, {"Range: bytes=0-187"});
+    EXPECT_EQ(r.status, 206);
+    ASSERT_EQ(r.body.size(), 188u);
+    EXPECT_EQ(r.body[0], 0x47); // MPEG-TS sync byte
+    EXPECT_EQ(request(pages.page_url("../app.json")).status, 404);
+
+    // The lab's frame comes from "localhost": it may be framed by the lab page
+    // only; every other page refuses to be framed.
+    const std::string frame_path = pages.page_url("frame").substr(base.size());
+    const auto frame = pages.respond_to("GET " + frame_path + " HTTP/1.1\r\nHost: localhost:" +
+                                        std::to_string(pages.port()) + "\r\n\r\n");
+    EXPECT_EQ(frame.status, 200);
+    std::string frame_headers;
+    for (const auto &h : frame.headers)
+        frame_headers += h + "\n";
+    EXPECT_NE(
+        frame_headers.find("frame-ancestors http://127.0.0.1:" + std::to_string(pages.port())),
+        std::string::npos);
+    EXPECT_EQ(frame_headers.find("X-Frame-Options"), std::string::npos);
+    const auto lab = pages.respond_to(
+        "GET " + pages.page_url("captest").substr(base.size()) +
+        " HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(pages.port()) + "\r\n\r\n");
+    std::string lab_headers;
+    for (const auto &h : lab.headers)
+        lab_headers += h + "\n";
+    EXPECT_NE(lab_headers.find("frame-ancestors 'none'"), std::string::npos);
+    EXPECT_NE(lab_headers.find("X-Frame-Options: DENY"), std::string::npos);
+    EXPECT_NE(lab_headers.find("frame-src https://www.youtube.com https://www.youtube-nocookie.com "
+                               "http://localhost:" +
+                               std::to_string(pages.port())),
+              std::string::npos);
 
     const std::string old_token_page = pages.page_url("youtube");
     pages.stop();
     EXPECT_FALSE(pages.running());
-    ASSERT_TRUE(pages.start(clip, &error));
+    // The YouTube page is served without any media.
+    ASSERT_TRUE(pages.start("", &error));
+    EXPECT_EQ(request(pages.page_url("test.mp4")).status, 404);
+    pages.stop();
+    ASSERT_TRUE(pages.start(clips, &error));
     EXPECT_NE(pages.page_url("youtube"), old_token_page); // a new token every time
     pages.stop();
 }
@@ -786,18 +840,71 @@ TEST(BrowserSession, SavesTheCapabilityReport)
     EXPECT_EQ(
         request(
             base + "/report", "POST",
-            R"({"version":1,"results":[{"id":"drm.eme","group":"DRM","name":"EME","status":"no"},
+            R"({"version":2,"done":false,"results":[{"id":"drm.eme","group":"DRM","name":"EME","status":"no"}]})")
+            .status,
+        204);
+    // Every partial report is saved while the page is still open.
+    ASSERT_TRUE(h.until([&] { return h.app().web_tests().get("drm.eme") != nullptr; }));
+    EXPECT_TRUE(h.app().browser_active());
+    EXPECT_EQ(
+        request(
+            base + "/report", "POST",
+            R"({"version":2,"done":true,"results":[{"id":"drm.eme","group":"DRM","name":"EME","status":"no"},
                          {"id":"codec.h264","group":"Video","name":"H.264","status":"yes"}]})")
             .status,
         204);
+    // The lab's clips are served while it runs.
+    EXPECT_EQ(request(base + "/test-frag.mp4").status, 200);
     request(base + "/close", "POST");
     ASSERT_TRUE(h.until([&] { return !h.app().browser_active(); }));
     EXPECT_EQ(h.app().web_tests().get("drm.eme")->outcome, web::Outcome::no);
+    EXPECT_EQ(h.app().web_tests().get("codec.h264")->outcome, web::Outcome::yes);
     EXPECT_EQ(h.app().web_tests().get("captest.finished")->outcome, web::Outcome::yes);
     // The report (and the diagnostics export) carries the results.
     const std::string report = h.app().diagnostics().build_report(h.app().snapshot());
     EXPECT_NE(report.find("[no] drm.eme"), std::string::npos);
     EXPECT_NE(report.find("Browser (Websites, YouTube player)"), std::string::npos);
+}
+
+TEST(BrowserSession, KeepsTheLabResultsOfAnEarlyExit)
+{
+    AppHarness h;
+    auto &script = test::web_view_script();
+    script.finish_after_updates = -1;
+    h.app().run_browser_test();
+    ASSERT_TRUE(h.until([&] { return !script.opened.empty(); }));
+    const std::string base = script.opened[0].url.substr(0, script.opened[0].url.size() - 8);
+    request(base + "/captest.js");
+    request(
+        base + "/report", "POST",
+        R"({"version":2,"done":false,"results":[{"id":"mse.available","group":"Streaming","name":"MediaSource","status":"yes"}]})");
+    request(base + "/close", "POST");
+    ASSERT_TRUE(h.until([&] { return !h.app().browser_active(); }));
+    EXPECT_EQ(h.app().web_tests().get("mse.available")->outcome, web::Outcome::yes);
+    EXPECT_EQ(h.app().web_tests().get("captest.finished")->outcome, web::Outcome::no);
+    EXPECT_NE(h.app().web_tests().get("captest.finished")->detail.find("before the last test"),
+              std::string::npos);
+}
+
+TEST(BrowserSession, RunsTheAfterStepOnceTheBrowserHasClosed)
+{
+    AppHarness h;
+    Settings s = h.app().store().settings();
+    s.web_check_first = false;
+    h.app().store().update_settings(s);
+    auto &script = test::web_view_script();
+    script.finish_after_updates = 3;
+    int calls = 0;
+    WebSession session;
+    session.url = "https://hlsjs.video-dev.org/demo/";
+    session.after = [&]
+    {
+        ++calls;
+        EXPECT_FALSE(h.app().browser_active());
+    };
+    h.app().open_web(std::move(session));
+    ASSERT_TRUE(h.until([&] { return calls > 0; }));
+    EXPECT_EQ(calls, 1);
 }
 
 TEST(BrowserSession, OpensASavedPrivateWebsite)

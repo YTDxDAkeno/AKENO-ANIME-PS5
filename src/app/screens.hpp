@@ -62,4 +62,33 @@ struct RecordRow
 std::unique_ptr<Screen>
 make_record_screen(App &app, std::string title, std::string note, std::vector<RecordRow> rows,
                    std::function<void(const std::vector<RecordRow> &)> save);
+
+// A modal list with one current choice: Cross chooses (and saves at once),
+// Circle closes. The options and the footer are read again every frame, so
+// they show what the last choice changed.
+struct ChoiceOption
+{
+    std::string label;
+    std::string hint;
+};
+struct ChoiceModel
+{
+    std::function<std::vector<ChoiceOption>()> options;
+    std::function<int()> selected; // -1: none
+    std::function<void(int)> choose;
+    std::function<std::string()> footer;
+};
+std::unique_ptr<Screen> make_choice_screen(App &app, std::string title, std::string note,
+                                           ChoiceModel model);
+
+// "What happened when you played a video on <name>?": the user's
+// observation and error code, with the state AKENO STREAM derives from it
+// and the playback lab (web/playback_check.hpp).
+void open_playback_record(App &app, const std::string &key, const std::string &name,
+                          bool drm_expected);
+// The secure DRM check: which DRM systems a public HTTPS support page listed.
+void open_secure_drm_record(App &app);
+
+// Websites > Playback Lab (screen_lab.cpp).
+std::unique_ptr<Screen> make_lab_screen(App &app);
 } // namespace akeno

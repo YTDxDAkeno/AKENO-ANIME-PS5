@@ -40,13 +40,28 @@ constexpr int kSendFlags = 0;
 #endif
 
 // The pages may load the official YouTube player (www.youtube.com and its
-// script and image hosts) and talk to this server; nothing else.
-constexpr char kPageSecurity[] =
-    "Content-Security-Policy: default-src 'none'; script-src 'self' https://www.youtube.com "
-    "https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: "
-    "https://i.ytimg.com; media-src 'self' blob:; connect-src 'self'; frame-src "
-    "https://www.youtube.com https://www.youtube-nocookie.com; base-uri 'none'; form-action "
-    "'none'; frame-ancestors 'none'";
+// script and image hosts), the lab's own frame and talk to this server;
+// nothing else.
+std::string page_security(std::uint16_t port, bool frame)
+{
+    const std::string self_frame = "http://localhost:" + std::to_string(port);
+    return "Content-Security-Policy: default-src 'none'; script-src 'self' "
+           "https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; "
+           "img-src 'self' data: https://i.ytimg.com; media-src 'self' blob:; connect-src "
+           "'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com " +
+           self_frame + "; base-uri 'none'; form-action 'none'; frame-ancestors " +
+           (frame ? "http://127.0.0.1:" + std::to_string(port) : std::string{"'none'"});
+}
+
+// The lab's HLS test: the bundled two-second MPEG-TS clip as one segment.
+constexpr char kTestPlaylist[] = "#EXTM3U\n"
+                                 "#EXT-X-VERSION:3\n"
+                                 "#EXT-X-TARGETDURATION:3\n"
+                                 "#EXT-X-MEDIA-SEQUENCE:0\n"
+                                 "#EXT-X-PLAYLIST-TYPE:VOD\n"
+                                 "#EXTINF:2.0,\n"
+                                 "test.ts\n"
+                                 "#EXT-X-ENDLIST\n";
 
 std::string random_token()
 {
@@ -157,13 +172,24 @@ LocalPages::~LocalPages()
     stop();
 }
 
-bool LocalPages::start(const std::string &media_file, std::string *error)
+bool LocalPages::start(const std::string &media_dir, std::string *error)
 {
     stop();
     media_.clear();
-    if (!media_file.empty())
-        if (auto bytes = fs::read_bytes(media_file, kMaxMedia))
-            media_.assign(bytes->begin(), bytes->end());
+    if (!media_dir.empty())
+    {
+        static constexpr const char *kClips[][3] = {
+            {"test.mp4", "h264-aac-360p.mp4", "video/mp4"},
+            {"test-frag.mp4", "h264-aac-360p-frag.mp4", "video/mp4"},
+            {"test.ts", "h264-aac-360p.ts", "video/mp2t"},
+        };
+        for (const auto &clip : kClips)
+            if (auto bytes = fs::read_bytes(fs::join(media_dir, clip[1]), kMaxMedia))
+                media_.push_back({clip[0], clip[2], std::string(bytes->begin(), bytes->end())});
+        if (std::any_of(media_.begin(), media_.end(),
+                        [](const Media &m) { return m.name == "test.ts"; }))
+            media_.push_back({"test.m3u8", "application/vnd.apple.mpegurl", kTestPlaylist});
+    }
     listener_ = ::socket(AF_INET, SOCK_STREAM, 0);
     if (listener_ < 0)
     {
@@ -201,7 +227,7 @@ bool LocalPages::start(const std::string &media_file, std::string *error)
     {
         std::lock_guard<std::mutex> guard(lock_);
         events_.clear();
-        report_.reset();
+        reports_.clear();
         close_requested_ = false;
     }
     last_contact_.store(0);
@@ -249,11 +275,11 @@ std::vector<PageEvent> LocalPages::take_events()
     return out;
 }
 
-std::optional<std::string> LocalPages::take_report()
+std::vector<std::string> LocalPages::take_reports()
 {
     std::lock_guard<std::mutex> guard(lock_);
-    std::optional<std::string> out;
-    out.swap(report_);
+    std::vector<std::string> out;
+    out.swap(reports_);
     return out;
 }
 
@@ -305,13 +331,16 @@ LocalPages::Reply LocalPages::respond_to(std::string_view request)
     const std::string_view body = request.substr(std::min(request.size(), head_end + 4));
     last_contact_.store(platform::monotonic_us() / 1000);
 
-    const auto page_reply = [&](std::string_view content, const char *type)
+    const auto page_reply = [&](std::string_view content, const char *type, bool frame = false)
     {
         reply.status = 200;
         reply.content_type = type;
         reply.body = std::string{content};
-        reply.headers = {kPageSecurity, "Referrer-Policy: strict-origin-when-cross-origin",
-                         "X-Content-Type-Options: nosniff", "X-Frame-Options: DENY"};
+        reply.headers = {page_security(port_, frame),
+                         "Referrer-Policy: strict-origin-when-cross-origin",
+                         "X-Content-Type-Options: nosniff"};
+        if (!frame)
+            reply.headers.push_back("X-Frame-Options: DENY");
         return reply;
     };
     if (method == "GET" || method == "HEAD")
@@ -326,29 +355,36 @@ LocalPages::Reply LocalPages::respond_to(std::string_view request)
             return page_reply(page == "youtube.js" ? youtube_page_js() : capability_page_js(),
                               "text/javascript; charset=utf-8");
         }
+        if (page == "frame")
+            return page_reply(frame_page_html(), "text/html; charset=utf-8", true);
+        if (page == "frame.js")
+            return page_reply(frame_page_js(), "text/javascript; charset=utf-8", true);
         if (page == "akeno.css")
-            return page_reply(pages_css(), "text/css; charset=utf-8");
+            return page_reply(pages_css(), "text/css; charset=utf-8", true);
         if (page == "ping")
         {
             reply.status = 204;
             return reply;
         }
-        if (page == "test.mp4" && !media_.empty())
+        const auto media = std::find_if(media_.begin(), media_.end(),
+                                        [&](const Media &m) { return m.name == page; });
+        if (media != media_.end() && !media->bytes.empty())
         {
             // Byte ranges: WebKit's media loader asks for them and gives up without.
-            reply.content_type = "video/mp4";
+            const std::string &bytes = media->bytes;
+            reply.content_type = media->type;
             reply.headers = {"Accept-Ranges: bytes", "X-Content-Type-Options: nosniff"};
-            std::size_t first = 0, last = media_.size() - 1;
+            std::size_t first = 0, last = bytes.size() - 1;
             const std::string range = lower(header(head, "Range"));
             if (range.starts_with("bytes="))
             {
                 char *end = nullptr;
                 const unsigned long long a = std::strtoull(range.c_str() + 6, &end, 10);
-                if (end == range.c_str() + 6 || *end != '-' || a >= media_.size())
+                if (end == range.c_str() + 6 || *end != '-' || a >= bytes.size())
                 {
                     reply.status = 416;
                     reply.headers.push_back("Content-Range: bytes */" +
-                                            std::to_string(media_.size()));
+                                            std::to_string(bytes.size()));
                     return reply;
                 }
                 first = static_cast<std::size_t>(a);
@@ -359,13 +395,13 @@ LocalPages::Reply LocalPages::respond_to(std::string_view request)
                     return reject(416);
                 reply.status = 206;
                 reply.headers.push_back("Content-Range: bytes " + std::to_string(first) + "-" +
-                                        std::to_string(last) + "/" + std::to_string(media_.size()));
+                                        std::to_string(last) + "/" + std::to_string(bytes.size()));
             }
             else
             {
                 reply.status = 200;
             }
-            reply.body = media_.substr(first, last - first + 1);
+            reply.body = bytes.substr(first, last - first + 1);
             return reply;
         }
         if (page == "close")
@@ -416,7 +452,9 @@ LocalPages::Reply LocalPages::respond_to(std::string_view request)
             return reject(413);
         {
             std::lock_guard<std::mutex> guard(lock_);
-            report_ = std::string{body};
+            if (reports_.size() >= kMaxReports)
+                reports_.erase(reports_.begin());
+            reports_.emplace_back(body);
         }
         reply.status = 204;
         return reply;

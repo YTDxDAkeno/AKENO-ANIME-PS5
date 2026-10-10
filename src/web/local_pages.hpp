@@ -15,7 +15,7 @@
 //    in every path, so other websites in the browser cannot reach it;
 //  - checks the Host header (no DNS-rebinding), size-limits every request,
 //    and accepts only the events it knows, as plain values it never executes;
-//  - gives no access to files (one bundled test clip excepted), settings,
+//  - gives no access to files (the bundled test clips excepted), settings,
 //    the network or any console function.
 #pragma once
 
@@ -24,7 +24,6 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -44,15 +43,16 @@ class LocalPages final
     static constexpr std::uint16_t kPreferredPort = 8095; // stable: keeps the pages' origin
     static constexpr std::size_t kMaxEvents = 256;
     static constexpr int kMaxRejected = 400;
+    static constexpr std::size_t kMaxReports = 12;
 
     LocalPages() = default;
     ~LocalPages();
     LocalPages(const LocalPages &) = delete;
     LocalPages &operator=(const LocalPages &) = delete;
 
-    // Starts serving with a new token. media_file is the bundled MP4 the
-    // capability test plays (may be empty).
-    bool start(const std::string &media_file, std::string *error);
+    // Starts serving with a new token. media_dir holds the bundled clips the
+    // playback lab plays (assets/selftest; empty: no media is served).
+    bool start(const std::string &media_dir, std::string *error);
     void stop();
     [[nodiscard]] bool running() const noexcept
     {
@@ -67,7 +67,9 @@ class LocalPages final
 
     // UI thread: what the pages sent since the last call.
     std::vector<PageEvent> take_events();
-    std::optional<std::string> take_report();
+    // The capability page's reports, oldest first (it sends one after every
+    // step; at most kMaxReports are kept, the newest win).
+    std::vector<std::string> take_reports();
     bool take_close_request();
     // monotonic ms of the last valid request (0: none yet) and whether a page
     // script was fetched (the page loaded).
@@ -101,7 +103,13 @@ class LocalPages final
     int listener_ = -1;
     std::uint16_t port_ = 0;
     std::string token_;
-    std::string media_;
+    struct Media
+    {
+        std::string name; // "test.mp4"
+        std::string type; // "video/mp4"
+        std::string bytes;
+    };
+    std::vector<Media> media_;
     std::atomic<bool> running_{false};
     std::atomic<std::uint64_t> last_contact_{0};
     std::atomic<bool> page_loaded_{false};
@@ -109,7 +117,7 @@ class LocalPages final
     platform::Thread thread_;
     std::mutex lock_;
     std::vector<PageEvent> events_;
-    std::optional<std::string> report_;
+    std::vector<std::string> reports_;
     bool close_requested_ = false;
 };
 
@@ -118,5 +126,9 @@ std::string_view youtube_page_html();
 std::string_view youtube_page_js();
 std::string_view capability_page_html();
 std::string_view capability_page_js();
+// The lab's cross-origin frame (served as http://localhost:<port>/... inside
+// the capability page at http://127.0.0.1:<port>/...).
+std::string_view frame_page_html();
+std::string_view frame_page_js();
 std::string_view pages_css();
 } // namespace akeno::web

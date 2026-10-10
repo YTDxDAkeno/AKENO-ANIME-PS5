@@ -450,33 +450,7 @@ class SourcesScreen final : public BrowseScreen
 
     void play_address()
     {
-        auto alive = alive_;
-        app_.open_keyboard("Address to play", "https://", 2048, false,
-                           [this, alive](bool ok, const std::string &text)
-                           {
-                               if (!ok || !*alive)
-                                   return;
-                               const std::string address = trimmed(text);
-                               const auto parsed = url::parse(address);
-                               if (!parsed || !parsed->is_http() || parsed->host.empty())
-                               {
-                                   app_.toast("Enter an address that starts with http:// or "
-                                              "https://",
-                                              th::kWarning);
-                                   return;
-                               }
-                               MediaItem m;
-                               m.provider = "source";
-                               m.id = address;
-                               m.kind = ItemKind::video;
-                               std::string title = parsed->path;
-                               title = title.substr(title.find_last_of('/') + 1);
-                               m.title =
-                                   title.empty() ? parsed->host : url::decode_component(title);
-                               m.subtitle = parsed->host;
-                               m.playable = Playable{guess_source_kind(address), address};
-                               app_.play(m);
-                           });
+        app_.ask_play_link();
     }
 
     void ask_remove(const MediaItem &item)

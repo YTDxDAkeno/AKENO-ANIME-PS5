@@ -92,8 +92,8 @@ ProviderInfo YouTube::info() const
         {"Video playback", Support::available,
          "In YouTube's official embedded player (IFrame Player API), shown in the PS5 browser "
          "inside AKENO STREAM - no API key needed for that. Nothing is extracted. Videos whose "
-         "owners do not allow embedding (errors 101/150) play only on youtube.com. New in 0.7.0 "
-         "and still to be confirmed on a console."},
+         "owners do not allow embedding (errors 101/150) play only on youtube.com. Confirmed "
+         "playing on a PS5 (firmware 12.20) by a tester."},
         {"Sign-in & subscriptions", Support::unavailable,
          "Requires Google OAuth for TV devices with a registered client ID. Not configured in this "
          "build."},
