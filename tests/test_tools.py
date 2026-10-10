@@ -6,6 +6,7 @@
 # Exercises identity initialization and deployment resolution without a console.
 
 import json
+import re
 import os
 from pathlib import Path
 import runpy
@@ -213,6 +214,19 @@ class ToolTests(unittest.TestCase):
         self.assertLess(build.index("BUILD_LABEL must be"), build.index("ninja_run\n\napp="))
         self.assertIn('"build-label.txt"', (ROOT / "src/main.cpp").read_text())
 
+    def test_release_tags_must_match_the_app_version(self):
+        workflow = (ROOT / ".github/workflows/tooling.yml").read_text(encoding="utf-8")
+        self.assertIn('- "v[0-9]+.[0-9]+.[0-9]+"', workflow)
+        self.assertIn('- "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"', workflow)
+        self.assertIn("does not match the app version", workflow)
+        version = (ROOT / "src/app/version.hpp").read_text(encoding="utf-8")
+        match = re.search(r'kAppVersion = "(\d+)\.(\d+)\.(\d+)"', version)
+        self.assertIsNotNone(match)
+        param = json.loads((ROOT / "sce_sys/param.json").read_text(encoding="utf-8"))
+        content = param["contentVersion"]
+        # 0.x used 01.00x.000; every later version must sort above it.
+        self.assertGreater(content, "01.007.000")
+
     def test_automation_builds_the_zip_only(self):
         workflow = (ROOT / ".github/workflows/tooling.yml").read_text(encoding="utf-8")
         for line in workflow.splitlines():
@@ -220,7 +234,12 @@ class ToolTests(unittest.TestCase):
                 self.assertIn("switched off", line)
         self.assertIn("run: make app", workflow)
         self.assertIn('sha256sum "$TITLE_ID.zip" > SHA256SUMS', workflow)
-        self.assertIn('assets=("release/$FOLDER_ZIP" "release/$CHECKSUM")', workflow)
+        # A tag publishes the same ZIP under the release name, with its checksum.
+        self.assertIn('name="AKENO-STREAM-PS5-$GITHUB_REF_NAME.zip"', workflow)
+        self.assertIn('assets=("$ZIP" publish/SHA256SUMS)', workflow)
+        self.assertIn("PPSA99276/eboot.bin", workflow)
+        self.assertIn("prerelease=(--prerelease)", workflow)
+        self.assertIn('--title "AKENO STREAM PS5 $GITHUB_REF_NAME"', workflow)
         # Asked for by name, the image is refused before anything is built.
         result = subprocess.run(
             ["bash", str(ROOT / "tools/build.sh"), "Ffpfsc"],
