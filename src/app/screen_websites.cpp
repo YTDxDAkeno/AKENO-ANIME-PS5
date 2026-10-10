@@ -9,6 +9,7 @@
 // opens as it is, in the console's own browser, with nothing added to it.
 #include "app/browse.hpp"
 #include "core/fs.hpp"
+#include "core/url.hpp"
 #include "platform/platform.hpp"
 #include "web/site_probe.hpp"
 
