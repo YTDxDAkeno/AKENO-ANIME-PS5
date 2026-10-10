@@ -7,9 +7,54 @@ candidates are tagged `vX.Y.Z-rc.N` and published as GitHub pre-releases.
 
 `contentVersion` 01.100.000. Host-tested and built for the PS5; awaiting the
 console run of the [hardware checklist](docs/HARDWARE_ACCEPTANCE.md)
-(section 11) before the stable `v1.0.0`.
+(sections 11 and 12) before the stable `v1.0.0`.
 
 ### New
+
+- **AKENO STREAM branding**: a new home-screen icon (`icon0.png`), selection
+  background (`pic0.dds`) and launch background (`pic1.dds`, both 3840x2160
+  BC7) from the AKENO STREAM artwork, replacing the orange prototype icon
+  and the template's bear backgrounds. The app's header shows the AKENO "A"
+  mark and the startup screen the AKENO STREAM artwork. CI fails if the
+  packaged name is not "AKENO STREAM" or the prototype icon comes back.
+- **Anime episode system**: series, seasons and episodes from streaming
+  providers, separate from AniList's metadata. Availability per episode
+  (playable, not checked, DRM, sign-in, region, missing, network, format,
+  catalogue only) with the reason; an episode is offered as playable only
+  after its first bytes were checked. Anime home: Continue Watching,
+  Available to Watch, Recently Updated, My Watchlist, Recently Watched,
+  Trending, New Episodes, This Season, Most Popular, genre rows and Movies.
+  Series page with season selector, episode list (thumbnail, progress,
+  runtime, audio and subtitle languages), Play/Continue and watchlist.
+- **Streaming providers**: AKENO catalogues (JSON, documented with a schema
+  and an example in [docs/ANIME_PROVIDERS.md](docs/ANIME_PROVIDERS.md)) and
+  PeerTube channels or playlists. *Add Streaming Provider* tests an address
+  and shows what it is, its format, counts, what it offers (seasons,
+  subtitles, audio languages, artwork, AniList links, checked playback), the
+  checked episodes, every problem by path and a preview of its series, then
+  imports it. *Streaming Providers* lists, explains, removes and re-checks
+  them. Your own library: `anime-catalog.json` in the install folder.
+- **Anime search**: English, romaji and alternative titles, partial matches,
+  suggestions, search history, year/genre/status/availability filters.
+- **Player**: WebVTT and SubRip subtitles (Triangle), previous/next episode
+  (L2/R2), *Up next* with a countdown across seasons, progress per
+  provider-qualified episode.
+- A bundled **synthetic test series** (generated test patterns and tones,
+  1.5 MB, labelled as test material) plays the whole episode path offline.
+- **Find public videos on a page (native)** (Websites): plays videos a page
+  publishes openly in its HTML (`<video>`, `<source>`, video meta tags,
+  direct links) in AKENO's player. No scripts, cookies, players or DRM; not
+  a universal extractor ([docs/NATIVE_PUBLIC_VIDEO.md](docs/NATIVE_PUBLIC_VIDEO.md)).
+- **Data backup**: settings, history, favorites, sources, websites, anime
+  providers and watchlist are copied to `/data/akeno-backup/` at every start;
+  an empty data folder (the title registered again) is restored from it
+  automatically; *Settings -> Back up my data / Restore my data*. The YouTube
+  key is not backed up.
+- [docs/INSTALL.md](docs/INSTALL.md): install, update, rollback, duplicate
+  tiles, and why the home screen can keep the old name and icon
+  (ShadowMountPlus keeps the first registration) with the steps to refresh
+  it. [docs/CRUNCHYROLL.md](docs/CRUNCHYROLL.md): what a native Crunchyroll
+  integration would need and why protected playback is not possible.
 
 - **Home**, redesigned: *Continue Watching*, *YouTube*, *Anime*, *My
   Websites*, *Discover*, *Local Library*, *Recently Added Websites* and
@@ -41,6 +86,11 @@ console run of the [hardware checklist](docs/HARDWARE_ACCEPTANCE.md)
 - Release workflow: tags `vX.Y.Z` / `vX.Y.Z-rc.N` matching `version.hpp`
   publish `AKENO-STREAM-PS5-<tag>.zip` with `SHA256SUMS` and these notes.
 
+### Fixed
+
+- YouTube channel uploads: the parsed list was used after it was freed
+  (found by the AddressSanitizer run of the host tests).
+
 ### Changed
 
 - Mode order: Home, YouTube, Anime, Websites, your website modes, Discover,
@@ -70,8 +120,12 @@ console run of the [hardware checklist](docs/HARDWARE_ACCEPTANCE.md)
   refuses the browser, frame embedding refused, streaming feature missing).
 - A website mode always starts at its start page: the system browser does not
   tell apps which page was open.
+- Anime plays only from providers you add; AniList is metadata only. A
+  website's homepage is not a provider.
+- The home screen keeps the name and icon of the first registration until
+  the title is registered again ([docs/INSTALL.md](docs/INSTALL.md)).
 - See the README's *Limitations* for the rest (DASH in the native player,
-  subtitles, HDR).
+  embedded subtitle tracks, HDR).
 
 ## 0.7.0
 

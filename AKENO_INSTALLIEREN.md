@@ -9,11 +9,15 @@ eingebetteten Browser, eigene Webseiten sowie die Crunchyroll-Webseite mit
 Anmeldung. Crunchyroll-Folgen brechen mit **KAT-6005** ab, bei AnikotoTV lädt
 der Player, startet aber nicht (siehe *Bekannte Einschränkungen* in der
 README). **Neu in 1.0.0** (automatisch auf dem PC getestet, für die PS5
-gebaut, noch nicht auf der Konsole): die neue **Home**-Seite, **Webseiten als
-eigene Modi** (eigener Tab) und das **Playback Lab**, das jetzt auch ein mit
-Clear Key verschlüsseltes Testvideo abspielt. Bitte die
+gebaut, noch nicht auf der Konsole): das neue **AKENO STREAM-Design** (Symbol,
+Hintergründe, Startbild), **Anime mit echten Folgen** (Anbieter, Staffeln,
+Folgen, Untertitel, „Up next“, Fortsetzen; eine synthetische Testserie läuft
+offline), die neue **Home**-Seite, **Webseiten als eigene Modi**, das
+**Playback Lab**, **öffentliche Videos einer Seite nativ abspielen** und eine
+**Datensicherung** nach `/data/akeno-backup/`. Bitte die
 [Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) durchgehen, besonders
-Abschnitt 11. Änderungen: [CHANGELOG.md](CHANGELOG.md).
+Abschnitt 12. Änderungen: [CHANGELOG.md](CHANGELOG.md). Ausführliche
+Installationsanleitung (Englisch): [docs/INSTALL.md](docs/INSTALL.md).
 
 > **Rückweg:** Vor dem Update eine Kopie des alten Ordners
 > `/data/homebrew/PPSA99276/` behalten. Startet 1.0.0 nicht, den alten Ordner
@@ -48,8 +52,30 @@ und `SHA256SUMS` herunterladen, die Prüfsumme vergleichen
 Der Ordner enthält `eboot.bin`, `sce_sys/`, `sce_module/libc.prx` und
 `assets/` (Schriften und Offline-Testvideos).
 
+## Home-Bildschirm zeigt noch „Akeno Anime Preview“ oder das alte Symbol
+
+ShadowMountPlus übernimmt Name und Bilder nur bei der **ersten** Registrierung
+(damals 0.1–0.3: „Akeno Anime Preview“, oranges Symbol). Neue Dateien
+darüberkopieren ändert das nicht. Einmalig neu registrieren:
+
+1. Version 1.0.0 installieren und **einmal starten** – sie sichert deine
+   Daten nach `/data/akeno-backup/` (*Settings -> Back up my data* zeigt
+   „N files in the backup“). Zusätzlich, während AKENO läuft, per FTP
+   `/mnt/sandbox/PPSA99276_000/download0/akeno/` auf den PC kopieren.
+2. AKENO STREAM schließen.
+3. ShadowMountPlus-Weboberfläche öffnen: `http://<PS5-Adresse>:10101/`.
+4. Bei AKENO STREAM (PPSA99276) **Uninstall** wählen – der Ordner bleibt
+   erhalten. **Nicht** *Delete source* wählen (löscht
+   `/data/homebrew/PPSA99276/` endgültig).
+5. **Scan** drücken: AKENO STREAM erscheint mit neuem Namen und Symbol.
+6. AKENO STREAM starten. Falls der Datenordner dabei geleert wurde, stellt
+   die App ihn automatisch aus `/data/akeno-backup/` wieder her.
+
 ## Erster Test
 
+Anime -> *Available to Watch* -> **Signal Lights (AKENO Test Series)** ->
+Folge 1: Testbild mit Uhr, Ton mit Piepton jede Sekunde und englischen
+Untertiteln (synthetisches Testmaterial, kein Anime). Außerdem:
 Home -> *Local Library* -> **A/V Sync Test Clip**: Testbild mit
 Sekundenzähler, Dauerton und einem Piepton pro Sekunde. Läuft ohne Internet.
 Sind Bild und Ton synchron, funktionieren Hardware-Videodecoder und
@@ -64,7 +90,9 @@ Tonausgabe.
   hoch/runter Lautstärke
 - **Kreuz**: auswählen, im Player Pause/Weiter
 - **Kreis**: zurück, im Player stoppen
-- **Dreieck**: Suche (Anime, YouTube, Discover, innerhalb einer Quelle)
+- **Dreieck**: Suche (Anime, YouTube, Discover, innerhalb einer Quelle); im
+  Player Untertitel aus/an
+- **L2/R2**: im Player vorherige/nächste Folge (Anime)
 - **Quadrat**: Favorit (in Sources: Quelle entfernen); im Player maximale
   Qualität ändern
 - **OPTIONS**: Dienst-Infos, im Player Stream-Informationen

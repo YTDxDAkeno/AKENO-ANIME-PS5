@@ -12,7 +12,9 @@ Console: firmware ______ · ShadowMountPlus ______ · build label ______ · date
 - [ ] `/data/homebrew/PPSA99276/` contains `eboot.bin`, `sce_sys/`,
       `sce_module/libc.prx` and `assets/` (fonts and `selftest/`)
 - [ ] No old `/data/homebrew/PPSA99999/` remains
-- [ ] The tile is named **AKENO STREAM** and shows the icon
+- [ ] The tile is named **AKENO STREAM** and shows the AKENO icon (pink/blue
+      "A" with a play symbol), not "Akeno Anime Preview" or the orange ring
+      (if not: [docs/INSTALL.md](INSTALL.md), *The home screen still shows ...*)
 - [ ] Notifications "AKENO STREAM 1.0.0 starting" and, within ~5 s,
       "AKENO STREAM 1.0.0 ready" appear; the splash screen shows the startup
       steps in between
@@ -295,6 +297,69 @@ Do sections 1-3 first. **Critical for the stable 1.0.0 release:** 11.1,
       state ______
 - [ ] Settings -> Diagnostics -> *Export report* and attach it: it holds
       every lab result
+
+## 12. 1.0.0 acceptance run (release candidate `v1.0.0-rc.1`)
+
+**This section decides the stable `v1.0.0`.** Mark each item pass / fail /
+not tested and send the results with the exported report (item 18). Items
+marked **critical** must pass.
+
+Firmware ______ · ShadowMountPlus ______ · build label (Settings, bottom right) ______
+
+1. [ ] **critical** The home screen shows **AKENO STREAM** with the new icon.
+       If it still shows *Akeno Anime Preview* or the orange icon, do the
+       one-time refresh in [INSTALL.md](INSTALL.md) and note whether it helped
+       ______
+2. [ ] **critical** The app starts: "AKENO STREAM 1.0.0 starting" / "...
+       ready"; the startup screen shows the AKENO STREAM artwork with the
+       progress text below it.
+3. [ ] With AKENO selected on the home screen, the AKENO STREAM background
+       (night sky, cherry blossoms, logo) is shown; while it launches, the
+       same artwork without the darker corner. In the app, the header shows
+       the small "A" mark left of "AKENO STREAM".
+4. [ ] **critical** DualSense navigation: L1/R1 through every mode, D-pad in
+       rows and lists, Cross/Circle.
+5. [ ] **critical** YouTube still plays a video (YouTube -> *Play a YouTube
+       Link* `aqz-KE-bpKQ`, or a video from the YouTube row) with sound, and
+       closing the player returns to AKENO.
+6. [ ] **critical** PeerTube still plays with picture and sound (Discover ->
+       any PeerTube video).
+7. [ ] Anime search: Anime -> *Search*, type `signal` on the on-screen
+       keyboard: *Signal Lights (AKENO Test Series)* is found; also try an
+       AniList title (for example `frieren`) with network.
+8. [ ] **critical** Anime -> *Available to Watch* -> *Signal Lights*: Season 1
+       lists 3 episodes, Season 2 lists 2; switching seasons works; each
+       episode shows a thumbnail, its length (0:15), *English* subtitles and
+       *Play*.
+9. [ ] **critical** Play Season 1 episode 1: a test pattern with a running
+       clock plays full screen.
+10. [ ] **critical** Audio: a steady tone with a beep every second.
+11. [ ] Subtitles: English subtitles are shown; Triangle turns them off and on
+        again.
+12. [ ] Up Next: at the end of episode 1 *Up next* counts down and episode 2
+        starts by itself (Cross starts it at once, Square watches again);
+        L2/R2 jump to the previous/next episode; after S1E3 comes S2E1.
+13. [ ] **critical** Progress: stop episode 2 half-way (Circle); the series
+        page shows *Resume 0:07* (or similar) and *Continue*; Anime and Home
+        show it under *Continue Watching*; Continue resumes there.
+14. [ ] **critical** Websites still work: open a saved website, return with
+        the browser's close/back; add, rename and remove a test website.
+15. [ ] Provider configuration persists: Anime -> *Add Streaming Provider*
+        with the address of a public PeerTube channel or playlist
+        (`https://<instance>/c/<channel>` or `https://<instance>/w/p/<playlist>`,
+        for example the channel of a video you watched in Discover) ->
+        *Test Connection* -> note the report ______ -> *Import*; it is still
+        listed under *Streaming Providers* after a restart.
+16. [ ] **critical** The app closes safely (PS button -> close) without an
+        error message.
+17. [ ] **critical** Reopening does not crash, and websites, history,
+        settings and providers are still there. *Settings -> Back up my
+        data* reads "N files in the backup" (or note what it says ______).
+18. [ ] Diagnostics: Settings -> Diagnostics -> *Export report*; the file is
+        in `/mnt/sandbox/PPSA99276_000/download0/akeno/` while AKENO runs.
+        Attach it.
+
+Result: ______ passed, ______ failed, ______ not tested.
 
 ## 9. Stability
 
