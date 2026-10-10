@@ -97,6 +97,20 @@ class HostWebView final : public WebView
     {
         return result_;
     }
+    bool clear_cookies(std::string *error) override
+    {
+        test::WebViewScript &script = test::web_view_script();
+        if (open_ || !script.can_clear_cookies)
+        {
+            if (error)
+                *error = open_ ? "close the browser first"
+                               : "this browser does not offer clearing its data to apps";
+            return false;
+        }
+        ++script.cookies_cleared;
+        return true;
+    }
+
     [[nodiscard]] WebEngineInfo info() const override
     {
         return info_;

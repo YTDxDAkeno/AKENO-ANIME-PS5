@@ -46,11 +46,23 @@ enum class Mode : std::uint8_t
     library,
     sources,
     settings,
+    site, // a website the user made a mode (its own tab after Websites)
 };
-inline constexpr int kModeCount = 8;
+inline constexpr int kBuiltInModes = 8;              // the fixed modes (not Mode::site)
+inline constexpr int kModeCount = kBuiltInModes + 1; // screen stacks, Mode::site included
 const char *mode_name(Mode mode) noexcept;
 const char *mode_id(Mode mode) noexcept;
 ui::Pixel mode_accent(Mode mode) noexcept;
+
+// One tab of the mode bar, in order: Home, YouTube, Anime, Websites, the
+// website modes, Discover, Library, Sources, Settings.
+struct ModeTab
+{
+    Mode mode = Mode::home;
+    std::string site_id; // Mode::site: the website
+    std::string label;
+    ui::Pixel accent{};
+};
 
 class App;
 
@@ -171,6 +183,17 @@ class App final
     {
         return mode_;
     }
+    // Website modes: open one as the current tab; call after a website's
+    // mode, name or icon changed (a removed mode returns to Websites).
+    void open_site_mode(const std::string &site_id);
+    void site_modes_changed();
+    [[nodiscard]] const std::string &site_mode() const noexcept
+    {
+        return site_mode_;
+    }
+    [[nodiscard]] std::vector<ModeTab> tabs() const;
+    // The accent of the tab on screen (a website mode has its own).
+    [[nodiscard]] ui::Pixel accent() const;
     void push(std::unique_ptr<Screen> screen);
     void pop();
     void open_item(const MediaItem &item);
@@ -299,6 +322,9 @@ class App final
 
   private:
     void render_chrome(ui::Painter &p, Screen &screen);
+    void render_tabs(ui::Painter &p, int left, int right);
+    void step_tab(int direction);
+    void remember_mode();
     void render_overlays(ui::Painter &p, std::uint64_t now_ms);
     Screen &top();
     std::vector<std::unique_ptr<Screen>> &stack();
@@ -328,6 +354,7 @@ class App final
     bool browser_active_ = false;
 
     Mode mode_ = Mode::home;
+    std::string site_mode_; // the website shown in Mode::site
     std::array<std::vector<std::unique_ptr<Screen>>, kModeCount> stacks_;
     std::vector<std::unique_ptr<Screen>> overlay_; // player, QR, status: above every mode
     ui::Keyboard keyboard_;

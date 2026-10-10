@@ -158,6 +158,59 @@ std::string find_icon(std::string_view html, const std::string &page_url)
     return origin.empty() ? std::string{} : origin + "/favicon.ico";
 }
 
+std::string find_meta(std::string_view html, std::initializer_list<std::string_view> names)
+{
+    const std::string low = lower(html.substr(0, std::min<std::size_t>(html.size(), kMaxPage)));
+    for (std::string_view wanted : names)
+        for (std::size_t at = low.find("<meta"); at != std::string::npos;
+             at = low.find("<meta", at + 5))
+        {
+            const std::size_t end = low.find('>', at);
+            if (end == std::string::npos)
+                break;
+            std::string key, content;
+            for (const auto &[name, value] : attributes(html.substr(at + 5, end - at - 5)))
+            {
+                if (name == "name" || name == "property")
+                    key = lower(value);
+                else if (name == "content")
+                    content = value;
+            }
+            if (key != wanted)
+                continue;
+            std::string text = strip_html(content);
+            for (char &c : text)
+                if (static_cast<unsigned char>(c) < 0x20)
+                    c = ' ';
+            while (!text.empty() && text.front() == ' ')
+                text.erase(0, 1);
+            while (!text.empty() && text.back() == ' ')
+                text.pop_back();
+            if (!text.empty())
+                return text.substr(0, 120);
+        }
+    return {};
+}
+
+std::string normalise_color(std::string_view text)
+{
+    std::string c = lower(text);
+    while (!c.empty() && c.back() == ' ')
+        c.pop_back();
+    while (!c.empty() && c.front() == ' ')
+        c.erase(0, 1);
+    const auto hex = [](std::string_view s)
+    {
+        return std::all_of(s.begin(), s.end(), [](char ch)
+                           { return std::isxdigit(static_cast<unsigned char>(ch)) != 0; });
+    };
+    if (c.size() == 4 && c[0] == '#' && hex(c.substr(1)))
+        return std::string{"#"} + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+    if (c.size() == 7 && c[0] == '#' && hex(c.substr(1)))
+        return c;
+    return {};
+}
+
 std::string describe_failure(const net::Response &r, bool *blocking)
 {
     if (blocking)
@@ -254,6 +307,9 @@ SiteProbe probe_site(const std::string &address, const net::CancelFlag &cancel)
     {
         probe.title = find_title(body);
         probe.icon_url = find_icon(body, probe.final_url);
+        probe.site_name =
+            find_meta(body, {"og:site_name", "application-name", "apple-mobile-web-app-title"});
+        probe.theme_color = normalise_color(find_meta(body, {"theme-color"}));
     }
     else if (probe.reached)
     {

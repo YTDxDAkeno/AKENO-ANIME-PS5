@@ -41,6 +41,8 @@ const char *mode_stage(Mode mode) noexcept
         return "Sources";
     case Mode::settings:
         return "Settings";
+    case Mode::site:
+        return "Website mode";
     }
     return "browsing";
 }
@@ -66,6 +68,8 @@ const char *mode_name(Mode mode) noexcept
         return "Sources";
     case Mode::settings:
         return "Settings";
+    case Mode::site:
+        return "Website";
     }
     return "";
 }
@@ -90,6 +94,8 @@ const char *mode_id(Mode mode) noexcept
         return "sources";
     case Mode::settings:
         return "settings";
+    case Mode::site:
+        return "site";
     }
     return "home";
 }
@@ -114,6 +120,8 @@ ui::Pixel mode_accent(Mode mode) noexcept
         return th::kAccentSources;
     case Mode::settings:
         return th::kAccentSettings;
+    case Mode::site:
+        return th::kAccentWebsites;
     }
     return th::kAccentHome;
 }
@@ -201,9 +209,12 @@ void App::start(std::uint64_t now_ms)
     stacks_[static_cast<int>(Mode::sources)].push_back(make_sources_screen(*this));
     stacks_[static_cast<int>(Mode::settings)].push_back(make_settings_screen(*this));
     const std::string last = store_.settings().last_mode;
-    for (int m = 0; m < kModeCount; ++m)
+    for (int m = 0; m < kBuiltInModes; ++m)
         if (last == mode_id(static_cast<Mode>(m)))
             mode_ = static_cast<Mode>(m);
+    if (last.starts_with("site:"))
+        if (const web::Website *site = websites_.find(last.substr(5)); site && site->mode)
+            open_site_mode(site->id);
     dirty_ = true;
 }
 
@@ -233,15 +244,118 @@ Screen &App::top()
 
 void App::switch_mode(Mode mode)
 {
-    if (mode == mode_)
+    // A website mode is opened by its website (open_site_mode).
+    if (mode == mode_ || mode == Mode::site)
         return;
     mode_ = mode;
     mode_switched_ms_ = now_ms_;
-    Settings s = store_.settings();
-    s.last_mode = mode_id(mode);
-    store_.update_settings(s);
+    remember_mode();
     stack().back()->resumed();
     dirty_ = true;
+}
+
+void App::remember_mode()
+{
+    Settings s = store_.settings();
+    s.last_mode = mode_ == Mode::site ? "site:" + site_mode_ : std::string{mode_id(mode_)};
+    if (s.last_mode != store_.settings().last_mode)
+        store_.update_settings(s);
+}
+
+void App::open_site_mode(const std::string &site_id)
+{
+    const web::Website *site = websites_.find(site_id);
+    if (!site || !site->mode)
+    {
+        toast("That website is no longer a mode", th::kInfo);
+        return;
+    }
+    auto &stack = stacks_[static_cast<int>(Mode::site)];
+    if (site_mode_ != site_id || stack.empty())
+    {
+        stack.clear();
+        stack.push_back(make_site_mode_screen(*this, site_id));
+        site_mode_ = site_id;
+    }
+    else if (mode_ == Mode::site)
+        return;
+    mode_ = Mode::site;
+    mode_switched_ms_ = now_ms_;
+    remember_mode();
+    stack.back()->resumed();
+    dirty_ = true;
+}
+
+void App::site_modes_changed()
+{
+    dirty_ = true;
+    const web::Website *site = websites_.find(site_mode_);
+    if (site && site->mode)
+        return;
+    if (mode_ == Mode::site)
+    {
+        // The mode on screen was removed: back to Websites.
+        mode_ = Mode::websites;
+        remember_mode();
+        stack().back()->resumed();
+    }
+    site_mode_.clear();
+    // The website's screens go on the next frame: this may be running inside
+    // one of them.
+    jobs_.post(
+        [this]
+        {
+            if (site_mode_.empty())
+                stacks_[static_cast<int>(Mode::site)].clear();
+        });
+}
+
+std::vector<ModeTab> App::tabs() const
+{
+    std::vector<ModeTab> out;
+    const auto add = [&](Mode m) { out.push_back({m, {}, mode_name(m), mode_accent(m)}); };
+    add(Mode::home);
+    add(Mode::youtube);
+    add(Mode::anime);
+    add(Mode::websites);
+    for (const web::Website *w : websites_.modes())
+    {
+        const std::uint32_t color = web::site_color(*w);
+        out.push_back({Mode::site, w->id, web::mode_title(*w),
+                       gfx::hex(color ? color : ui::accent_for(web::display_host(w->url)))});
+    }
+    add(Mode::discover);
+    add(Mode::library);
+    add(Mode::sources);
+    add(Mode::settings);
+    return out;
+}
+
+ui::Pixel App::accent() const
+{
+    if (mode_ == Mode::site)
+        if (const web::Website *w = websites_.find(site_mode_))
+        {
+            const std::uint32_t color = web::site_color(*w);
+            return gfx::hex(color ? color : ui::accent_for(web::display_host(w->url)));
+        }
+    return mode_accent(mode_);
+}
+
+void App::step_tab(int direction)
+{
+    const std::vector<ModeTab> list = tabs();
+    const int count = static_cast<int>(list.size());
+    int at = 0;
+    for (int i = 0; i < count; ++i)
+        if (list[static_cast<std::size_t>(i)].mode == mode_ &&
+            (mode_ != Mode::site || list[static_cast<std::size_t>(i)].site_id == site_mode_))
+            at = i;
+    const ModeTab &next = list[static_cast<std::size_t>((at + direction + count) % count)];
+    if (next.mode == Mode::site)
+        open_site_mode(next.site_id);
+    else
+        switch_mode(next.mode);
 }
 
 void App::push(std::unique_ptr<Screen> screen)
@@ -304,7 +418,7 @@ void App::open_item(const MediaItem &item)
 {
     if (item.provider == "mode")
     {
-        for (int m = 0; m < kModeCount; ++m)
+        for (int m = 0; m < kBuiltInModes; ++m)
             if (item.id == mode_id(static_cast<Mode>(m)))
             {
                 switch_mode(static_cast<Mode>(m));
@@ -328,7 +442,7 @@ void App::open_item(const MediaItem &item)
         if (const web::Website *site = websites_.find(item.id))
         {
             WebSession session;
-            session.url = site->url;
+            session.url = web::start_address(*site);
             session.title = site->name;
             session.site_id = site->id;
             open_web(std::move(session));
@@ -355,7 +469,7 @@ void App::open_item(const MediaItem &item)
         provider = &peertube_;
     else if (item.provider == "archive")
         provider = &archive_;
-    push(make_details_screen(*this, item, provider, mode_accent(mode_)));
+    push(make_details_screen(*this, item, provider, accent()));
 }
 
 void App::play(const MediaItem &item, double start_seconds)
@@ -575,12 +689,12 @@ void App::handle(const input::Event &event)
     {
         if (event.button == input::Button::l1 && !event.repeat)
         {
-            switch_mode(static_cast<Mode>((static_cast<int>(mode_) + kModeCount - 1) % kModeCount));
+            step_tab(-1);
             return;
         }
         if (event.button == input::Button::r1 && !event.repeat)
         {
-            switch_mode(static_cast<Mode>((static_cast<int>(mode_) + 1) % kModeCount));
+            step_tab(1);
             return;
         }
     }
@@ -644,53 +758,88 @@ bool App::needs_redraw() const
            now_ms_ - mode_switched_ms_ < 300;
 }
 
+// Mode tabs, centred between the brand and the clock. With website modes
+// there may be more than fit: the padding, then the type size shrink, and as
+// a last resort only the tabs nearest the current one are shown.
+void App::render_tabs(ui::Painter &p, int left, int right)
+{
+    std::vector<ModeTab> list = tabs();
+    int current = 0;
+    for (std::size_t i = 0; i < list.size(); ++i)
+        if (list[i].mode == mode_ && (mode_ != Mode::site || list[i].site_id == site_mode_))
+            current = static_cast<int>(i);
+    const int glyph_space = 66;
+    const int available = right - left - 2 * glyph_space - 16;
+    th::Type type = th::kBodyStrong;
+    int padding = 40;
+    const auto width_of = [&](const std::vector<ModeTab> &tabs, th::Type t, int pad)
+    {
+        int total = 0;
+        for (const ModeTab &tab : tabs)
+            total += p.measure(tab.label, t) + pad + 8;
+        return total;
+    };
+    bool fits = false;
+    for (const th::Type t : {th::kBodyStrong, th::kCaptionStrong})
+    {
+        for (int pad = 40; pad >= 16 && !fits; pad -= 4)
+            if (width_of(list, t, pad) <= available)
+            {
+                type = t;
+                padding = pad;
+                fits = true;
+            }
+        if (fits)
+            break;
+    }
+    if (!fits)
+    {
+        type = th::kCaptionStrong;
+        padding = 16;
+        // Drop the tabs farthest from the current one until the rest fit.
+        while (list.size() > 3 && width_of(list, type, padding) > available)
+        {
+            if (current > static_cast<int>(list.size()) - 1 - current)
+            {
+                list.erase(list.begin());
+                --current;
+            }
+            else
+                list.pop_back();
+        }
+    }
+    const int total = width_of(list, type, padding);
+    const int lowest = left + glyph_space + 8;
+    int x = std::max(lowest, std::min((th::kWidth - total) / 2, right - glyph_space - total));
+    p.glyph(ui::Glyph::l1, x - glyph_space + 18, 62, 34);
+    for (std::size_t i = 0; i < list.size(); ++i)
+    {
+        const bool active = static_cast<int>(i) == current;
+        const int w = p.measure(list[i].label, type) + padding;
+        const ui::Rect tab{x, 36, w, 54};
+        if (active)
+            p.s.fill_rounded(tab, 27, th::kText);
+        p.text_center(tab.x + w / 2, tab.y + (tab.h - p.line_height(type)) / 2, list[i].label, type,
+                      active ? th::kTextOnAccent : th::kTextSecondary);
+        if (active)
+            p.s.fill_rounded({tab.x + w / 2 - 14, tab.bottom() + 8, 28, 5}, 2, list[i].accent);
+        x += w + 8;
+    }
+    p.glyph(ui::Glyph::r1, x + glyph_space - 30, 62, 34);
+}
+
 void App::render_chrome(ui::Painter &p, Screen &screen)
 {
-    const ui::Pixel accent = mode_accent(mode_);
+    const ui::Pixel accent = this->accent();
     // Brand.
     p.s.fill_rounded({th::kMarginX, 52, 16, 16}, 8, accent);
     p.text(th::kMarginX + 28, 38, "AKENO", {40, gfx::Weight::bold}, th::kText);
     p.text(th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10, 50, "STREAM",
            th::kCaptionStrong, th::kTextSecondary);
 
-    // Mode tabs, centred between the brand and the clock; the padding shrinks
-    // when all modes would not fit otherwise.
     const int brand_right = th::kMarginX + 28 + p.measure("AKENO", {40, gfx::Weight::bold}) + 10 +
                             p.measure("STREAM", th::kCaptionStrong);
-    const int clock_left = th::kWidth - th::kMarginX - 110;
-    const int glyph_space = 66;
-    int total = 0;
-    std::array<int, kModeCount> widths{};
-    for (int padding = 40; padding >= 16; padding -= 4)
-    {
-        total = 0;
-        for (int m = 0; m < kModeCount; ++m)
-        {
-            widths[static_cast<std::size_t>(m)] =
-                p.measure(mode_name(static_cast<Mode>(m)), th::kBodyStrong) + padding;
-            total += widths[static_cast<std::size_t>(m)] + 8;
-        }
-        if (total <= clock_left - brand_right - 2 * glyph_space - 16)
-            break;
-    }
-    const int lowest = brand_right + glyph_space + 8;
-    int x = std::max(lowest, std::min((th::kWidth - total) / 2, clock_left - glyph_space - total));
-    p.glyph(ui::Glyph::l1, x - glyph_space + 18, 62, 34);
-    for (int m = 0; m < kModeCount; ++m)
-    {
-        const bool active = m == static_cast<int>(mode_);
-        const int w = widths[static_cast<std::size_t>(m)];
-        const ui::Rect tab{x, 36, w, 54};
-        if (active)
-            p.s.fill_rounded(tab, 27, th::kText);
-        p.text_center(tab.x + w / 2, tab.y + (tab.h - p.line_height(th::kBodyStrong)) / 2,
-                      mode_name(static_cast<Mode>(m)), th::kBodyStrong,
-                      active ? th::kTextOnAccent : th::kTextSecondary);
-        if (active)
-            p.s.fill_rounded({tab.x + w / 2 - 14, tab.bottom() + 8, 28, 5}, 2, accent);
-        x += w + 8;
-    }
-    p.glyph(ui::Glyph::r1, x + glyph_space - 30, 62, 34);
+    render_tabs(p, brand_right, th::kWidth - th::kMarginX - 110);
 
     // Status on the right: clock and controller.
     const std::uint64_t now = platform::wall_clock_seconds();
@@ -721,7 +870,7 @@ void App::render_chrome(ui::Painter &p, Screen &screen)
 void App::render_overlays(ui::Painter &p, std::uint64_t now_ms)
 {
     if (keyboard_.active())
-        keyboard_.render(p, mode_accent(mode_));
+        keyboard_.render(p, accent());
     int y = 150;
     for (const auto &t : toasts_)
     {
@@ -748,7 +897,7 @@ void App::render(gfx::Surface &surface, std::uint64_t now_ms)
     else
     {
         Screen &base = *stack().back();
-        p.background(mode_accent(mode_));
+        p.background(accent());
         base.render(p, now_ms);
         for (auto &screen : overlay_)
             screen->render(p, now_ms);

@@ -8,6 +8,7 @@
 // browser sessions driven through the real App with the scripted stand-in
 // for the system browser (tests/host/host_web_view.hpp).
 #include "app/app.hpp"
+#include "app/screens.hpp"
 #include "core/fs.hpp"
 #include "gfx/image_decode.hpp"
 #include "host_web_view.hpp"
@@ -953,4 +954,188 @@ TEST(Store, BrowserSettingsRoundTrip)
     EXPECT_FALSE(reloaded.settings().web_check_first);
     EXPECT_TRUE(reloaded.settings().web_full_screen_pages);
     EXPECT_TRUE(reloaded.settings().websites_notice_accepted);
+}
+
+// ---------------------------------------------------------------------------
+// Websites as modes.
+TEST(WebsiteModes, StoreKeepsModeSettingsAndLimitsTheTabs)
+{
+    const std::string dir = fresh_dir("modes");
+    std::string why, a, b;
+    {
+        web::WebsiteStore store(dir);
+        store.load();
+        ASSERT_TRUE(store.add("A very long website name", "https://one.example/watch/x", &why, &a));
+        ASSERT_TRUE(store.add("Two", "https://two.example/", &why, &b));
+        EXPECT_TRUE(store.set_mode(a, true, &why));
+        for (int i = 0; i < 5; ++i)
+        {
+            std::string id;
+            ASSERT_TRUE(store.add("S" + std::to_string(i),
+                                  "https://s" + std::to_string(i) + ".example/", &why, &id));
+            const bool ok = store.set_mode(id, true, &why);
+            EXPECT_EQ(ok, i < 3) << i; // a + 3 = kMaxModes
+        }
+        EXPECT_NE(why.find("At most 4"), std::string::npos);
+        EXPECT_EQ(store.modes().size(), web::WebsiteStore::kMaxModes);
+
+        web::Website w = *store.find(a);
+        w.mode = false; // ignored: modes change through set_mode only
+        w.mode_label = "One";
+        w.letter_icon = true;
+        w.tile_color = 0x35c79a;
+        w.open_home = true;
+        ASSERT_TRUE(store.update(w, &why)) << why;
+        store.set_metadata(a, "#112233");
+        store.set_icon(a, "https://cdn.example/mine.png", true);
+        store.set_icon(a, "https://one.example/favicon.ico"); // found later: the user's stays
+    }
+    web::WebsiteStore again(dir);
+    again.load();
+    const web::Website &w = *again.find(a);
+    EXPECT_TRUE(w.mode);
+    EXPECT_EQ(w.mode_label, "One");
+    EXPECT_TRUE(w.letter_icon);
+    EXPECT_EQ(w.tile_color, 0x35c79au);
+    EXPECT_TRUE(w.open_home);
+    EXPECT_EQ(w.theme_color, "#112233");
+    EXPECT_EQ(w.icon_url, "https://cdn.example/mine.png");
+    EXPECT_TRUE(w.custom_icon);
+    EXPECT_EQ(web::mode_title(w), "One");
+    EXPECT_EQ(web::homepage_of(w), "https://one.example/");
+    EXPECT_EQ(web::start_address(w), "https://one.example/");
+    EXPECT_EQ(web::site_color(w), 0x35c79au);
+
+    web::Website plain = *again.find(b);
+    EXPECT_EQ(web::start_address(plain), "https://two.example/");
+    EXPECT_EQ(web::site_color(plain), 0u);
+    plain.name = "A name that is far too long for a tab";
+    EXPECT_LE(web::mode_title(plain).size(), web::kMaxModeLabel + 3);
+    EXPECT_TRUE(web::mode_title(plain).ends_with("..."));
+    again.set_metadata(b, "not a colour");
+    EXPECT_EQ(again.find(b)->theme_color, "");
+    again.set_metadata(b, "#0a0b0c");
+    EXPECT_EQ(web::site_color(*again.find(b)), 0x0a0b0cu);
+    EXPECT_TRUE(again.set_mode(a, false, &why));
+    EXPECT_EQ(again.modes().size(), web::WebsiteStore::kMaxModes - 1);
+}
+
+TEST(SiteProbe, FindsTheSiteNameAndThemeColour)
+{
+    const std::string html =
+        R"(<html><head><meta property="og:site_name" content=" Example TV ">
+           <meta name="theme-color" content="#F47"><meta name="application-name" content="Other">
+           </head></html>)";
+    EXPECT_EQ(web::find_meta(html, {"og:site_name", "application-name"}), "Example TV");
+    EXPECT_EQ(web::find_meta(html, {"application-name"}), "Other");
+    EXPECT_EQ(web::find_meta(html, {"description"}), "");
+    EXPECT_EQ(web::normalise_color(web::find_meta(html, {"theme-color"})), "#ff4477");
+    EXPECT_EQ(web::normalise_color("#123456"), "#123456");
+    EXPECT_EQ(web::normalise_color("red"), "");
+    EXPECT_EQ(web::normalise_color("#12345g"), "");
+}
+
+TEST(WebsiteModes, TabsFollowTheModesAndSurviveARestart)
+{
+    AppHarness h;
+    std::string why, a, b;
+    ASSERT_TRUE(h.app().websites().add("Alpha", "https://alpha.example/", &why, &a));
+    ASSERT_TRUE(h.app().websites().add("Beta", "https://beta.example/", &why, &b));
+    ASSERT_TRUE(h.app().websites().set_mode(a, true, &why));
+    ASSERT_TRUE(h.app().websites().set_mode(b, true, &why));
+    h.app().site_modes_changed();
+
+    std::vector<std::string> labels;
+    for (const ModeTab &t : h.app().tabs())
+        labels.push_back(t.label);
+    const std::vector<std::string> expected = {"Home",    "YouTube", "Anime",    "Websites",
+                                               "Alpha",   "Beta",    "Discover", "Library",
+                                               "Sources", "Settings"};
+    EXPECT_EQ(labels, expected);
+
+    // R1 from Websites reaches the website modes, then Discover; L1 goes back.
+    h.app().switch_mode(Mode::websites);
+    h.app().handle({input::Button::r1});
+    EXPECT_EQ(h.app().mode(), Mode::site);
+    EXPECT_EQ(h.app().site_mode(), a);
+    h.app().handle({input::Button::r1});
+    EXPECT_EQ(h.app().site_mode(), b);
+    h.step(2);
+    h.app().handle({input::Button::r1});
+    EXPECT_EQ(h.app().mode(), Mode::discover);
+    h.app().handle({input::Button::l1});
+    EXPECT_EQ(h.app().mode(), Mode::site);
+    EXPECT_EQ(h.app().site_mode(), b);
+    EXPECT_EQ(h.app().store().settings().last_mode, "site:" + b);
+    h.step(2);
+
+    // Opening from the mode uses its start page.
+    web::Website w = *h.app().websites().find(b);
+    w.url = "https://beta.example/some/page";
+    w.open_home = true;
+    ASSERT_TRUE(h.app().websites().update(w, &why));
+    Settings s = h.app().store().settings();
+    s.web_check_first = false;
+    h.app().store().update_settings(s);
+    auto &script = test::web_view_script();
+    script.finish_after_updates = 2;
+    h.app().handle({input::Button::cross}); // "Open"
+    ASSERT_TRUE(h.until([&] { return !script.opened.empty(); }));
+    EXPECT_EQ(script.opened[0].url, "https://beta.example/");
+    ASSERT_TRUE(h.until([&] { return !h.app().browser_active(); }));
+
+    // After a restart the same mode is on screen.
+    {
+        gfx::FontEngine fonts;
+        App second(AppConfig{}, fonts);
+        second.start(0);
+        EXPECT_EQ(second.mode(), Mode::site);
+        EXPECT_EQ(second.site_mode(), b);
+    }
+
+    // Removing the mode on screen returns to Websites; its tab is gone.
+    ASSERT_TRUE(h.app().websites().set_mode(b, false, &why));
+    h.app().site_modes_changed();
+    EXPECT_EQ(h.app().mode(), Mode::websites);
+    h.step(2);
+    EXPECT_EQ(h.app().tabs().size(), 9u);
+    EXPECT_EQ(h.app().store().settings().last_mode, "websites");
+}
+
+TEST(WebsiteModes, ManyModesStillDrawTheTabBar)
+{
+    AppHarness h;
+    std::string why;
+    for (int i = 0; i < 4; ++i)
+    {
+        std::string id;
+        ASSERT_TRUE(h.app().websites().add("Website number " + std::to_string(i),
+                                           "https://w" + std::to_string(i) + ".example/", &why,
+                                           &id));
+        ASSERT_TRUE(h.app().websites().set_mode(id, true, &why));
+        if (i == 3)
+        {
+            h.app().site_modes_changed();
+            h.app().open_site_mode(id);
+        }
+    }
+    EXPECT_EQ(h.app().tabs().size(), 12u);
+    h.app().mark_dirty();
+    h.step(3); // renders without overlapping the brand or failing
+    EXPECT_EQ(h.app().mode(), Mode::site);
+}
+
+TEST(WebsiteModes, ClearsBrowserDataOnlyWhenOffered)
+{
+    AppHarness h;
+    auto &script = test::web_view_script();
+    std::string error;
+    EXPECT_TRUE(h.app().web_view().clear_cookies(&error));
+    EXPECT_EQ(script.cookies_cleared, 1);
+    script.can_clear_cookies = false;
+    EXPECT_FALSE(h.app().web_view().clear_cookies(&error));
+    EXPECT_NE(error.find("does not offer"), std::string::npos);
+    confirm_clear_browser_data(h.app());
+    h.app().handle({input::Button::cross}); // "Clear"
+    EXPECT_EQ(script.cookies_cleared, 1);
 }

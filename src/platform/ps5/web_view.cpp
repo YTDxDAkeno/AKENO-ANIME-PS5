@@ -12,9 +12,9 @@
 //
 // Only the six dialog functions EVO-PLAYER-PS5 called on hardware and
 // sceCommonDialogInitialize are imported, as positional imports through the
-// link stubs in tooling/stubs: a fake-signed title cannot load system modules
-// with sceKernelLoadStartModule, and a name the firmware's module lacks would
-// stop the whole title from loading.
+// link stubs in tooling/stubs: a name the firmware's module lacks would stop
+// the whole title from loading. The optional cookie reset is looked up at
+// run time instead (clear_cookies), so it can only fail by itself.
 #include "platform/web_view.hpp"
 
 #include <cstddef>
@@ -32,6 +32,11 @@ extern "C"
     int sceWebBrowserDialogUpdateStatus(void);
     int sceWebBrowserDialogGetResult(void *result);
     int sceWebBrowserDialogClose(void);
+    // Already imported by the app (libkernel): used to find the dialog's
+    // optional cookie reset at run time instead of importing it.
+    int sceKernelLoadStartModule(const char *path, std::size_t argc, const void *argv,
+                                 std::uint32_t flags, void *option, int *result);
+    int sceKernelDlsym(int handle, const char *symbol, void **address);
 }
 
 namespace akeno::platform
@@ -83,6 +88,14 @@ static_assert(offsetof(WebBrowserDialogParam, url) == 64);
 static_assert(offsetof(WebBrowserDialogParam, width) == 80);
 static_assert(offsetof(WebBrowserDialogParam, control) == 100);
 static_assert(offsetof(WebBrowserDialogParam, animation) == 120);
+
+// SharpProspero, WebBrowserDialogResetCookieParam: the size, then reserved.
+struct WebBrowserDialogResetCookieParam
+{
+    std::uint64_t size;
+    std::uint8_t reserved[256];
+};
+static_assert(sizeof(WebBrowserDialogResetCookieParam) == 264);
 
 struct WebBrowserDialogResult
 {
@@ -254,6 +267,50 @@ class SystemWebView final : public WebView
         step("sceWebBrowserDialogClose", sceWebBrowserDialogClose());
     }
 
+    // sceWebBrowserDialogResetCookie is looked up at run time, never
+    // imported: a firmware whose module lacks it (or a title that may not
+    // look it up) only loses this feature instead of failing to start.
+    bool clear_cookies(std::string *error) override
+    {
+        const auto fail = [&](std::string why)
+        {
+            if (error)
+                *error = std::move(why);
+            return false;
+        };
+        if (open_)
+            return fail("close the browser first");
+        if (!prepare(error))
+            return false;
+        using Reset = int (*)(WebBrowserDialogResetCookieParam *);
+        if (!reset_looked_up_)
+        {
+            reset_looked_up_ = true;
+            const int handle = sceKernelLoadStartModule(
+                "/system/common/lib/libSceWebBrowserDialog.sprx", 0, nullptr, 0, nullptr, nullptr);
+            step("look up the cookie reset: module handle", handle);
+            void *address = nullptr;
+            if (handle >= 0)
+            {
+                const int rc = sceKernelDlsym(handle, "sceWebBrowserDialogResetCookie", &address);
+                step("sceKernelDlsym(sceWebBrowserDialogResetCookie)", rc);
+                if (rc == 0)
+                    reset_ = address;
+            }
+        }
+        if (!reset_)
+            return fail("this console's browser does not let AKENO STREAM clear its data - sign "
+                        "out on each website instead");
+        WebBrowserDialogResetCookieParam param;
+        std::memset(&param, 0, sizeof(param));
+        param.size = sizeof(param);
+        const int rc = reinterpret_cast<Reset>(reset_)(&param);
+        step("sceWebBrowserDialogResetCookie", rc);
+        if (rc != 0)
+            return fail("the browser refused to clear its cookies (" + hex(rc) + ")");
+        return true;
+    }
+
     [[nodiscard]] bool is_open() const override
     {
         return open_;
@@ -283,6 +340,8 @@ class SystemWebView final : public WebView
     int open_frames_ = 0;
     int last_status_ = -1000;
     int result_ = 0;
+    bool reset_looked_up_ = false;
+    void *reset_ = nullptr;
 };
 } // namespace
 

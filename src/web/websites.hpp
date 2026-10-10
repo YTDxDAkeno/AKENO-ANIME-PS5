@@ -49,7 +49,29 @@ struct Website
     bool private_site = false; // visits stay out of Recently Visited; hidden from Home
     std::string last_result;   // what happened the last time it was opened
     SiteChecks checks;
+
+    // The website as an app mode: its own tab after Websites, with its own
+    // name, icon and start page. It still opens in the system browser - this
+    // is a shortcut with a home, not a native integration.
+    bool mode = false;
+    std::string mode_label;       // tab name ("" : the website's name)
+    bool letter_icon = false;     // a letter tile instead of the site's icon
+    bool custom_icon = false;     // icon_url was chosen by the user: kept on refresh
+    std::uint32_t tile_color = 0; // 0xRRGGBB, 0: from the site (theme colour) or its name
+    bool open_home = false;       // open the site's homepage, not the saved address
+    std::string theme_color;      // "#rrggbb" from the site's <meta name="theme-color">
 };
+
+// The tab name of a website mode, at most kMaxModeLabel characters.
+inline constexpr std::size_t kMaxModeLabel = 16;
+std::string mode_title(const Website &site);
+// Where opening the site starts: its homepage ("https://host/") or the
+// saved address.
+std::string homepage_of(const Website &site);
+std::string start_address(const Website &site);
+// The colour of its tile and mode: chosen, the site's theme colour, or one
+// derived from the host name (0 when none of them applies).
+std::uint32_t site_color(const Website &site);
 
 struct RecentVisit
 {
@@ -64,6 +86,7 @@ class WebsiteStore final
     static constexpr std::size_t kMaxSites = 200;
     static constexpr std::size_t kMaxRecent = 30;
     static constexpr std::size_t kMaxName = 60;
+    static constexpr std::size_t kMaxModes = 4;
 
     explicit WebsiteStore(std::string directory);
 
@@ -86,7 +109,13 @@ class WebsiteStore final
     // invalid or belongs to another entry.
     bool update(const Website &site, std::string *why = nullptr);
     bool remove(std::string_view id);
-    void set_icon(std::string_view id, std::string icon_url);
+    // The icon found on the site; a user-chosen icon is kept unless forced.
+    void set_icon(std::string_view id, std::string icon_url, bool chosen_by_user = false);
+    // Name and theme colour found on the site, kept for its tile and mode.
+    void set_metadata(std::string_view id, const std::string &theme_color);
+    // Shows or hides a website as a mode tab (at most kMaxModes).
+    bool set_mode(std::string_view id, bool on, std::string *why);
+    [[nodiscard]] std::vector<const Website *> modes() const;
     void set_result(std::string_view id, std::string result);
 
     // Counts a visit to a saved site (matched by address) and remembers the

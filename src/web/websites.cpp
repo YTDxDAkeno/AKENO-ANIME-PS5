@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 
 namespace akeno::web
 {
@@ -29,6 +30,13 @@ std::string trim(std::string_view text)
 
 // Names are shown on cards and written back to websites.txt: one line, no
 // control characters, bounded length (at a UTF-8 character boundary).
+bool valid_color(std::string_view c)
+{
+    return c.size() == 7 && c[0] == '#' &&
+           std::all_of(c.begin() + 1, c.end(),
+                       [](char ch) { return std::isxdigit(static_cast<unsigned char>(ch)) != 0; });
+}
+
 std::string clean_name(std::string_view name)
 {
     std::string out;
@@ -193,6 +201,16 @@ void WebsiteStore::load()
         w.private_site = v["private"].boolean(false);
         w.last_result = v["last_result"].str().substr(0, 200);
         w.checks = checks_from(v["checks"]);
+        w.mode = v["mode"].boolean(false) &&
+                 std::count_if(sites_.begin(), sites_.end(), [](const Website &x)
+                               { return x.mode; }) < static_cast<long>(kMaxModes);
+        w.mode_label = clean_name(v["mode_label"].str()).substr(0, kMaxModeLabel * 4);
+        w.letter_icon = v["letter_icon"].boolean(false);
+        w.custom_icon = v["custom_icon"].boolean(false) && !w.icon_url.empty();
+        w.tile_color = static_cast<std::uint32_t>(
+            std::clamp<long long>(v["tile_color"].integer(), 0, 0xffffff));
+        w.open_home = v["open_home"].boolean(false);
+        w.theme_color = valid_color(v["theme_color"].str()) ? v["theme_color"].str() : "";
         sites_.push_back(std::move(w));
     }
     for (const auto &v : root["recent"].items())
@@ -230,6 +248,15 @@ void WebsiteStore::save()
         if (!w.last_result.empty())
             v.set("last_result", w.last_result);
         v.set("checks", checks_json(w.checks));
+        v.set("mode", w.mode);
+        if (!w.mode_label.empty())
+            v.set("mode_label", w.mode_label);
+        v.set("letter_icon", w.letter_icon);
+        v.set("custom_icon", w.custom_icon);
+        v.set("tile_color", static_cast<long long>(w.tile_color));
+        v.set("open_home", w.open_home);
+        if (!w.theme_color.empty())
+            v.set("theme_color", w.theme_color);
         sites.push(v);
     }
     root.set("sites", sites);
@@ -340,8 +367,21 @@ bool WebsiteStore::update(const Website &site, std::string *why)
     updated.name = clean_name(site.name);
     if (updated.name.empty())
         updated.name = display_host(d.url);
-    if (updated.url != it->url)
-        updated.icon_url.clear(); // the old site's icon
+    updated.mode = it->mode; // changed through set_mode() only (it counts the tabs)
+    updated.mode_label = clean_name(site.mode_label).substr(0, kMaxModeLabel * 4);
+    updated.tile_color &= 0xffffffu;
+    if (!valid_color(updated.theme_color))
+        updated.theme_color.clear();
+    if (!updated.icon_url.empty() && !check_address(updated.icon_url).ok)
+    {
+        updated.icon_url.clear();
+        updated.custom_icon = false;
+    }
+    if (updated.url != it->url && !updated.custom_icon)
+    {
+        updated.icon_url.clear(); // the old site's icon and colour
+        updated.theme_color.clear();
+    }
     *it = std::move(updated);
     save();
     return true;
@@ -359,16 +399,100 @@ bool WebsiteStore::remove(std::string_view id)
     return true;
 }
 
-void WebsiteStore::set_icon(std::string_view id, std::string icon_url)
+void WebsiteStore::set_icon(std::string_view id, std::string icon_url, bool chosen_by_user)
 {
     for (Website &w : sites_)
         if (w.id == id)
         {
+            if (w.custom_icon && !chosen_by_user)
+                return; // the user's choice stays
             const Destination d = check_address(icon_url);
             w.icon_url = d.ok ? d.url : std::string{};
+            w.custom_icon = chosen_by_user && !w.icon_url.empty();
             save();
             return;
         }
+}
+
+void WebsiteStore::set_metadata(std::string_view id, const std::string &theme_color)
+{
+    for (Website &w : sites_)
+        if (w.id == id)
+        {
+            const std::string color = valid_color(theme_color) ? theme_color : std::string{};
+            if (color != w.theme_color)
+            {
+                w.theme_color = color;
+                save();
+            }
+            return;
+        }
+}
+
+bool WebsiteStore::set_mode(std::string_view id, bool on, std::string *why)
+{
+    const auto it =
+        std::find_if(sites_.begin(), sites_.end(), [&](const Website &w) { return w.id == id; });
+    if (it == sites_.end())
+    {
+        if (why)
+            *why = "That website is no longer in the list.";
+        return false;
+    }
+    if (on && !it->mode && modes().size() >= kMaxModes)
+    {
+        if (why)
+            *why = "At most " + std::to_string(kMaxModes) +
+                   " websites can be modes - remove one from the tabs first.";
+        return false;
+    }
+    it->mode = on;
+    save();
+    return true;
+}
+
+std::vector<const Website *> WebsiteStore::modes() const
+{
+    std::vector<const Website *> out;
+    for (const Website &w : sites_)
+        if (w.mode && out.size() < kMaxModes)
+            out.push_back(&w);
+    return out;
+}
+
+std::string mode_title(const Website &site)
+{
+    std::string title = site.mode_label.empty() ? site.name : site.mode_label;
+    if (title.size() > kMaxModeLabel)
+    {
+        title.resize(kMaxModeLabel);
+        while (!title.empty() && (static_cast<unsigned char>(title.back()) & 0xC0) == 0x80)
+            title.pop_back();
+        if (!title.empty())
+            title.pop_back(); // a cut multi-byte character's lead byte, or room for the dots
+        title += "...";
+    }
+    return title;
+}
+
+std::string homepage_of(const Website &site)
+{
+    const std::string origin = origin_of(site.url);
+    return origin.empty() ? site.url : origin + "/";
+}
+
+std::string start_address(const Website &site)
+{
+    return site.open_home ? homepage_of(site) : site.url;
+}
+
+std::uint32_t site_color(const Website &site)
+{
+    if (site.tile_color != 0)
+        return site.tile_color & 0xffffffu;
+    if (valid_color(site.theme_color))
+        return static_cast<std::uint32_t>(std::strtoul(site.theme_color.c_str() + 1, nullptr, 16));
+    return 0;
 }
 
 void WebsiteStore::set_result(std::string_view id, std::string result)

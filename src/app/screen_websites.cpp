@@ -80,7 +80,11 @@ MediaItem site_card(const web::Website &w)
     m.image_url = w.icon_url;
     m.icon_art = true;
     m.accent = ui::accent_for(m.subtitle);
-    m.badge = w.private_site ? "PRIVATE" : (w.pinned ? "HOME" : "");
+    m.badge = w.private_site ? "PRIVATE" : w.mode ? "MODE" : (w.pinned ? "HOME" : "");
+    if (const std::uint32_t color = web::site_color(w))
+        m.accent = color;
+    if (w.letter_icon)
+        m.image_url.clear();
     std::string description = w.url;
     if (!w.last_result.empty())
         description += " - last time: " + w.last_result;
@@ -150,6 +154,8 @@ class WebsitesScreen final : public BrowseScreen
             with_notice([this] { app_.push(make_lab_screen(app_)); });
         else if (item.id == "play-link")
             app_.ask_play_link();
+        else if (item.id == "clear-browser-data")
+            confirm_clear_browser_data(app_);
         else if (item.provider == "mode")
             app_.open_item(item);
     }
@@ -179,6 +185,11 @@ class WebsitesScreen final : public BrowseScreen
             "A DRM-free HLS, MP4, MKV or TS address plays in AKENO STREAM's native player "
             "instead of the browser.",
             0xb18cff));
+        start.items.push_back(action_card(
+            "clear-browser-data", "Clear Browser Data", "Sign out of all websites",
+            "Asks the console's browser to forget its cookies - every website's sign-in. "
+            "Experimental: not every firmware lets apps do this.",
+            0x8a94a8));
         out.push_back(std::move(start));
 
         Shelf mine{"Your Websites", {}, false};
@@ -297,6 +308,17 @@ class WebsitesScreen final : public BrowseScreen
                             return;
                         if (!probe.icon_url.empty())
                             app_.websites().set_icon(id, probe.icon_url);
+                        app_.websites().set_metadata(id, probe.theme_color);
+                        // A name the user left at the host name becomes the
+                        // site's own name (og:site_name / application-name).
+                        if (const web::Website *w = app_.websites().find(id);
+                            w && !probe.site_name.empty() && w->name == web::display_host(w->url))
+                        {
+                            web::Website named = *w;
+                            named.name = probe.site_name;
+                            app_.websites().update(named);
+                        }
+                        app_.site_modes_changed();
                         if (announce && !probe.problem.empty())
                             app_.toast("Saved. Note: " + probe.problem, th::kWarning);
                         rebuild(true);
@@ -374,7 +396,29 @@ class WebsitesScreen final : public BrowseScreen
                                    [this, alive, id](bool ok, const std::string &text)
                                    { edit(alive, id, ok, text, true); });
                            }});
-        options.push_back({site.pinned ? "Remove from Home" : "Show on Home",
+        options.push_back({site.mode ? "Mode: on (its own tab)" : "Pin as Mode",
+                           site.mode ? "Tab name, icon, colour and start page"
+                                     : "Gives the site its own tab after Websites",
+                           [this, alive, id, on = site.mode]
+                           {
+                               if (!*alive)
+                                   return;
+                               if (!on)
+                               {
+                                   std::string why;
+                                   if (!app_.websites().set_mode(id, true, &why))
+                                   {
+                                       app_.toast(why, th::kWarning);
+                                       return;
+                                   }
+                                   app_.site_modes_changed();
+                                   app_.toast("Added as a mode - L1/R1 reach its tab",
+                                              th::kSuccess);
+                                   rebuild(true);
+                               }
+                               open_site_mode_menu(app_, id);
+                           }});
+        options.push_back({site.pinned ? "Remove from Home" : "Save to Home",
                            site.pinned ? "It stays in Websites" : "Adds it to Home's Websites row",
                            [this, alive, id]
                            { toggle(alive, id, [](web::Website &w) { w.pinned = !w.pinned; }); }});
@@ -413,6 +457,7 @@ class WebsitesScreen final : public BrowseScreen
                                        if (!*alive)
                                            return;
                                        app_.websites().remove(id);
+                                       app_.site_modes_changed();
                                        app_.toast("Website removed", th::kInfo);
                                        rebuild(true);
                                    }));
@@ -790,6 +835,185 @@ class CrunchyrollScreen final : public Screen
 
     int action_ = 0;
 };
+// ---------------------------------------------------------------------------
+// A website as an app mode: its own tab, name, icon, colour and start page.
+// It opens in the system browser like any website; the browser does not tell
+// apps which page was open, so the mode always starts at the chosen page.
+struct TileColor
+{
+    const char *name;
+    std::uint32_t rgb;
+};
+constexpr TileColor kTileColors[] = {
+    {"Automatic", 0},     {"Red", 0xff4d5e},    {"Orange", 0xf47521},
+    {"Yellow", 0xf5b83d}, {"Green", 0x35c79a},  {"Teal", 0x2cc4c9},
+    {"Blue", 0x5aa9ff},   {"Purple", 0xb18cff}, {"Pink", 0xff6fb5},
+};
+
+const char *tile_color_name(std::uint32_t rgb)
+{
+    for (const TileColor &c : kTileColors)
+        if (c.rgb == rgb)
+            return c.name;
+    return "Custom";
+}
+
+class SiteModeScreen final : public Screen
+{
+  public:
+    SiteModeScreen(App &app, std::string id) : Screen{app}, id_{std::move(id)}
+    {
+    }
+
+    void handle(input::Button b) override
+    {
+        const web::Website *site = app_.websites().find(id_);
+        if (!site)
+            return;
+        switch (b)
+        {
+        case input::Button::left:
+            action_ = std::max(0, action_ - 1);
+            return;
+        case input::Button::right:
+            action_ = std::min(kActions - 1, action_ + 1);
+            return;
+        case input::Button::cross:
+            run(*site, action_);
+            return;
+        case input::Button::square:
+            open_site_mode_menu(app_, id_);
+            return;
+        default:
+            return;
+        }
+    }
+
+    void render(ui::Painter &p, std::uint64_t) override
+    {
+        const web::Website *found = app_.websites().find(id_);
+        if (!found)
+            return;
+        const web::Website &site = *found;
+        const Pixel accent = app_.accent();
+        const std::string host = web::display_host(site.url);
+
+        // The tile: the site's icon, or a letter on its colour.
+        const Rect tile{th::kMarginX, 170, 260, 260};
+        p.s.fill_rounded(tile, 48, gfx::with_alpha(accent, 235));
+        const gfx::Image *icon = nullptr;
+        if (!site.letter_icon && !site.icon_url.empty())
+            icon = app_.images().get(site.icon_url, 160, 160);
+        if (icon)
+        {
+            p.s.fill_rounded({tile.x + 30, tile.y + 30, 200, 200}, 36, th::kText);
+            p.s.draw_image(*icon, tile.x + (tile.w - icon->width) / 2,
+                           tile.y + (tile.h - icon->height) / 2);
+        }
+        else
+        {
+            std::string letter = site.name.substr(0, 1);
+            for (char &c : letter)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            const th::Type big{150, gfx::Weight::bold};
+            p.text_center(tile.x + tile.w / 2, tile.y + (tile.h - p.line_height(big)) / 2, letter,
+                          big, th::kTextOnAccent);
+        }
+
+        const int tx = tile.right() + 56, tw = th::kWidth - th::kMarginX - tx;
+        p.text(tx, 182, "WEBSITE MODE", th::kCaptionStrong, accent);
+        p.text(tx, 216, site.name, th::kDisplay, th::kText, tw);
+        p.text(tx, 306, host, th::kBody, th::kTextSecondary, tw);
+        std::string visits = site.visits > 0 ? std::to_string(site.visits) +
+                                                   (site.visits == 1 ? " visit" : " visits")
+                                             : std::string{"Not opened yet"};
+        if (!site.last_result.empty())
+            visits += " - last time: " + site.last_result;
+        p.text(tx, 352, visits, th::kCaption, th::kTextMuted, tw);
+
+        int y = 470;
+        p.text(th::kMarginX, y, "Starts at", th::kCaptionStrong, th::kTextMuted);
+        p.text(th::kMarginX + 220, y, web::start_address(site), th::kBody, th::kText, 1300);
+        y += 50;
+        const web::PlaybackCheck *check = app_.playback_checks().get(web::check_key(site.url));
+        const web::Classification cls = web::classify(check ? *check : web::PlaybackCheck{},
+                                                      web::check_key(site.url) == "crunchyroll.com",
+                                                      web::lab_facts(app_.web_tests()));
+        p.text(th::kMarginX, y, "Video", th::kCaptionStrong, th::kTextMuted);
+        p.text(th::kMarginX + 220, y,
+               std::string{web::state_label(cls.state)} + (cls.measured ? " (measured)" : ""),
+               th::kBodyStrong,
+               cls.state == web::PlaybackState::works        ? th::kSuccess
+               : cls.state == web::PlaybackState::not_tested ? th::kTextSecondary
+                                                             : th::kWarning,
+               1300);
+        y += 44;
+        if (check && !check->error_code.empty())
+        {
+            p.text(th::kMarginX + 220, y, "Last error: " + check->error_code, th::kCaption,
+                   th::kError, 1300);
+            y += 40;
+        }
+        p.wrapped(th::kMarginX, y + 20,
+                  "Opens in the PS5 browser inside AKENO STREAM. The browser does not tell apps "
+                  "which page you were on, so this mode always starts at the page above. "
+                  "Sign-ins stay inside the browser.",
+                  th::kCaption, th::kTextMuted, 1400, 3);
+
+        static const char *labels[] = {"Open", "Other start", "Record video", "Mode settings"};
+        static const Icon icons[] = {Icon::play, Icon::home, Icon::check, Icon::gear};
+        int x = th::kMarginX;
+        for (int i = 0; i < kActions; ++i)
+        {
+            std::string label = labels[i];
+            if (i == 1)
+                label = site.open_home ? "Open saved page" : "Open homepage";
+            x += p.button(x, 860, label, i == action_, accent, icons[i]) + 18;
+        }
+    }
+
+    [[nodiscard]] std::vector<Hint> hints() const override
+    {
+        return {{Glyph::cross, "Select"}, {Glyph::dpad, "Choose"}, {Glyph::square, "Settings"}};
+    }
+
+  private:
+    static constexpr int kActions = 4;
+
+    void open(const web::Website &site, const std::string &url)
+    {
+        WebSession session;
+        session.url = url;
+        session.title = site.name;
+        session.site_id = site.id;
+        app_.open_web(std::move(session));
+    }
+
+    void run(const web::Website &site, int action)
+    {
+        switch (action)
+        {
+        case 0:
+            open(site, web::start_address(site));
+            return;
+        case 1:
+            open(site, site.open_home ? site.url : web::homepage_of(site));
+            return;
+        case 2:
+        {
+            const std::string key = web::check_key(site.url);
+            open_playback_record(app_, key, site.name, key == "crunchyroll.com");
+            return;
+        }
+        default:
+            open_site_mode_menu(app_, id_);
+            return;
+        }
+    }
+
+    std::string id_;
+    int action_ = 0;
+};
 } // namespace
 
 std::unique_ptr<Screen> make_websites_screen(App &app)
@@ -800,5 +1024,155 @@ std::unique_ptr<Screen> make_websites_screen(App &app)
 std::unique_ptr<Screen> make_crunchyroll_screen(App &app)
 {
     return std::make_unique<CrunchyrollScreen>(app);
+}
+
+std::unique_ptr<Screen> make_site_mode_screen(App &app, std::string site_id)
+{
+    return std::make_unique<SiteModeScreen>(app, std::move(site_id));
+}
+
+void confirm_clear_browser_data(App &app)
+{
+    app.push(make_confirm_screen(
+        app, "Clear the browser's data?",
+        "The console's browser forgets its cookies: you are signed out of every website "
+        "(YouTube, Crunchyroll and all others) and sites forget their settings. Your saved "
+        "websites, modes and AKENO STREAM's own data stay.",
+        "Clear",
+        [&app]
+        {
+            std::string error;
+            if (app.web_view().clear_cookies(&error))
+                app.toast("The browser's cookies were cleared", th::kSuccess);
+            else
+            {
+                app.toast("Not cleared: " + error, th::kWarning);
+                app.report_error("browser data", error);
+            }
+        }));
+}
+
+void open_site_mode_menu(App &app, const std::string &id)
+{
+    const auto site = [&app, id]() -> const web::Website * { return app.websites().find(id); };
+    const auto change = [&app, id](const std::function<void(web::Website &)> &edit)
+    {
+        const web::Website *w = app.websites().find(id);
+        if (!w)
+            return;
+        web::Website copy = *w;
+        edit(copy);
+        std::string why;
+        if (!app.websites().update(copy, &why))
+            app.toast(why, th::kWarning);
+        app.site_modes_changed();
+    };
+    ChoiceModel model;
+    model.options = [site]
+    {
+        std::vector<ChoiceOption> out;
+        const web::Website *w = site();
+        if (!w)
+            return out;
+        out.push_back({w->mode ? "Shown as a mode: yes" : "Shown as a mode: no",
+                       w->mode ? "Choose to remove its tab (the website stays saved)"
+                               : "Choose to give it its own tab after Websites"});
+        out.push_back({"Tab name: " + web::mode_title(*w),
+                       "Short names fit the mode bar best (up to 16 characters)"});
+        out.push_back({w->letter_icon ? "Icon: letter tile" : "Icon: the site's own icon",
+                       "Choose to switch between the two"});
+        out.push_back({w->custom_icon ? "Icon image: your address" : "Icon image: from the site",
+                       "Choose to enter the address of a PNG, JPEG or ICO image"});
+        out.push_back({std::string{"Colour: "} + tile_color_name(w->tile_color) +
+                           (w->tile_color == 0 && !w->theme_color.empty()
+                                ? " (the site's " + w->theme_color + ")"
+                                : ""),
+                       "Choose to try the next colour"});
+        out.push_back({w->open_home ? "Starts at: the homepage" : "Starts at: the saved address",
+                       w->open_home ? web::homepage_of(*w) : w->url});
+        out.push_back(
+            {w->pinned ? "On Home: yes" : "On Home: no", "Shows it in Home's \"My Websites\" row"});
+        return out;
+    };
+    model.selected = [] { return -1; };
+    model.choose = [&app, id, site, change](int i)
+    {
+        const web::Website *w = site();
+        if (!w)
+            return;
+        switch (i)
+        {
+        case 0:
+        {
+            std::string why;
+            if (!app.websites().set_mode(id, !w->mode, &why))
+                app.toast(why, th::kWarning);
+            app.site_modes_changed();
+            return;
+        }
+        case 1:
+            app.open_keyboard("Tab name", web::mode_title(*w), web::kMaxModeLabel, false,
+                              [change](bool ok, const std::string &text)
+                              {
+                                  if (ok)
+                                      change([&](web::Website &x) { x.mode_label = text; });
+                              });
+            return;
+        case 2:
+            change([](web::Website &x) { x.letter_icon = !x.letter_icon; });
+            return;
+        case 3:
+            app.open_keyboard(
+                "Icon image address (empty: the site's own)",
+                w->custom_icon ? w->icon_url : std::string{"https://"}, 2048, false,
+                [&app, id](bool ok, const std::string &text)
+                {
+                    if (!ok)
+                        return;
+                    const std::string address =
+                        text == "https://" || text == "http://" ? std::string{} : text;
+                    if (!address.empty() && !web::check_address(address).ok)
+                    {
+                        app.toast("Enter an image address that starts with https://", th::kWarning);
+                        return;
+                    }
+                    app.websites().set_icon(id, address, true);
+                    if (address.empty())
+                        app.toast("The site's own icon returns the next time it is looked up "
+                                  "(Refresh icon)",
+                                  th::kInfo);
+                    app.site_modes_changed();
+                });
+            return;
+        case 4:
+            change(
+                [](web::Website &x)
+                {
+                    std::size_t next = 0;
+                    for (std::size_t k = 0; k < std::size(kTileColors); ++k)
+                        if (kTileColors[k].rgb == x.tile_color)
+                            next = (k + 1) % std::size(kTileColors);
+                    x.tile_color = kTileColors[next].rgb;
+                });
+            return;
+        case 5:
+            change([](web::Website &x) { x.open_home = !x.open_home; });
+            return;
+        case 6:
+            change([](web::Website &x) { x.pinned = !x.pinned; });
+            return;
+        default:
+            return;
+        }
+    };
+    model.footer = []
+    {
+        return std::string{
+            "A mode opens the website in the PS5 browser inside AKENO STREAM, like any saved "
+            "site - it is a shortcut with its own tab, not a native app for that service."};
+    };
+    const web::Website *w = site();
+    app.push(make_choice_screen(app, w ? w->name : std::string{"Website"},
+                                "Its tab, name, icon and where it starts", std::move(model)));
 }
 } // namespace akeno

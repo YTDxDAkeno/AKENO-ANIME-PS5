@@ -41,6 +41,12 @@ std::unique_ptr<Screen> make_websites_screen(App &app);
 std::unique_ptr<Screen> make_browser_screen(App &app, WebSession session);
 std::unique_ptr<Screen> make_browser_tests_screen(App &app);
 std::unique_ptr<Screen> make_crunchyroll_screen(App &app);
+// A website the user made a mode: its own tab with its name, icon and start.
+std::unique_ptr<Screen> make_site_mode_screen(App &app, std::string site_id);
+// The website's mode settings: tab, name, icon, colour, start page, Home.
+void open_site_mode_menu(App &app, const std::string &site_id);
+// Asks, then clears every cookie of the console's browser (all sites).
+void confirm_clear_browser_data(App &app);
 
 // A modal list of choices: Cross runs one (the menu closes first), Circle closes.
 struct MenuOption

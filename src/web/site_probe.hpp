@@ -11,7 +11,9 @@
 
 #include "net/http.hpp"
 
+#include <initializer_list>
 #include <string>
+#include <string_view>
 
 namespace akeno::web
 {
@@ -23,8 +25,10 @@ struct SiteProbe
     std::string final_url;
     std::string title;
     std::string icon_url;
-    std::string problem; // plain-language description, "" when fine
-    std::string detail;  // technical line for diagnostics
+    std::string site_name;   // og:site_name / application-name
+    std::string theme_color; // <meta name="theme-color">, "#rrggbb"
+    std::string problem;     // plain-language description, "" when fine
+    std::string detail;      // technical line for diagnostics
 };
 
 // Runs on a worker thread. Reads at most the first 384 KiB of the page.
@@ -33,5 +37,9 @@ SiteProbe probe_site(const std::string &url, const net::CancelFlag &cancel);
 // Exposed for tests.
 std::string find_title(std::string_view html);
 std::string find_icon(std::string_view html, const std::string &page_url);
+// The content of the first <meta name=... / property=...> among names.
+std::string find_meta(std::string_view html, std::initializer_list<std::string_view> names);
+// "#rgb" / "#rrggbb" (any case) as "#rrggbb"; "" for anything else.
+std::string normalise_color(std::string_view text);
 std::string describe_failure(const net::Response &response, bool *blocking);
 } // namespace akeno::web

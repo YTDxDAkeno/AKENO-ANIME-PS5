@@ -25,6 +25,8 @@ struct WebViewScript
     int result_code = 0;
     std::vector<platform::WebOpenRequest> opened;
     int closes_requested = 0;
+    bool can_clear_cookies = true;
+    int cookies_cleared = 0;
 };
 
 // The script every stand-in consults. Tests reset it with reset_web_view_script().

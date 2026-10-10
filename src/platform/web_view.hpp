@@ -75,6 +75,10 @@ class WebView
     // The engine's result code of the last finished session (0 = none).
     [[nodiscard]] virtual int result() const = 0;
     [[nodiscard]] virtual WebEngineInfo info() const = 0;
+    // Clears every cookie the browser keeps (all sites: it signs the user out
+    // everywhere). Only while the browser is closed; false with a reason
+    // where the console's browser does not offer it to apps.
+    virtual bool clear_cookies(std::string *error) = 0;
 };
 
 std::unique_ptr<WebView> make_web_view();
