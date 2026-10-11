@@ -11,6 +11,7 @@
 // which capability is missing.
 #include "anime/address.hpp"
 #include "anime/session.hpp"
+#include "anime/site_policy.hpp"
 #include "anime/website.hpp"
 #include "app/browse.hpp"
 #include "core/url.hpp"
@@ -228,11 +229,76 @@ class InfoScreen final : public Screen
     int first_ = 0;
 };
 
+Pixel playback_color(anime::PlaybackClass c)
+{
+    switch (c)
+    {
+    case anime::PlaybackClass::native:
+    case anime::PlaybackClass::partial:
+        return th::kSuccess;
+    case anime::PlaybackClass::catalogue_only:
+    case anime::PlaybackClass::browser_only:
+        return th::kInfo;
+    case anime::PlaybackClass::protected_media:
+    case anime::PlaybackClass::unsupported:
+        return th::kWarning;
+    case anime::PlaybackClass::unknown:
+        break;
+    }
+    return th::kTextMuted;
+}
+
+// A loaded provider's report, with what its episodes do in AKENO STREAM as
+// the registry knows it (a website's unopened series are not "no video").
+anime::ProviderReport provider_report(const anime::Registry &registry,
+                                      const anime::ProviderState &state)
+{
+    anime::ProviderReport r = anime::report_for(state, anime::SourceClass::native_provider);
+    const anime::PlaybackClass known = registry.playback_of(state.config.id);
+    if (known != r.playback)
+    {
+        r.playback = known;
+        r.verdict = anime::playback_class_detail(known);
+    }
+    if (const auto site = anime::known_site(state.config.address))
+    {
+        r.known_site = site->site;
+        r.browser_hint = site->browser_hint;
+    }
+    return r;
+}
+
+// Opens a provider's page in the PS5 browser (Websites), saying so: what plays
+// there is the website's own player, never AKENO STREAM's.
+void open_on_website(App &app, const anime::ProviderConfig &provider, const std::string &page,
+                     const std::string &title)
+{
+    WebSession session;
+    session.url = page;
+    session.title = title;
+    if (const auto site = anime::known_site(page.empty() ? provider.address : page))
+        app.toast(site->browser_hint, th::kInfo);
+    else
+        app.toast("Opening " + provider.name +
+                      " in the PS5 browser - its own player, not AKENO STREAM's",
+                  th::kInfo);
+    app.open_web(std::move(session));
+}
+
 std::vector<InfoLine> report_lines(const anime::ProviderReport &r)
 {
     std::vector<InfoLine> out;
     const Pixel verdict = r.importable ? th::kSuccess : th::kWarning;
     out.push_back({"", r.verdict, verdict});
+    if (r.playback != anime::PlaybackClass::unknown)
+        out.push_back(
+            {"In AKENO", anime::playback_class_label(r.playback), playback_color(r.playback)});
+    // A known website: why, before the rest.
+    const auto note = [](const anime::CatalogIssue &w) -> InfoLine
+    { return {"Note", (w.path.empty() ? "" : w.path + ": ") + w.message, th::kTextMuted}; };
+    if (!r.known_site.empty())
+        for (std::size_t i = 0; i < r.warnings.size() && i < 8; ++i)
+            out.push_back(note(r.warnings[i]));
     out.push_back({"What it is", anime::source_class_label(r.source), th::kText});
     if (!r.format.empty())
         out.push_back({"Format", r.format, th::kText});
@@ -273,11 +339,13 @@ std::vector<InfoLine> report_lines(const anime::ProviderReport &r)
             {"Error",
              (r.errors[i].path.empty() ? "" : r.errors[i].path + ": ") + r.errors[i].message,
              th::kError});
-    for (std::size_t i = 0; i < r.warnings.size() && i < 8; ++i)
-        out.push_back(
-            {"Note",
-             (r.warnings[i].path.empty() ? "" : r.warnings[i].path + ": ") + r.warnings[i].message,
-             th::kTextMuted});
+    if (r.known_site.empty())
+        for (std::size_t i = 0; i < r.warnings.size() && i < 8; ++i)
+            out.push_back(note(r.warnings[i]));
+    if (!r.browser_hint.empty() &&
+        std::none_of(r.warnings.begin(), r.warnings.end(),
+                     [&r](const anime::CatalogIssue &w) { return w.message == r.browser_hint; }))
+        out.push_back({"On the website", r.browser_hint, th::kInfo});
     // A preview of what Import adds (after the problems, which matter more).
     for (const std::string &line : r.preview)
         out.push_back({"Series", line, th::kTextSecondary});
@@ -496,11 +564,19 @@ class AnimeHomeScreen final : public BrowseScreen
         {
             if (c.builtin)
                 continue;
-            MediaItem home = action_card(
-                "", c.name.c_str(),
-                c.type == anime::ProviderType::website ? "Website provider"
-                                                       : anime::provider_type_label(c.type),
-                "Its catalogue, search and what it offers.", ui::accent_for(c.name));
+            const anime::PlaybackClass playback = registry.playback_of(c.id);
+            const std::string kind = c.type == anime::ProviderType::website
+                                         ? std::string{"Website provider"}
+                                         : std::string{anime::provider_type_label(c.type)};
+            MediaItem home =
+                action_card("", c.name.c_str(),
+                            (playback == anime::PlaybackClass::unknown
+                                 ? kind
+                                 : kind + "  \xC2\xB7  " + anime::playback_class_label(playback))
+                                .c_str(),
+                            std::string{"Its catalogue, search and what it offers. "} +
+                                anime::playback_class_detail(playback),
+                            ui::accent_for(c.name));
             home.id = std::string{"provider:"} + c.id;
             if (const anime::ProviderState *state = registry.state(c.id))
                 for (const anime::Series &s : state->series)
@@ -761,7 +837,10 @@ class SeriesScreen final : public Screen
 
     [[nodiscard]] std::vector<Hint> hints() const override
     {
-        std::vector<Hint> h{{Glyph::cross, zone_ == 2 ? "Play" : "Select"},
+        // "Play" only on an episode AKENO STREAM can play.
+        std::vector<Hint> h{{Glyph::cross, zone_ != 2           ? "Select"
+                                           : focused_playable() ? "Play"
+                                                                : "Details"},
                             {Glyph::dpad, "Seasons and episodes"}};
         h.push_back({Glyph::square, in_watchlist() ? "Remove from Watchlist" : "Watchlist"});
         h.push_back({Glyph::options, "Source details"});
@@ -779,6 +858,7 @@ class SeriesScreen final : public Screen
         anilist_page,
         source_info,
         retry,
+        website,
     };
     struct Action
     {
@@ -803,6 +883,30 @@ class SeriesScreen final : public Screen
                app_.anime_registry().find_series(source_provider_, source_series_);
     }
 
+    [[nodiscard]] bool focused_playable() const
+    {
+        const anime::Series *s = shown();
+        if (!s || !from_provider() || season_ >= static_cast<int>(s->seasons.size()))
+            return false;
+        const anime::Season &season = s->seasons[static_cast<std::size_t>(season_)];
+        if (episode_ >= static_cast<int>(season.episodes.size()))
+            return false;
+        const anime::Episode &e = season.episodes[static_cast<std::size_t>(episode_)];
+        return (e.media || !e.source_ref.empty()) &&
+               (e.availability == anime::Availability::playable ||
+                e.availability == anime::Availability::unverified);
+    }
+
+    // A website provider's series: its own page on the site (from the site's
+    // data), for Open on Website.
+    [[nodiscard]] const anime::ProviderConfig *website_provider() const
+    {
+        if (!from_provider())
+            return nullptr;
+        const anime::ProviderConfig *c = app_.anime_registry().config(source_provider_);
+        return c && c->type == anime::ProviderType::website ? c : nullptr;
+    }
+
     std::pair<std::string, Pixel> availability_summary() const
     {
         if (from_provider() && shown()->details_pending)
@@ -817,6 +921,18 @@ class SeriesScreen final : public Screen
         {
             const anime::Series &s = *shown();
             const int listed = anime::playable_episodes(s);
+            // Nothing here plays in AKENO STREAM: say where it does, and never
+            // offer Play.
+            const anime::PlaybackClass playback =
+                app_.anime_registry().playback_of(source_provider_);
+            if (listed == 0 && (playback == anime::PlaybackClass::browser_only ||
+                                playback == anime::PlaybackClass::catalogue_only))
+                return {playback == anime::PlaybackClass::browser_only
+                            ? "Website only  \xC2\xB7  episodes play on " + s.provider_name +
+                                  "'s website, in the PS5 browser (Open on Website)"
+                            : "Catalogue only  \xC2\xB7  no episode names a video AKENO STREAM "
+                              "may play",
+                        th::kInfo};
             int checked = 0;
             for (const anime::Season &season : s.seasons)
                 for (const anime::Episode &e : season.episodes)
@@ -1063,6 +1179,8 @@ class SeriesScreen final : public Screen
         if (from_provider() && shown()->details_pending &&
             !app_.anime_series_error(source_provider_, source_series_).empty())
             actions_.push_back({ActionKind::retry, "Try Again", Icon::refresh});
+        if (website_provider() && !shown()->source_ref.empty())
+            actions_.push_back({ActionKind::website, "Open on Website", Icon::home});
         if (!from_provider())
             actions_.push_back({ActionKind::add_provider, "Add a Provider", Icon::spark});
         if (from_provider())
@@ -1102,6 +1220,10 @@ class SeriesScreen final : public Screen
         case ActionKind::retry:
             app_.load_anime_series(source_provider_, source_series_);
             return;
+        case ActionKind::website:
+            if (const anime::ProviderConfig *c = website_provider())
+                open_on_website(app_, *c, shown()->source_ref, shown()->title);
+            return;
         case ActionKind::source_info:
             show_source_info();
             return;
@@ -1140,7 +1262,7 @@ class SeriesScreen final : public Screen
                      th::kTextSecondary});
             if (state)
                 for (const InfoLine &l :
-                     report_lines(anime::report_for(*state, anime::SourceClass::native_provider)))
+                     report_lines(provider_report(app_.anime_registry(), *state)))
                     if (!l.label.empty())
                         lines.push_back(l);
             lines.push_back({"",
@@ -1998,8 +2120,7 @@ class ProvidersScreen final : public Screen
         lines.push_back(
             {"Address", c.builtin ? c.address : url::redact(c.address), th::kTextSecondary});
         if (const anime::ProviderState *state = app_.anime_registry().state(c.id))
-            for (const InfoLine &l :
-                 report_lines(anime::report_for(*state, anime::SourceClass::native_provider)))
+            for (const InfoLine &l : report_lines(provider_report(app_.anime_registry(), *state)))
                 lines.push_back(l);
         else
             lines.push_back({"", "Not loaded yet.", th::kTextMuted});
@@ -2120,7 +2241,7 @@ class ProviderHomeScreen final : public Screen
 
     [[nodiscard]] bool animating() const override
     {
-        return moving_ || searching_ || app_.anime_provider_loading(id_) ||
+        return moving_ || searching_ || checking_ || app_.anime_provider_loading(id_) ||
                app_.anime_more_loading(id_);
     }
     [[nodiscard]] std::string screen_id() const override
@@ -2148,6 +2269,14 @@ class ProviderHomeScreen final : public Screen
         p.status_line(th::kMarginX + (app_.anime_provider_loading(id_) ? 36 : 0), 240, color,
                       status, th::kBodyStrong, color);
         int x = th::kMarginX;
+        // What its episodes do here, first: no Play buttons unless it plays.
+        if (const anime::PlaybackClass playback = app_.anime_registry().playback_of(id_);
+            playback != anime::PlaybackClass::unknown || checking_)
+            x += p.chip(x, 292,
+                        checking_ ? std::string{"Checking playback..."}
+                                  : anime::playback_class_label(playback),
+                        gfx::with_alpha(playback_color(playback), 230), th::kTextOnAccent) +
+                 10;
         for (const std::string &line : capabilities(*c, state))
         {
             const int cw = p.measure(line, th::kSmall) + 32;
@@ -2270,6 +2399,23 @@ class ProviderHomeScreen final : public Screen
                 caps.native_playback =
                     state &&
                     anime::report_for(*state, anime::SourceClass::native_provider).playable > 0;
+                // A catalogue-only or website-only site claims seasons and
+                // episode lists only when an opened series has them.
+                const anime::PlaybackClass playback = app_.anime_registry().playback_of(id_);
+                if (playback == anime::PlaybackClass::catalogue_only ||
+                    playback == anime::PlaybackClass::browser_only)
+                {
+                    bool seasons = false, episodes = false;
+                    if (state)
+                        for (const anime::Series &s : state->series)
+                            if (!s.details_pending)
+                            {
+                                seasons = seasons || !s.seasons.empty();
+                                episodes = episodes || anime::episode_total(s) > 0;
+                            }
+                    caps.seasons = seasons;
+                    caps.episodes = episodes;
+                }
                 return anime::capability_lines(caps);
             }
         if (!state || !state->loaded)
@@ -2383,16 +2529,12 @@ class ProviderHomeScreen final : public Screen
             return;
         case ActionKind::check:
             app_.refresh_anime_provider(true, id_);
+            recheck();
             app_.toast("Checking " + c->name + " again...", th::kInfo);
             return;
         case ActionKind::website:
-        {
-            WebSession session;
-            session.url = c->address;
-            session.title = c->name;
-            app_.open_web(std::move(session));
+            open_on_website(app_, *c, c->address, c->name);
             return;
-        }
         case ActionKind::toggle:
         {
             const bool on = !c->enabled;
@@ -2515,8 +2657,7 @@ class ProviderHomeScreen final : public Screen
             lines.push_back(
                 {"Address", c->builtin ? c->address : url::redact(c->address), th::kTextSecondary});
         if (const anime::ProviderState *state = app_.anime_registry().state(id_))
-            for (const InfoLine &l :
-                 report_lines(anime::report_for(*state, anime::SourceClass::native_provider)))
+            for (const InfoLine &l : report_lines(provider_report(app_.anime_registry(), *state)))
                 if (!l.label.empty())
                     lines.push_back(l);
         lines.push_back({"",
@@ -2525,6 +2666,44 @@ class ProviderHomeScreen final : public Screen
                          "protected streams and sign-ins stay in the browser.",
                          th::kTextMuted});
         app_.push(std::make_unique<InfoScreen>(app_, c->name, std::move(lines), "", nullptr));
+    }
+
+    // Check Again on a website provider runs the whole check again - catalogue,
+    // a few series, their videos - and keeps what it found its episodes do.
+    void recheck()
+    {
+        const anime::ProviderConfig *c = config();
+        if (!c || c->type != anime::ProviderType::website || checking_)
+            return;
+        checking_ = true;
+        const std::string address = c->original_url.empty() ? c->address : c->original_url;
+        const std::string name = c->name;
+        const anime::ProviderContext context = app_.anime_registry().context;
+        App &app = app_;
+        app_.jobs().run(
+            [address, name, context, alive = alive_, &app, this]
+            {
+                anime::ProviderReport report =
+                    anime::check_source(address, name, context, net::make_cancel_flag(), nullptr);
+                app.jobs().post(
+                    [report = std::move(report), alive, this]
+                    {
+                        if (!*alive)
+                            return;
+                        checking_ = false;
+                        app_.anime_registry().set_playback(id_, report.playback);
+                        const anime::PlaybackClass now = app_.anime_registry().playback_of(id_);
+                        app_.toast(name_of() + ": " + anime::playback_class_label(now),
+                                   playback_color(now));
+                        rebuild();
+                    });
+            });
+    }
+
+    [[nodiscard]] std::string name_of() const
+    {
+        const anime::ProviderConfig *c = config();
+        return c ? c->name : std::string{};
     }
 
     void ask_remove()
@@ -2561,6 +2740,7 @@ class ProviderHomeScreen final : public Screen
     int action_ = 0;
     int token_ = 0;
     bool searching_ = false;
+    bool checking_ = false;
     bool moving_ = false;
     bool more_ = false;
     std::uint64_t generation_ = static_cast<std::uint64_t>(-1);
@@ -2673,8 +2853,11 @@ class AddProviderScreen final : public Screen
                        th::kAccentAnime, Icon::search) +
               18;
         const bool can_add = report_ && report_->importable;
-        p.button(bx, y + 6, existing_.empty() ? "Add Provider" : "Open Provider", row_ == 4,
-                 can_add || !existing_.empty() ? th::kSuccess : th::kTextMuted,
+        p.button(bx, y + 6,
+                 !existing_.empty()   ? "Open Provider"
+                 : catalogue_report() ? "Add as Catalogue"
+                                      : "Add Provider",
+                 row_ == 4, can_add || !existing_.empty() ? th::kSuccess : th::kTextMuted,
                  existing_.empty() ? Icon::check : Icon::play);
         // Where the flow is.
         const char *steps[] = {"1  Address", "2  Detect", "3  Review", "4  Add"};
@@ -2702,6 +2885,14 @@ class AddProviderScreen final : public Screen
     }
 
   private:
+    // A report whose provider can be added as a catalogue only: series and
+    // details, no Play buttons.
+    [[nodiscard]] bool catalogue_report() const
+    {
+        return report_ && report_->importable && !anime::plays_natively(report_->playback) &&
+               report_->playback != anime::PlaybackClass::unknown;
+    }
+
     static Pixel hex_pixel(std::uint32_t rgb)
     {
         return gfx::rgba(static_cast<std::uint8_t>(rgb >> 16), static_cast<std::uint8_t>(rgb >> 8),
@@ -2741,16 +2932,20 @@ class AddProviderScreen final : public Screen
         }
         const anime::ProviderReport &r = *report_;
         const bool ok = r.importable || !existing_.empty();
-        std::string heading = !existing_.empty() ? "Already one of your providers"
-                              : r.importable
-                                  ? (r.adapter.empty() ? "A streaming provider" : "Recognised")
-                                  : "Not a streaming provider";
+        std::string heading =
+            !existing_.empty() ? "Already one of your providers"
+            : catalogue_report()
+                ? (r.playback == anime::PlaybackClass::browser_only ? "Website only"
+                                                                    : "Catalogue only")
+            : r.importable ? (r.adapter.empty() ? "A streaming provider" : "Recognised")
+                           : "Not a streaming provider";
         if (r.importable && !r.name.empty())
             heading += ": " + r.name;
         p.text(x, panel.y + 24, heading, th::kHeading, ok ? th::kSuccess : th::kWarning, w);
         int y = panel.y + 84;
-        // Posters of the first series: what Add brings in.
-        if (!r.preview_art.empty() && r.importable)
+        // Posters of the first series: what Add brings in (a known website's
+        // reasons come first instead).
+        if (!r.preview_art.empty() && r.importable && r.known_site.empty())
         {
             int px = x;
             for (std::size_t i = 0; i < r.preview_art.size() && i < 5; ++i)
@@ -3042,9 +3237,14 @@ void show_provider_report(App &app, const anime::ProviderReport &report,
             else
                 app.toast(why, th::kWarning);
         };
+    const bool catalogue = report.importable && !anime::plays_natively(report.playback) &&
+                           report.playback != anime::PlaybackClass::unknown;
     app.push(std::make_unique<InfoScreen>(
-        app, report.importable ? "A native streaming provider" : "Not a streaming provider",
-        std::move(lines), "Add to Anime", std::move(import)));
+        app,
+        catalogue           ? "A catalogue (no playback here)"
+        : report.importable ? "A native streaming provider"
+                            : "Not a streaming provider",
+        std::move(lines), catalogue ? "Add as Catalogue" : "Add to Anime", std::move(import)));
 }
 
 std::unique_ptr<Screen> make_crunchyroll_native_screen(App &app)

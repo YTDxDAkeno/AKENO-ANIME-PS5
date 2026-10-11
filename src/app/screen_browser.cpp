@@ -10,6 +10,7 @@
 // after. For AKENO STREAM's own pages (official YouTube player, capability
 // test) it also runs the loopback page server and turns the pages' reports
 // into per-capability results.
+#include "anime/site_policy.hpp"
 #include "app/screens.hpp"
 #include "core/fs.hpp"
 #include "core/json.hpp"
@@ -58,6 +59,11 @@ class BrowserScreen final : public Screen
     {
         app_.set_browser_active(true);
         host_ = s_.kind == WebSession::Kind::website ? web::display_host(s_.url) : "AKENO STREAM";
+        // A website known to start its videos only one way here (Miruro:
+        // with its own Autoplay on) says so while the browser opens.
+        if (s_.kind == WebSession::Kind::website)
+            if (const auto site = anime::known_site(s_.url))
+                site_hint_ = site->browser_hint;
         if (s_.check_first && s_.kind == WebSession::Kind::website)
             probe();
         else
@@ -211,10 +217,13 @@ class BrowserScreen final : public Screen
                            "browser to come back here.",
                            th::kBody, th::kTextSecondary, tw, 4) +
                  24;
-            p.wrapped(tx, y,
-                      "Your sign-ins stay inside the browser: AKENO STREAM never sees passwords, "
-                      "cookies or what you type on websites.",
-                      th::kCaption, th::kTextMuted, tw, 2);
+            y += p.wrapped(tx, y,
+                           "Your sign-ins stay inside the browser: AKENO STREAM never sees "
+                           "passwords, cookies or what you type on websites.",
+                           th::kCaption, th::kTextMuted, tw, 2) +
+                 18;
+            if (!site_hint_.empty())
+                p.wrapped(tx, y, site_hint_, th::kBodyStrong, th::kInfo, tw, 2);
             p.wrapped(tx, panel.bottom() - 70,
                       "If the browser offers no way out: press L3 and R3 together. Avoid the "
                       "PS button while the browser is open.",
@@ -630,6 +639,7 @@ class BrowserScreen final : public Screen
 
     WebSession s_;
     std::string host_;
+    std::string site_hint_; // a known website: how to watch it in the browser
     Phase phase_ = Phase::opening;
     bool drawn_ = false;
     bool owns_pages_ = false;

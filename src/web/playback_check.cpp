@@ -74,6 +74,8 @@ const char *seen_id(Seen seen) noexcept
         return "format-message";
     case Seen::embed_message:
         return "embed-message";
+    case Seen::autoplay_only:
+        return "autoplay-only";
     case Seen::not_tested:
         break;
     }
@@ -106,6 +108,8 @@ const char *seen_label(Seen seen) noexcept
         return "\"Format not supported\", or no picture / no sound";
     case Seen::embed_message:
         return "\"Not allowed on this site\" / embedding disabled";
+    case Seen::autoplay_only:
+        return "It starts only with the site's own Autoplay on";
     case Seen::not_tested:
         break;
     }
@@ -130,6 +134,8 @@ const char *seen_hint(Seen seen) noexcept
         return "The player names the format or the browser as the problem";
     case Seen::embed_message:
         return "The video's owner or host refuses playback inside other pages";
+    case Seen::autoplay_only:
+        return "Play does nothing; with Autoplay on in the site's player, videos start and play";
     case Seen::not_tested:
         break;
     }
@@ -158,6 +164,8 @@ const char *state_label(PlaybackState state) noexcept
         return "Embedding denied";
     case PlaybackState::undetermined:
         return "Not determined";
+    case PlaybackState::start_blocked:
+        return "Starts only by itself (Autoplay)";
     case PlaybackState::not_tested:
         break;
     }
@@ -314,8 +322,50 @@ LabFacts lab_facts(const WebTestLog &lab)
         f.drm = Outcome::unknown;
         break;
     }
+    f.autoplay_sound = outcome_of(lab, "playback.autoplay_sound");
+    f.autoplay_attribute = outcome_of(lab, "start.autoplay_attribute");
+    f.press_sync = outcome_of(lab, "start.press_sync");
+    f.press_after_load = outcome_of(lab, "start.press_after_load");
+    f.press_delayed = outcome_of(lab, "start.press_delayed");
+    f.press_frame = outcome_of(lab, "start.press_frame");
+    if (const TestRecord *r = lab.get("start.press_events"))
+        f.press_events = r->detail;
     f.measured = lab.get("captest.finished") != nullptr;
     return f;
+}
+
+std::string start_meaning(const LabFacts &f)
+{
+    const bool by_itself = f.autoplay_sound == Outcome::yes || f.autoplay_attribute == Outcome::yes;
+    if (f.press_sync == Outcome::unknown && f.press_after_load == Outcome::unknown)
+        return by_itself ? "Pages may start video with sound by themselves. Whether a press on a "
+                           "page's Play button starts video is not measured yet: run \"Test a "
+                           "Play button\" in the playback lab."
+                         : "Whether a press on a page's Play button starts video is not measured "
+                           "yet: run \"Test a Play button\" in the playback lab.";
+    std::string out;
+    if (by_itself)
+        out = "Pages may start video with sound by themselves.";
+    if (f.press_sync == Outcome::no)
+        out += std::string{out.empty() ? "" : " "} +
+               (f.press_events.find("no click") != std::string::npos
+                    ? "A controller press on a page button sent no click event (" + f.press_events +
+                          "): a Play button waiting for a click never starts."
+                    : "A press on a page's Play button did not start video (" +
+                          (f.press_events.empty() ? std::string{"events not recorded"}
+                                                  : f.press_events) +
+                          ").");
+    else if (f.press_sync == Outcome::yes)
+        out += std::string{out.empty() ? "" : " "} +
+               "A press on a page's Play button starts video at once (" + f.press_events + ").";
+    if (f.press_sync == Outcome::yes && f.press_after_load == Outcome::no)
+        out += " After the page loads the video first, the same press no longer counts: "
+               "players that fetch their stream after the press are refused.";
+    if (f.press_sync == Outcome::yes && f.press_delayed == Outcome::no)
+        out += " 1.5 s after the press it no longer counts either.";
+    if (f.press_frame == Outcome::no)
+        out += " A press inside another site's frame did not start its video.";
+    return out;
 }
 
 std::string lab_meaning(const LabFacts &f)
@@ -353,8 +403,65 @@ std::string lab_meaning(const LabFacts &f)
         say("A DRM system is offered to pages.");
     else
         say("DRM is not measured yet - run the secure DRM check.");
+    if (const std::string start = start_meaning(f); !start.empty())
+        say(start.c_str());
     return out;
 }
+
+namespace
+{
+// The video plays once it has started - decoding, sound and the streaming
+// player work - so only how it is started differs: the lab's Play button
+// tests decide what is measured.
+Classification classify_start(const PlaybackCheck &check, const LabFacts &lab)
+{
+    Classification c;
+    c.state = PlaybackState::start_blocked;
+    const std::string keep = " Keep the site's own Autoplay on: it is what starts the video here.";
+    if (lab.press_sync == Outcome::no && lab.press_events.find("no click") != std::string::npos)
+    {
+        c.measured = true;
+        c.reason = "Measured: a controller press on a page button sent no click event (" +
+                   lab.press_events +
+                   "), so a player that waits for a click on its Play button never starts." + keep;
+    }
+    else if (lab.press_sync == Outcome::no)
+    {
+        c.measured = true;
+        c.reason = "Measured: the browser did not start a video from a press on a page's Play "
+                   "button, while video that starts by itself plays." +
+                   keep;
+    }
+    else if (lab.press_sync == Outcome::yes &&
+             (lab.press_after_load == Outcome::no || lab.press_delayed == Outcome::no))
+    {
+        c.measured = true;
+        c.reason = "Measured: a press starts video only when the page plays at once; a player "
+                   "that first loads its stream after the press is refused by the browser." +
+                   keep;
+    }
+    else if (lab.press_sync == Outcome::yes && lab.press_frame == Outcome::no)
+    {
+        c.measured = true;
+        c.reason = "Measured: a press starts video in a page but not inside another site's "
+                   "frame, where this site's player may run." +
+                   keep;
+    }
+    else if (lab.press_sync == Outcome::yes && lab.press_after_load == Outcome::yes &&
+             lab.press_delayed == Outcome::yes)
+        c.reason = "Likely: the lab's Play button tests pass, so the browser lets a press start "
+                   "video; the site's Play button probably never receives the controller's press "
+                   "(a control the cursor or D-pad does not reach, or one that waits for "
+                   "another kind of event)." +
+                   keep;
+    else
+        c.reason = "Not determined: run \"Test a Play button\" in the playback lab on this "
+                   "console, then look here again." +
+                   keep;
+    c.reason = with_code(c.reason, check);
+    return c;
+}
+} // namespace
 
 Classification classify(const PlaybackCheck &check, bool drm_expected, const LabFacts &lab)
 {
@@ -386,6 +493,8 @@ Classification classify(const PlaybackCheck &check, bool drm_expected, const Lab
                              "Nothing on the console can change that.",
                              check);
         return c;
+    case Seen::autoplay_only:
+        return classify_start(check, lab);
     default:
         break;
     }

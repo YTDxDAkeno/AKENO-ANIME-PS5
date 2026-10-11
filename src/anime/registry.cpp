@@ -4,6 +4,7 @@
 #include "anime/registry.hpp"
 
 #include "anime/address.hpp"
+#include "anime/site_policy.hpp"
 #include "anime/website.hpp"
 #include "core/fs.hpp"
 #include "core/json.hpp"
@@ -325,6 +326,9 @@ bool Registry::add(ProviderConfig c, std::string *why, std::string *existing, st
     const auto u = url::parse(c.address);
     if (!u || !u->is_http())
         return fail("A provider needs an http(s) address.");
+    for (const std::string &address : {c.address, c.original_url})
+        if (const auto policy = unsupported_site(address))
+            return fail(policy->verdict);
     if (c.type == ProviderType::bundled)
         c.type = ProviderType::catalog;
     const bool website = c.type == ProviderType::website;
@@ -435,6 +439,39 @@ void Registry::set_summary(std::string_view id, int series, int episodes)
         }
 }
 
+void Registry::set_playback(std::string_view id, PlaybackClass playback)
+{
+    for (ProviderConfig &c : configs_)
+        if (c.id == id && c.type == ProviderType::website && playback != PlaybackClass::unknown &&
+            c.playback != playback)
+        {
+            c.playback = playback;
+            c.checked = platform::wall_clock_seconds();
+            (void)save(ProviderType::website);
+        }
+}
+
+PlaybackClass Registry::playback_of(std::string_view id) const
+{
+    const ProviderConfig *c = config(id);
+    if (!c)
+        return PlaybackClass::unknown;
+    PlaybackClass now = c->playback;
+    if (const ProviderState *s = state(id); s && s->loaded)
+    {
+        const PlaybackClass loaded = report_for(*s, SourceClass::native_provider).playback;
+        const bool opened = std::any_of(s->series.begin(), s->series.end(),
+                                        [](const Series &x) { return !x.details_pending; });
+        if (plays_natively(loaded) || c->type != ProviderType::website ||
+            (opened && now == PlaybackClass::unknown))
+            now = loaded;
+    }
+    if (!plays_natively(now))
+        if (const auto site = known_site(c->address))
+            now = site->playback;
+    return now;
+}
+
 void Registry::set_anilist_id(std::string_view id, int anilist_id)
 {
     for (ProviderConfig &c : configs_)
@@ -454,6 +491,14 @@ ProviderState Registry::load_provider(const ProviderConfig &config, const Provid
 {
     ProviderState state;
     state.config = config;
+    // A provider entry for a site that cannot be one (written by hand): its
+    // site is never contacted.
+    for (const std::string &address : {config.address, config.original_url})
+        if (const auto policy = unsupported_site(address))
+        {
+            state.error = policy->verdict;
+            return state;
+        }
     const auto provider = make_provider(config, context);
     LoadedCatalog loaded = provider->load(cancel);
     state.errors = std::move(loaded.errors);
@@ -767,10 +812,14 @@ ProviderReport report_for(const ProviderState &state, SourceClass base)
     }
     else if (r.with_media == 0)
     {
+        // A catalogue: it may be added as one - series and details, never a
+        // Play button (PlaybackClass::catalogue_only).
         r.source = SourceClass::metadata;
-        r.importable = false;
-        r.verdict = "The source lists series and episodes but no video for any of them: it is a "
-                    "catalogue, not a streaming provider.";
+        r.importable = r.series > 0;
+        r.verdict = r.series > 0 ? "The source lists series but no video for any episode. It can "
+                                   "be added as a catalogue: its series and details, without Play "
+                                   "buttons."
+                                 : "The source lists no series.";
     }
     else if (blocked > 0 && r.network == 0 && r.missing == 0)
     {
@@ -794,6 +843,7 @@ ProviderReport report_for(const ProviderState &state, SourceClass base)
         r.verdict += " " + std::to_string(r.errors.size()) +
                      (r.errors.size() == 1 ? " entry was" : " entries were") +
                      " skipped because of errors.";
+    r.playback = classify_playback(r);
     return r;
 }
 
@@ -871,24 +921,52 @@ ProviderReport check_website(const SiteDetection &site, const std::string &enter
                          std::to_string(report.series) +
                          (report.series == 1 ? " entry" : " entries") +
                          ", but none of the checked ones names a video file AKENO STREAM may play "
-                         "(only a web player): the site stays in Websites (browser).";
+                         "(only web pages or web players). Add it as a catalogue: its series and "
+                         "details, without Play buttons; episodes stay on the website (Websites, "
+                         "the PS5 browser).";
     else if (report.importable && report.playable > 0)
         report.verdict = "Recognised as a " + site.format + ". " + std::to_string(report.playable) +
                          " of " + std::to_string(report.probed) +
                          " checked episodes play in AKENO STREAM's own player.";
+    report.playback = classify_playback(report);
     if (report.importable && config)
     {
         c.known_series = state.total > 0 ? state.total : static_cast<int>(state.series.size());
         c.known_episodes = report.episodes;
+        c.checked = platform::wall_clock_seconds();
         *config = c;
     }
     return report;
 }
-} // namespace
 
-ProviderReport check_source(const std::string &address, const std::string &name,
-                            const ProviderContext &context, const net::CancelFlag &cancel,
-                            ProviderConfig *config, int max_probes)
+// A known website (anime/site_policy.hpp): what the check found, then the
+// precise reason its episodes cannot play here and how to watch them on the
+// website. What it publishes as a catalogue can still be added as one.
+void apply_known_site(const KnownSite &site, ProviderReport &report)
+{
+    report.known_site = site.site;
+    report.browser_hint = site.browser_hint;
+    if (report.name.empty())
+        report.name = site.site;
+    if (plays_natively(report.playback))
+        return; // its pages named video files that were checked and play: they speak for it
+    report.playback = site.playback;
+    if (report.importable)
+        report.verdict = site.site + ": " + std::to_string(report.series) +
+                         " series from its pages can be added without Play buttons. Episodes "
+                         "play only on its website, in the PS5 browser.";
+    else
+        report.verdict = site.site + ": episodes play only on its website, in the PS5 browser. " +
+                         report.verdict;
+    for (const std::string &reason : site.reasons)
+        report.warnings.push_back({"", reason});
+    report.warnings.push_back({"", site.browser_hint});
+    report.warnings.push_back({"", "Investigation: " + site.document});
+}
+
+ProviderReport check_source_once(const std::string &address, const std::string &name,
+                                 const ProviderContext &context, const net::CancelFlag &cancel,
+                                 ProviderConfig *config, int max_probes)
 {
     ProviderReport report;
     const auto u = url::parse(address);
@@ -896,6 +974,20 @@ ProviderReport check_source(const std::string &address, const std::string &name,
     {
         report.source = SourceClass::unreachable;
         report.verdict = "Enter an http(s) address of a catalogue, channel or playlist.";
+        return report;
+    }
+    // A site investigated and found to offer no permitted way in: the reason,
+    // without a single request to it (anime/site_policy.hpp).
+    if (const auto policy = unsupported_site(address))
+    {
+        report.source = SourceClass::web_page;
+        report.format = policy->site + " (website)";
+        report.name = policy->site;
+        report.verdict = policy->verdict;
+        for (const std::string &reason : policy->reasons)
+            report.warnings.push_back({"", reason});
+        report.warnings.push_back({"", "Investigation: " + policy->document});
+        report.playback = PlaybackClass::unsupported;
         return report;
     }
     ProviderConfig c;
@@ -994,6 +1086,22 @@ ProviderReport check_source(const std::string &address, const std::string &name,
             c.name = report.name.empty() ? u->host : report.name;
         *config = c;
     }
+    return report;
+}
+} // namespace
+
+ProviderReport check_source(const std::string &address, const std::string &name,
+                            const ProviderContext &context, const net::CancelFlag &cancel,
+                            ProviderConfig *config, int max_probes)
+{
+    ProviderReport report = check_source_once(address, name, context, cancel, config, max_probes);
+    if (report.playback == PlaybackClass::unknown && report.source != SourceClass::unreachable)
+        report.playback = classify_playback(report);
+    if (!unsupported_site(address))
+        if (const auto site = known_site(address))
+            apply_known_site(*site, report);
+    if (config && report.importable)
+        config->playback = report.playback;
     return report;
 }
 } // namespace akeno::anime

@@ -216,6 +216,10 @@ StoredProviders ProviderFile::load(const std::set<std::string> &taken, std::size
             c.known_series = static_cast<int>(summary["series"].integer());
             c.known_episodes = static_cast<int>(summary["episodes"].integer());
             c.checked = static_cast<std::uint64_t>(std::max(0LL, summary["checked"].integer()));
+            // Written by 1.1.0 builds after rc.1 (rc.1 keeps it as it is); a value
+            // this version does not know reads as "not checked".
+            c.playback =
+                playback_class_from_id(summary["playback"].str()).value_or(PlaybackClass::unknown);
             const int supported_adapter = adapter_version ? adapter_version(c.adapter) : 0;
             if (!valid_website_id(id))
                 problem = label_of(entry) + " has no valid id; kept unchanged.";
@@ -289,12 +293,15 @@ json::Value ProviderFile::entry_for(const ProviderConfig &c) const
     for (const auto &[key, value] : c.settings)
         settings.set(key, value);
     p.set("settings", std::move(settings));
-    if (c.known_series || c.known_episodes || c.checked)
+    if (c.known_series || c.known_episodes || c.checked || c.playback != PlaybackClass::unknown)
     {
+        // A playback value this version does not know stays as it was.
         json::Value summary = without(before["catalogue"], {"series", "episodes", "checked"});
         summary.set("series", c.known_series);
         summary.set("episodes", c.known_episodes);
         summary.set("checked", static_cast<long long>(c.checked));
+        if (c.playback != PlaybackClass::unknown)
+            summary.set("playback", playback_class_id(c.playback));
         p.set("catalogue", std::move(summary));
     }
     return p;

@@ -240,11 +240,12 @@ std::string_view capability_page_html()
 <main>
 <div id="top"><button id="back" class="btn primary" type="button">&#9664; Back to AKENO</button>
 <button id="fs" class="btn" type="button">Test full screen</button>
+<button id="pb" class="btn" type="button">Test a Play button</button>
 <span id="progress">Testing...</span></div>
 <h1>Playback lab</h1>
 <p class="lead">What the PS5 browser inside AKENO STREAM can play: formats, streaming
 (MediaSource, HLS), encrypted video (Clear Key), video inside other sites' frames, DRM,
-storage and sound. Every test uses
+storage, sound, and whether a press on a page's Play button can start a video. Every test uses
 AKENO STREAM's own short clip on this console. The results are saved in AKENO STREAM
 (Websites &rarr; Playback Lab, and Settings &rarr; Diagnostics &rarr; Browser). Nothing else is
 sent anywhere.</p>
@@ -656,6 +657,130 @@ function framePlayback() {
   });
 }
 
+// 6. A video element with the autoplay attribute and sound: some players start
+// that way when the site's own Autoplay setting is on.
+var SG = 'Starting playback (autoplay and Play buttons)';
+function autoplayAttribute() {
+  step('Starting a video with the autoplay attribute...');
+  return new Promise(function (resolve) {
+    var v = makeVideo(), done = false;
+    v.muted = false; v.autoplay = true; v.setAttribute('autoplay', '');
+    function finish(status, detail) {
+      if (done) return; done = true;
+      add('start.autoplay_attribute', SG, 'Starts with sound from the autoplay attribute', status, detail);
+      dispose(v); resolve();
+    }
+    v.addEventListener('timeupdate', function () {
+      if (v.currentTime > 0.5) finish(v.muted ? 'partial' : 'yes', 'playing at ' + v.currentTime.toFixed(1) + ' s' + (v.muted ? ', muted by the browser' : ', not muted'));
+    });
+    v.addEventListener('error', function () { finish('unknown', 'media error: ' + mediaError(v)); });
+    setTimeout(function () {
+      finish(v.readyState >= 2 ? 'no' : 'unknown', v.readyState >= 2 ? 'loaded (readyState ' + v.readyState + ') but did not start by itself'
+                                                                     : 'did not load within 8 s');
+    }, 8000);
+    v.src = 'test.mp4';
+  });
+}
+
+// 7. A press on a page's Play button, as a site's player waits for one when
+// its own Autoplay is off: which events a controller press sends to the page,
+// and whether the browser lets the page start a video with sound at once,
+// after loading it first, and 1.5 s later. Its own button: it needs a press.
+var pbEvents = [], pbRunning = false, pbClickAt = 0, pbTimer = 0, pbVideo = null;
+function eventsSince(t) {
+  var out = [];
+  pbEvents.forEach(function (e) { if (e.t >= t && out[out.length - 1] !== e.name) out.push(e.name); });
+  return out.length ? out.join(' > ') : 'nothing';
+}
+['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'keyup', 'click'].forEach(function (type) {
+  $('pb').addEventListener(type, function (e) {
+    pbEvents.push({t: Date.now(), name: type + (type.indexOf('key') === 0 ? '(' + (e.key || e.keyCode) + ')' : '')});
+    if (pbEvents.length > 40) pbEvents.shift();
+    if (pbRunning || (type !== 'keydown' && type !== 'pointerdown' && type !== 'mousedown')) return;
+    // A press that never becomes a click is a result too.
+    var since = Date.now() - 50;
+    clearTimeout(pbTimer);
+    pbTimer = setTimeout(function () {
+      if (pbClickAt >= since) return;
+      report([add('start.press_events', SG, 'What a press on a page button sends', 'info', eventsSince(since) + ' (no click)'),
+              add('start.press_sync', SG, 'A press starts a video at once, with sound', 'no',
+                  'the press sent no click event: a page Play button waiting for a click never starts')], false);
+    }, 1500);
+  }, true);
+});
+function pressStart(v, id, name, note) {
+  return new Promise(function (resolve) {
+    var done = false;
+    function finish(status, detail) {
+      if (done) return; done = true;
+      report([add(id, SG, name, status, (note ? note + '; ' : '') + detail)], false);
+      dispose(v); resolve();
+    }
+    // Only a refusal (NotAllowedError) says the press did not count; a media
+    // error says nothing about the press.
+    v.addEventListener('timeupdate', function () {
+      if (v.currentTime > 0.3) finish(v.muted ? 'partial' : 'yes', v.muted ? 'started, but muted by the browser' : 'started with sound');
+    });
+    v.addEventListener('error', function () { finish('unknown', 'media error: ' + mediaError(v) + ' - the press could not be judged'); });
+    setTimeout(function () { finish('unknown', 'no progress after 8 s (readyState ' + v.readyState + ')'); }, 8000);
+    var p; try { p = v.play(); } catch (e) { finish(e.name === 'NotAllowedError' ? 'no' : 'unknown', 'play(): ' + e.name); return; }
+    if (p && p.then) p.then(null, function (e) {
+      var refused = e && e.name === 'NotAllowedError';
+      finish(refused ? 'no' : 'unknown', 'play() ' + (refused ? 'refused: NotAllowedError - not counted as started by the press' : 'failed: ' + (e && e.name)));
+    });
+  });
+}
+function preparePress() {
+  if (pbVideo) return;
+  pbVideo = makeVideo(); pbVideo.muted = false; pbVideo.src = 'test.mp4';
+}
+$('pb').addEventListener('focus', preparePress);
+$('pb').onclick = function () {
+  if (pbRunning) return;
+  pbRunning = true; pbClickAt = Date.now(); clearTimeout(pbTimer);
+  step('Testing a Play button press...');
+  var pressed = Date.now();
+  report([add('start.press_events', SG, 'What a press on a page button sends', 'info', eventsSince(pressed - 1500))], false);
+  preparePress();
+  var a = pbVideo; pbVideo = null; a.muted = false;
+  var tests = [pressStart(a, 'start.press_sync', 'A press starts a video at once, with sound', 'play() inside the click handler')];
+  tests.push(getBytes('test.mp4').then(function () {
+    var b = makeVideo(); b.muted = false; b.src = 'test.mp4';
+    return pressStart(b, 'start.press_after_load', 'A press starts a video the page loads first',
+                      'play() ' + (Date.now() - pressed) + ' ms after the press, once the file had loaded');
+  }, function (e) { add('start.press_after_load', SG, 'A press starts a video the page loads first', 'unknown', 'download: ' + e.message); }));
+  tests.push(wait(1500).then(function () {
+    var c = makeVideo(); c.muted = false; c.src = 'test.mp4';
+    return pressStart(c, 'start.press_delayed', 'A press starts a video 1.5 s later', 'play() ' + (Date.now() - pressed) + ' ms after the press');
+  }));
+  Promise.all(tests).then(framePress);
+};
+
+// 8. The same press inside a frame from another site, where many sites keep
+// their player.
+function framePress() {
+  var origin = 'http://localhost:' + location.port, name = 'A press inside another site\'s frame starts its video';
+  var f = document.createElement('iframe'), done = false;
+  function finish(status, detail) {
+    if (done) return; done = true;
+    report([add('start.press_frame', SG, name, status, String(detail || '').slice(0, 200))], false);
+    if (f.parentNode) f.parentNode.removeChild(f);
+    pbRunning = false;
+    step('Play button test done. Press it again to repeat, or go back.');
+    $('pb').focus();
+  }
+  window.addEventListener('message', function (e) {
+    if (e.origin !== origin || !e.data || e.data.akeno !== 'frame' || e.data.kind !== 'press') return;
+    finish(e.data.status, e.data.detail);
+  });
+  setTimeout(function () { finish('unknown', 'the frame\'s button was not pressed within 60 s'); }, 60000);
+  f.setAttribute('allow', 'autoplay; fullscreen');
+  f.width = 480; f.height = 270; f.style.border = '0';
+  f.src = origin + location.pathname.replace(/captest$/, 'frame') + '?press=1';
+  $('lab').appendChild(f);
+  step('Now press "Play in frame" inside the frame below (move to it with the cursor), or go back.');
+}
+
 // Full screen needs a button press, so it has its own button.
 $('fs').onclick = function () {
   var name = 'A video goes full screen';
@@ -693,9 +818,10 @@ storage()
   .then(function () { report(results, false); return clearKeyPlayback(); })
   .then(function () { report(results, false); return hlsNative(); })
   .then(function () { report(results, false); return framePlayback(); })
+  .then(function () { report(results, false); return autoplayAttribute(); })
   .then(function () {
     report(results, true);
-    step('Done: ' + results.length + ' results saved in AKENO STREAM. Try "Test full screen", then go back.');
+    step('Done: ' + results.length + ' results saved in AKENO STREAM. Try "Test full screen" and "Test a Play button", then go back.');
     $('back').focus();
   }, function (e) {
     add('captest.failed', 'Test', 'The test stopped', 'no', String(e));
@@ -726,12 +852,37 @@ var parentOrigin = 'http://127.0.0.1:' + location.port;
 function send(kind, status, detail) {
   try { parent.postMessage({akeno: 'frame', kind: kind, status: status, detail: String(detail || '').slice(0, 200)}, parentOrigin); } catch (e) {}
 }
+var v = document.getElementById('v'), done = false;
+// ?press=1: the parent's Play button test - start only on a press of this
+// frame's own button.
+if (location.search.indexOf('press=1') >= 0) {
+  var b = document.createElement('button'), pressed = false;
+  b.type = 'button'; b.className = 'btn primary'; b.textContent = 'Play in frame';
+  b.style.position = 'absolute'; b.style.left = '24px'; b.style.top = '24px';
+  document.body.appendChild(b);
+  v.muted = false; v.src = 'test.mp4';
+  var answer = function (status, detail) { if (done) return; done = true; send('press', status, detail); try { v.pause(); } catch (e) {} };
+  v.addEventListener('timeupdate', function () {
+    if (pressed && v.currentTime > 0.3) answer(v.muted ? 'partial' : 'yes', v.muted ? 'started inside the frame, muted by the browser' : 'started with sound inside the frame');
+  });
+  v.addEventListener('error', function () { answer('unknown', 'media error ' + (v.error ? v.error.code : '') + ' - the press could not be judged'); });
+  b.onclick = function () {
+    pressed = true;
+    var p; try { p = v.play(); } catch (e) { answer(e.name === 'NotAllowedError' ? 'no' : 'unknown', 'play(): ' + e.name); return; }
+    if (p && p.then) p.then(null, function (e) {
+      var refused = e && e.name === 'NotAllowedError';
+      answer(refused ? 'no' : 'unknown', 'play() ' + (refused ? 'refused: NotAllowedError' : 'failed: ' + (e && e.name)));
+    });
+    setTimeout(function () { answer('unknown', 'no progress 8 s after the press (readyState ' + v.readyState + ')'); }, 8000);
+  };
+  b.focus();
+  return;
+}
 send('loaded', 'info', '');
 var stamp = String(Date.now());
 try { document.cookie = 'akeno_frame=' + stamp + '; Path=/'; } catch (e) {}
 var kept = document.cookie.indexOf('akeno_frame=' + stamp) >= 0;
 send('cookies', kept ? 'yes' : 'no', kept ? 'a frame from another site may set cookies' : 'blocked: players in frames cannot keep sign-ins');
-var v = document.getElementById('v'), done = false;
 function finish(status, detail) { if (done) return; done = true; send('result', status, detail); try { v.pause(); } catch (e) {} }
 v.addEventListener('timeupdate', function () { if (v.currentTime > 1.0) finish('yes', 'reached ' + v.currentTime.toFixed(1) + ' s'); });
 v.addEventListener('error', function () { finish('no', 'media error ' + (v.error ? v.error.code : '')); });

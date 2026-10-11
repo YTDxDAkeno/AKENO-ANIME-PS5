@@ -10,6 +10,7 @@
 #include "app/screens.hpp"
 #include "canned_api.hpp"
 #include "core/fs.hpp"
+#include "catalogue_site.hpp"
 #include "fixture_site.hpp"
 #include "host_web_view.hpp"
 #include "net/http.hpp"
@@ -95,6 +96,8 @@ int main()
     net::set_test_transport(
         [](const net::Request &request)
         {
+            if (auto r = test::serve_catalogue_site(request))
+                return *r;
             if (auto r = test::serve_fixture_site(site, request))
                 return *r;
             return test::canned_transport(request);
@@ -239,6 +242,29 @@ int main()
     shot(app, "53-provider-playback");
     press(app, input::Button::circle); // stop
     press(app, input::Button::circle); // the provider's home
+    press(app, input::Button::circle); // Anime
+    // Anikoto: why it cannot be a provider (no request is sent to it).
+    app.push(make_add_provider_screen(app, "https://anikototv.to/"));
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "54-provider-anikoto");
+    press(app, input::Button::circle);
+    // Miruro (a made-up catalogue at its address, offline): added as a
+    // website-only catalogue - no Play buttons, its series open on the website.
+    app.push(make_add_provider_screen(app, test::kCatalogueSite));
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "55-provider-miruro");
+    press(app, input::Button::cross); // Add as Catalogue: its home opens
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "56-provider-website-only");
+    press(app, input::Button::down);
+    press(app, input::Button::cross); // a series: details, Open on Website
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "57-provider-website-only-series");
+    press(app, input::Button::circle); // its home
     press(app, input::Button::circle); // Anime
     press(app, input::Button::left, 3);
     press(app, input::Button::down); // AniList: Trending Anime

@@ -3,6 +3,66 @@
 AKENO STREAM for PS5 (`PPSA99276`). Versions are `MAJOR.MINOR.PATCH`; release
 candidates are tagged `vX.Y.Z-rc.N` and published as GitHub pre-releases.
 
+## Unreleased
+
+### Miruro investigated: a website-only catalogue; the Play button diagnosis
+
+- [docs/MIRURO.md](docs/MIRURO.md): what the console results with Miruro's
+  Autoplay setting show (the browser plays Miruro's video once started:
+  decoding, sound, seeking and the streaming player work; only the start
+  differs), four hypotheses for why Autoplay off does not start, Miruro's
+  architecture from two unofficial API projects (AniList for metadata; a
+  private, Cloudflare-protected, obfuscated interface for episodes and
+  streams; third-party hosts that check the Referer, through an encoded
+  proxy), and why native playback is not possible or permitted. No Miruro
+  episode plays in AKENO STREAM's player, and none is claimed.
+- **Playback labels** for every provider: *Plays in AKENO*, *Partly plays in
+  AKENO*, *Catalogue only*, *Website only (PS5 browser)*, *Protected (DRM or
+  sign-in)*, *Not supported*, *Not checked yet* - in *Add Streaming
+  Provider*, on provider cards, provider homes and series. Only playable
+  providers have Play buttons; series of the others have no Play action or
+  "Play" hint.
+- **Add as Catalogue**: a site whose series can be read but whose episodes
+  name no video file AKENO STREAM may play can now be added as a catalogue
+  (series and details, no Play buttons) instead of being refused. The label
+  is saved as `catalogue.playback` in `anime-website-providers.json`
+  (rc.1 keeps it; an unknown value is kept as it is).
+- **Miruro** (`miruro.to`, `.tv`, `.bz`, `.ru`, `miruro.com`; not look-alike
+  domains) is recognised: its published schema.org catalogue is added as
+  *Website only*, with the precise reasons, and its series offer **Open on
+  Website** (the series' own page in the PS5 browser). Opening a Miruro page
+  shows "Watch it ... with Autoplay on in Miruro's player". Only its public
+  pages are ever requested.
+- *Check Again* on a website provider runs the whole check again and updates
+  its label.
+- **Playback Lab: Test a Play button** - the events one controller press
+  sends to a page button, and whether the browser starts a video with sound
+  from that press at once, after loading it first, 1.5 s later and inside
+  another origin's frame; plus `<video autoplay>` with sound. A new answer
+  when recording a site's video, "It starts only with the site's own
+  Autoplay on", gives the state *Starts only by itself (Autoplay)* with the
+  measured or likely cause. Settings -> Diagnostics -> Browser and the
+  exported report add a "Starting playback" summary and each site's record
+  (host names only).
+
+### Anikoto investigated: not a permitted provider
+
+- [docs/ANIKOTO.md](docs/ANIKOTO.md): what three Anikoto projects
+  (zainaqdas/anikoto-api, Shineii86/AniKotoAPI, hexxt-git/anime-sdk) do for
+  catalogue, search, details, seasons, episodes and playback, and why AKENO
+  STREAM cannot use any of it: no documented or authorized API, scraping of
+  pages and private endpoints the site blocks for automated clients (one
+  project recommends a Cloudflare challenge solver), and streams obtainable
+  only by forging `Referer`/`Origin` headers against third-party players. No
+  authorized DRM-free media exists, so no playback proof of concept was built
+  and no Play button exists.
+- *Add Streaming Provider* and *Websites -> Check for native streaming*
+  recognise Anikoto's domains (`anikototv.to`, `anikoto.*`, mirrors) and give
+  that reason at once, **without a request to the site**; adding it is
+  refused; a provider entry written for it by hand is kept but never
+  contacted. Anikoto still opens in *Websites* as before. All other providers
+  are unchanged.
+
 ## 1.1.0 (release candidate 1: `v1.1.0-rc.1`)
 
 `contentVersion` 01.110.000. Host-tested (fixture website, controller-driven
