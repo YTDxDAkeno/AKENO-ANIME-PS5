@@ -196,6 +196,7 @@ websites.
 | DRM (EME) | EME present; Widevine, PlayReady, FairPlay, Clear Key key systems |
 | Audio | Web Audio |
 | Playback (AKENO's clip) | MP4 file plays, audio decoded, starts with sound / muted without a click; **fragmented MP4 through MediaSource** (as HLS.js, DASH and Shaka do); **the clip encrypted with Clear Key through EME** (`assets/selftest/h264-aac-360p-cenc.m4s`, ISO 'cenc'; Clear Key is the W3C test key system, its key is published in the page and protects nothing - "yes" only when the decrypted clip plays, "unknown" when Clear Key is not offered); an HLS playlist natively; video inside a frame from another origin; full screen on a button press |
+| Starting playback | A `<video autoplay>` with sound starts without a press. **Test a Play button** (its own button, it needs a press): the events one Cross press sends to a page button (for example `keydown(Enter) > click`, or "no click"), and whether the browser starts a video with sound from that press at once, after loading the file first, 1.5 s later, and inside a frame from another origin. Only a refusal (`NotAllowedError`) or a press without a click is "no"; a media error is "unknown" |
 | Controller | The keys the page receives when you press buttons |
 
 The results are saved in `web-tests.json` and appear in the Playback Lab,
@@ -207,11 +208,17 @@ refused, timed-out or unanswered test is "no" or "unknown" with its reason.
 
 Square on a website → *Record video playback* (or *Record video* on its
 mode) asks what you saw: plays, page did not load, no player, the player
-never starts, an error message (with its code), a format message, or "not
-allowed here". AKENO combines it with the lab into one of eight states -
-works, page failed, player failed to initialize, no compatible resource,
-codec unsupported, media API unsupported, DRM unavailable, embedding denied -
-or "not determined" when the evidence does not decide. A state that rests on
+never starts, an error message (with its code), a format message, "not
+allowed here", or **"it starts only with the site's own Autoplay on"** (as
+Miruro on firmware 12.20). AKENO combines it with the lab into one of nine
+states - works, page failed, player failed to initialize, no compatible
+resource, codec unsupported, media API unsupported, DRM unavailable,
+embedding denied, **starts only by itself (Autoplay)** - or "not determined"
+when the evidence does not decide. For the Autoplay case the *Test a Play
+button* results decide whether the cause is measured (the press sent no
+click; the browser refuses press-started video; the press stops counting
+once the page loads the video first or later; or inside another site's
+frame) - see [MIRURO.md](MIRURO.md#3-why-autoplay-off-does-not-start-hypotheses). A state that rests on
 a measurement says so; a likely one says "likely". Records are kept per host
 name in `playback-checks.json`.
 

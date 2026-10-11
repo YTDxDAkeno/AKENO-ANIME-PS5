@@ -41,8 +41,30 @@ downloaded or run at run time.
      region, missing, unreachable, unsupported - up to 12 episodes);
    - *Found*: the evidence (`/api/v1/config: PeerTube 7.2.1`, `JSON-LD: 1
      ItemList, 1 WebSite`, `Search: SearchAction ...`).
-4. **Add Provider** (enabled when the site is a provider with playable
-   episodes) opens the provider's home.
+   - *In AKENO*: what its episodes do here - one of the playback labels
+     below.
+4. **Add Provider** (a site with playable episodes) or **Add as Catalogue**
+   (a site whose series can be read but whose episodes cannot play here)
+   opens the provider's home.
+
+### Playback labels
+
+Every provider says what its episodes do in AKENO STREAM - in the detection
+panel, on its card, on its home and on its series. Only the first two ever
+come with a Play button:
+
+| Label | Meaning |
+| --- | --- |
+| **Plays in AKENO** | The checked episodes play in AKENO STREAM's own player. |
+| **Partly plays in AKENO** | Some checked episodes play; the others say why not (DRM, sign-in, region, missing). |
+| **Catalogue only** | Series and details only: no episode names a video file AKENO STREAM may play. Added on request with *Add as Catalogue*; no Play buttons. |
+| **Website only (PS5 browser)** | A known website whose episodes play only on its own pages ([Miruro](MIRURO.md)). Series and details, no Play buttons; **Open on Website** opens a series' own page in the PS5 browser - the site's player, not AKENO STREAM's. |
+| **Protected (DRM or sign-in)** | Every checked episode needs DRM, a sign-in or another region. Not added. |
+| **Not supported** | No adapter reads it, or it offers no permitted way in ([Anikoto](ANIKOTO.md)). Not added. |
+| **Not checked yet** | Its videos have not been checked (or could not be reached); each is checked before it plays. |
+
+**Check Again** on a website provider's home runs the whole check again and
+updates its label, for a site that starts (or stops) publishing video files.
 
 An address that is already one of your providers - typed differently
 (`http://`, `www.`, a trailing `/`, the default port) or one that redirects to
@@ -60,7 +82,9 @@ card at the end of *Anime -> Your Anime Sources*:
   among the titles listed so far;
 - **Load More**: the next catalogue page (also the last card of the
   catalogue);
-- **Check Again**, **Open Website** (the site in the browser), **Turn Off /
+- the playback label as the first chip;
+- **Check Again** (the catalogue and the whole check, which updates the
+  label), **Open Website** (the site in the browser), **Turn Off /
   Turn On** (kept but not loaded), **Details** (Options: adapter, addresses,
   status, the storage file and what was checked) and **Remove** (Square);
 - *Available to Watch* and the **Catalogue** in rows of twelve.
@@ -70,7 +94,9 @@ episodes load from the site then (and a few episodes are checked). If the
 site cannot be read, the series says why and offers **Try Again**. Episodes
 play in AKENO's native player with subtitles, previous/next episode, *Up
 next* and resume, like every other provider; progress and the watchlist are
-kept per provider.
+kept per provider. A series of a catalogue-only or website-only provider has
+no Play action and no "Play" hint; it offers **Open on Website** (its page as
+the site's own data names it).
 
 *Websites -> (a saved site) -> Check for native streaming* runs the same
 detection on a saved website and offers *Add to Anime* when it is a provider.
@@ -115,10 +141,18 @@ are web players on other hosts whose streams answer only forged `Referer`
 headers. *Add Streaming Provider* recognises its domains and says so at once,
 without a request to the site (`src/anime/site_policy.cpp`).
 
+**Miruro** was investigated too ([MIRURO.md](MIRURO.md)): its pages publish
+their catalogue as schema.org data, which AKENO STREAM reads like any site's
+and can add as **Website only** - but its episodes come through a private
+interface behind Cloudflare's bot protection, from third-party hosts that
+check the Referer. No episode plays in AKENO STREAM's player; they play in the
+PS5 browser, with Autoplay on in Miruro's player.
+
 The structured-data adapter depends on what a site publishes. Many sites
 describe their series with schema.org but name no video file (only a web
-player): AKENO then lists the catalogue in the detection panel and explains
-that the site stays in *Websites*; it is not added.
+player): the detection panel says so, labels the site **Catalogue only**, and
+offers *Add as Catalogue* - its series and details, without Play buttons. Its
+episodes stay in *Websites*.
 
 ## Storage and rolling back to 1.0.0
 
@@ -187,7 +221,7 @@ an interrupted write leaves the previous file in place. The data backup
 | `enabled` | `false`: kept, not loaded (*Turn Off*). |
 | `added` | Unix seconds. |
 | `settings` | The adapter's own configuration: `host` (PeerTube); `catalogue` (the catalogue page) and `search` (the search address, `AKENOQUERY` marks the query) for structured data. |
-| `catalogue` | Optional: what the last check found (series, opened episodes, Unix seconds). |
+| `catalogue` | Optional: what the last check found (series, opened episodes, Unix seconds) and, after rc.1, `playback`: `native`, `partial`, `catalogue-only`, `browser-only`, `protected` or `unsupported`. A value a version does not know reads as "not checked" and is kept as it is. |
 
 ## For site owners: being readable by the structured-data adapter
 

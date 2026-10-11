@@ -415,7 +415,9 @@ redacted.
   12.20). Typical causes are a player that refuses this browser, a video host
   that forbids playback inside other sites' frames, or a missing streaming
   feature; record it with *Record video playback* and compare with the
-  Playback Lab. AKENO adds no site-specific extractors.
+  Playback Lab. AKENO adds no site-specific extractors. Miruro plays in the
+  browser on 12.20 only with Autoplay on in its own player; the Playback
+  Lab's *Test a Play button* measures why ([docs/MIRURO.md](docs/MIRURO.md)).
 - MP3 audio inside MPEG-TS is not supported (the stream plays without audio
   with a notice); MP2 is.
 - Video: H.264 and HEVC (8/10-bit 4:2:0). VP9/AV1 are not supported.
@@ -429,7 +431,11 @@ redacted.
   structured data naming video files); Aniworld, AnikotoTV, Crunchyroll and
   similar sites have no adapter and stay in Websites. Anikoto was
   investigated and offers no permitted way in; AKENO says why
-  ([docs/ANIKOTO.md](docs/ANIKOTO.md)). The bundled test series
+  ([docs/ANIKOTO.md](docs/ANIKOTO.md)). Miruro's published catalogue can be
+  added as *Website only*: series and details without Play buttons, its
+  episodes on the website in the browser ([docs/MIRURO.md](docs/MIRURO.md)).
+  Every provider is labelled with what its episodes do in AKENO (*Plays in
+  AKENO*, *Catalogue only*, *Website only* ...). The bundled test series
   is synthetic test material, not anime. No site-specific scrapers are
   included or planned.
 - Third-party test streams can disappear at any time.

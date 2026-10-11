@@ -438,6 +438,63 @@ site used ______
 
 Result: ______ passed, ______ failed, ______ not tested.
 
+## 14. Miruro test build: the Play button diagnosis and website-only providers
+
+For the 1.1.0 test build after rc.1 ([MIRURO.md](MIRURO.md)). Your earlier
+Miruro results (Autoplay off: no start; on: plays, pause/seek/sound work, the
+setting survives a restart) are recorded there and are **not** repeated here.
+Items 1-5 find out *why* Autoplay off does not start; the rest check the new
+labels. Nothing here plays a Miruro episode in AKENO STREAM's own player:
+there is none to play.
+
+Firmware ______ · build label (Settings, bottom right) ______
+
+1. [ ] **critical** Install over 1.1.0-rc.1 (copy the folder). Your providers,
+       websites and Miruro's Autoplay setting in the browser are unchanged.
+2. [ ] **critical** Websites -> *Playback Lab* -> *Run the AKENO playback
+       lab*; wait for "Done".
+3. [ ] **critical** Move to **Test a Play button** with the D-pad and press
+       Cross. When a frame with *Play in frame* appears, move the browser's
+       cursor onto that button and press Cross (could the cursor reach it?
+       ______). Wait for "Play button test done". You should hear the clip's
+       tone up to four times.
+4. [ ] Press **Test a Play button** again, this time with the browser's
+       cursor on the button instead of the D-pad focus.
+5. [ ] **critical** *Back to AKENO*, then Settings -> Diagnostics ->
+       Browser. Note:
+       `start.press_events` (D-pad) ______ (cursor) ______
+       `start.press_sync` ______ `start.press_after_load` ______
+       `start.press_delayed` ______ `start.press_frame` ______
+       `start.autoplay_attribute` ______ `playback.autoplay_sound` ______
+       and the line "Starting playback: ..." ______
+6. [ ] Websites -> your Miruro website -> Square -> *Record video
+       playback* -> **It starts only with the site's own Autoplay on**. Note
+       the result line ("Starts only by itself (Autoplay)", measured or
+       likely, and its reason) ______
+7. [ ] **critical** Anime -> *Add Streaming Provider*, the Miruro address
+       you use (for example `miruro.to`): the panel reads **Website only:
+       <name>**, *In AKENO: Website only (PS5 browser)*, notes on Cloudflare,
+       the Referer, the licence and the catalogue, and the Autoplay hint. The
+       button reads **Add as Catalogue**. Series found ______
+8. [ ] **critical** *Add as Catalogue*: the provider's home opens with the
+       chip *Website only (PS5 browser)* and its catalogue.
+9. [ ] **critical** Open a series: "Website only - episodes play on
+       <name>'s website, in the PS5 browser". There is **no Play action and no
+       "Play" hint**; Cross on an episode (if any is listed) does not start
+       AKENO's player.
+10. [ ] **critical** *Open on Website*: the browser opens **that series'
+        page** on Miruro; while it opens AKENO shows "Watch it in Websites
+        (PS5 browser) with Autoplay on in Miruro's player ...". With Autoplay
+        on, an episode plays - in the browser, not AKENO's player.
+11. [ ] *Check Again* on the provider's home: the label stays *Website only*.
+12. [ ] **critical** Existing providers are unchanged: a PeerTube provider
+        (for example `video.blender.org`) still reads *Plays in AKENO* and an
+        episode plays in AKENO's player.
+13. [ ] Export a report (Settings -> Diagnostics -> *Export report*) and
+        attach it. It holds host names and test results only.
+
+Result: ______ passed, ______ failed, ______ not tested.
+
 ## 9. Stability
 
 - [ ] Play, stop and reopen videos 10 times in a row without a crash
