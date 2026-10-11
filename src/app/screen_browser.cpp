@@ -7,19 +7,24 @@
 // over AKENO STREAM, pumped every frame, and on return a record of what
 // happened. While the browser is open the system owns the screen and the
 // controller; this screen is what is underneath and what shows before and
-// after. For AKENO STREAM's own pages (official YouTube player, capability
-// test) it also runs the loopback page server and turns the pages' reports
-// into per-capability results.
+// after. For AKENO STREAM's own pages (official YouTube player, video-only
+// player, capability test) it also runs the loopback page server and turns
+// the pages' reports into per-capability results. The video-only player
+// first checks that the service lets its player be framed, saves the
+// position the page reports under the episode's key, and offers the video's
+// own website (clearly labelled) when the embed cannot play it.
 #include "anime/site_policy.hpp"
 #include "app/screens.hpp"
 #include "core/fs.hpp"
 #include "core/json.hpp"
 #include "core/url.hpp"
+#include "net/http.hpp"
 #include "platform/platform.hpp"
 #include "web/site_probe.hpp"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
 namespace akeno
 {
@@ -31,9 +36,10 @@ using ui::Rect;
 
 namespace
 {
-constexpr std::uint64_t kPageLoadMs = 30000;   // AKENO page that never asked for its script
-constexpr std::uint64_t kPageSilentMs = 20000; // full-screen page without heartbeats
-constexpr std::uint64_t kChordMs = 700;        // L3 + R3 together
+constexpr std::uint64_t kPageLoadMs = 30000;     // AKENO page that never asked for its script
+constexpr std::uint64_t kPageSilentMs = 20000;   // full-screen page without heartbeats
+constexpr std::uint64_t kChordMs = 700;          // L3 + R3 together
+constexpr std::uint64_t kProgressSaveMs = 15000; // video-only player: save the position this often
 
 std::uint64_t mono_ms()
 {
@@ -64,7 +70,15 @@ class BrowserScreen final : public Screen
         if (s_.kind == WebSession::Kind::website)
             if (const auto site = anime::known_site(s_.url))
                 site_hint_ = site->browser_hint;
-        if (s_.check_first && s_.kind == WebSession::Kind::website)
+        if (s_.kind == WebSession::Kind::video)
+        {
+            position_ = s_.embed.start_seconds;
+            if (s_.embed.kind == web::EmbedKind::peertube)
+                check_embed(); // frame restrictions, a missing or private video
+            else
+                phase_ = Phase::opening;
+        }
+        else if (s_.check_first && s_.kind == WebSession::Kind::website)
             probe();
         else
             phase_ = Phase::opening;
@@ -108,6 +122,8 @@ class BrowserScreen final : public Screen
                 error_.clear();
                 phase_ = Phase::opening;
             }
+            else if (b == input::Button::square && !fallback_url_.empty())
+                open_fallback();
             else if (b == input::Button::circle)
                 app_.pop();
             return;
@@ -166,16 +182,22 @@ class BrowserScreen final : public Screen
     void render(ui::Painter &p, std::uint64_t now_ms) override
     {
         drawn_ = true;
-        const Pixel accent =
-            s_.kind == WebSession::Kind::youtube ? th::kAccentYouTube : th::kAccentWebsites;
+        const Pixel accent = s_.kind == WebSession::Kind::youtube ? th::kAccentYouTube
+                             : s_.kind == WebSession::Kind::video ? th::kAccentAnime
+                                                                  : th::kAccentWebsites;
         p.background(accent);
         p.text(th::kMarginX, 80, s_.kind == WebSession::Kind::website ? "WEBSITE" : "AKENO STREAM",
                th::kCaptionStrong, accent);
         p.text(th::kMarginX, 116, s_.title.empty() ? host_ : s_.title, th::kTitle, th::kText,
                th::kWidth - 2 * th::kMarginX);
-        const char *subtitle = s_.kind == WebSession::Kind::youtube
-                                   ? "YouTube's official embedded player"
-                                   : "Browser capability test page";
+        const std::string subtitle =
+            s_.kind == WebSession::Kind::youtube ? "YouTube's official embedded player"
+            : s_.kind == WebSession::Kind::video
+                ? std::string{"Video-only player - "} + web::embed_kind_label(s_.embed.kind) +
+                      "'s official embedded player" +
+                      (s_.embed.kind == web::EmbedKind::peertube ? " (" + s_.embed.host + ")"
+                                                                 : std::string{})
+                : "Browser capability test page";
         p.text(th::kMarginX, 186, s_.kind == WebSession::Kind::website ? host_ : subtitle,
                th::kBody, th::kTextSecondary, 1400);
 
@@ -187,10 +209,16 @@ class BrowserScreen final : public Screen
         {
         case Phase::checking:
             p.spinner(tx + 30, y + 26, 22, now_ms, accent);
-            p.text(tx + 80, y, "Checking " + host_ + "...", th::kHeading, th::kText, tw - 80);
+            p.text(tx + 80, y,
+                   "Checking " + (s_.kind == WebSession::Kind::video ? s_.embed.host : host_) +
+                       "...",
+                   th::kHeading, th::kText, tw - 80);
             p.wrapped(tx, y + 90,
-                      "AKENO STREAM checks that the site answers before the browser opens. "
-                      "Press X to skip the check.",
+                      s_.kind == WebSession::Kind::video
+                          ? "AKENO STREAM checks that the video exists and that its player may "
+                            "be shown inside AKENO's page. Press X to skip the check."
+                          : "AKENO STREAM checks that the site answers before the browser opens. "
+                            "Press X to skip the check.",
                       th::kBody, th::kTextSecondary, tw, 3);
             break;
         case Phase::ask:
@@ -235,7 +263,10 @@ class BrowserScreen final : public Screen
             break;
         case Phase::failed:
             p.icon(Icon::alert, tx + 26, y + 24, 52, th::kError);
-            p.text(tx + 80, y, "The browser could not open", th::kHeading, th::kText, tw - 80);
+            p.text(tx + 80, y,
+                   s_.kind == WebSession::Kind::video ? "The video cannot play here"
+                                                      : "The browser could not open",
+                   th::kHeading, th::kText, tw - 80);
             p.wrapped(tx, y + 90, error_, th::kBody, th::kTextSecondary, tw, 6);
             p.wrapped(tx, panel.bottom() - 110,
                       "Settings > Diagnostics > Browser shows the details for a bug report.",
@@ -256,6 +287,10 @@ class BrowserScreen final : public Screen
         case Phase::ask:
             return {{Glyph::cross, "Open anyway"}, {Glyph::circle, "Back"}};
         case Phase::failed:
+            if (!fallback_url_.empty())
+                return {{Glyph::cross, "Try again"},
+                        {Glyph::square, "Open on website"},
+                        {Glyph::circle, "Back"}};
             return {{Glyph::cross, "Try again"}, {Glyph::circle, "Back"}};
         default:
             return {};
@@ -290,6 +325,137 @@ class BrowserScreen final : public Screen
     void youtube(const char *id, const char *name, web::Outcome outcome, std::string detail)
     {
         record(id, "YouTube embedded player", name, outcome, std::move(detail), "YouTube player");
+    }
+
+    // Results of the video-only player, one group per service.
+    void video(const char *id, const char *name, web::Outcome outcome, std::string detail)
+    {
+        const std::string kind = web::embed_kind_id(s_.embed.kind);
+        const std::string full_id = "video." + kind + "." + id;
+        const std::string group =
+            std::string{"Video-only player ("} + web::embed_kind_label(s_.embed.kind) + ")";
+        record(full_id.c_str(), group.c_str(), name, outcome, std::move(detail),
+               "video-only player");
+    }
+
+    // PeerTube: does the instance have the video, and may its player be framed
+    // by AKENO's page? Read from the embed page's status and headers.
+    void check_embed()
+    {
+        phase_ = Phase::checking;
+        auto cancel = net::make_cancel_flag();
+        cancel_ = cancel;
+        auto alive = alive_;
+        App &app = app_;
+        const std::string address = s_.embed.origin() + "/videos/embed/" + s_.embed.video_id;
+        app_.jobs().run(
+            [address, cancel, alive, &app, this]
+            {
+                net::Request r;
+                r.url = address;
+                r.max_bytes = 512 * 1024;
+                r.total_timeout_ms = 12000;
+                r.cancel = cancel;
+                net::Client client;
+                net::Response response = client.perform(r);
+                response.body.clear();
+                app.jobs().post(
+                    [response = std::move(response), alive, this]
+                    {
+                        if (!*alive || phase_ != Phase::checking)
+                            return;
+                        embed_checked(response);
+                        app_.mark_dirty();
+                    });
+            });
+    }
+
+    void embed_checked(const net::Response &r)
+    {
+        using web::Outcome;
+        const std::string host = s_.embed.host;
+        const std::string status = std::to_string(r.status);
+        if (r.outcome == net::Outcome::network_error || r.outcome == net::Outcome::cancelled)
+        {
+            video("frame", "Player may be shown in AKENO's page", Outcome::unknown,
+                  "not checked: " + r.describe());
+            app_.toast(host + " did not answer the check - trying its player anyway", th::kWarning);
+            phase_ = Phase::opening;
+            return;
+        }
+        if (r.status == 404 || r.status == 410)
+        {
+            fail_video("This video is not on " + host + " (HTTP " + status +
+                           "): it was removed, or the address is wrong.",
+                       false);
+            return;
+        }
+        if (r.status == 401 || r.status == 403)
+        {
+            fail_video(host + " refused its player (HTTP " + status +
+                           "): the video may be private or need a sign-in. AKENO STREAM never "
+                           "signs in for you.",
+                       true);
+            return;
+        }
+        if (r.status >= 400)
+        {
+            fail_video(host + " answered HTTP " + status + " for its player.", true);
+            return;
+        }
+        const std::string embedder =
+            "http://127.0.0.1:" + std::to_string(web::LocalPages::kPreferredPort);
+        const web::FrameCheck frame = web::frame_policy(
+            r.head.frame_options, r.head.security_policy, s_.embed.origin(), embedder);
+        if (frame.policy == web::FramePolicy::blocked)
+        {
+            video("frame", "Player may be shown in AKENO's page", Outcome::no, frame.detail);
+            fail_video(host + " does not allow its player inside other pages (" + frame.detail +
+                           "). AKENO STREAM does not work around that.",
+                       true);
+            return;
+        }
+        video("frame", "Player may be shown in AKENO's page",
+              frame.policy == web::FramePolicy::allowed ? Outcome::yes : Outcome::info,
+              frame.detail);
+        phase_ = Phase::opening;
+    }
+
+    // The embed cannot play the video: say why, and offer its own website
+    // (labelled as such) when that might.
+    void fail_video(std::string why, bool website_may_play)
+    {
+        fallback_url_ = website_may_play ? s_.embed.page_url() : std::string{};
+        video("error", "Player error", web::Outcome::no, why);
+        error_ = std::move(why);
+        phase_ = Phase::failed;
+        app_.report_error("video-only player", error_);
+    }
+
+    void open_fallback()
+    {
+        WebSession session;
+        session.url = fallback_url_;
+        session.title = s_.title;
+        session.check_first = false;
+        App &app = app_;
+        app_.toast("Opening the video's website - its own player and pages, not AKENO's",
+                   th::kInfo);
+        app_.pop(); // destroys this screen
+        app.jobs().post([&app, session = std::move(session)]() mutable
+                        { app.open_web(std::move(session)); });
+    }
+
+    void save_progress(bool force)
+    {
+        if (s_.item.id.empty() || !(position_ > 0.0 || ended_))
+            return;
+        const std::uint64_t now = mono_ms();
+        if (!force && saved_ms_ && now - saved_ms_ < kProgressSaveMs)
+            return;
+        saved_ms_ = now;
+        app_.store().record_progress(s_.item, ended_ && duration_ > 0.0 ? duration_ : position_,
+                                     duration_);
     }
 
     void probe()
@@ -356,7 +522,7 @@ class BrowserScreen final : public Screen
             const std::string media = s_.kind == WebSession::Kind::capability_test
                                           ? fs::join(platform::app_dir(), "assets/selftest")
                                           : std::string{};
-            if (!app_.local_pages().start(media, &error))
+            if (!app_.local_pages().start(media, &error, s_.embed))
             {
                 fail("AKENO STREAM's page could not be served: " + error);
                 return;
@@ -372,6 +538,10 @@ class BrowserScreen final : public Screen
                 if (s_.youtube.start_seconds > 0)
                     query.emplace_back("t", std::to_string(s_.youtube.start_seconds));
                 request.url = app_.local_pages().page_url("youtube", url::build_query(query));
+            }
+            else if (s_.kind == WebSession::Kind::video)
+            {
+                request.url = app_.local_pages().page_url("watch", web::watch_query(s_.embed));
             }
             else
             {
@@ -451,6 +621,11 @@ class BrowserScreen final : public Screen
                 keys_.push_back(key);
             return;
         }
+        if (s_.kind == WebSession::Kind::video)
+        {
+            on_video_event(e);
+            return;
+        }
         if (s_.kind != WebSession::Kind::youtube)
             return;
         if (e.type == "loaded")
@@ -513,6 +688,96 @@ class BrowserScreen final : public Screen
             youtube("youtube.ended", "Plays to the end", Outcome::yes, "");
         else if (e.type == "log")
             app_.report_error("YouTube page", e.value + ": " + e.detail);
+    }
+
+    void on_video_event(const web::PageEvent &e)
+    {
+        using web::Outcome;
+        if (e.type == "loaded")
+        {
+            video("page", "AKENO's video-only page loads", Outcome::yes, "");
+            record("browser.user_agent", "Browser", "User agent", Outcome::info, e.detail,
+                   "video-only player");
+        }
+        else if (e.type == "api")
+            video("api", "Player API loads", e.value == "ok" ? Outcome::yes : Outcome::no,
+                  e.detail);
+        else if (e.type == "embed")
+        {
+            if (e.value == "linked")
+                video("linked", "Embed API answers (postMessage)", Outcome::yes, e.detail);
+            else if (e.value == "frame-loaded")
+                video("frame_loaded", "Player frame loads", Outcome::yes, e.detail);
+            else if (e.value == "csp")
+                video("csp", "AKENO's security policy refused something", Outcome::no, e.detail);
+        }
+        else if (e.type == "ready")
+            video("ready", "Player initializes", Outcome::yes,
+                  "ready " + e.value + " s after the page opened");
+        else if (e.type == "playing")
+        {
+            played_ = true;
+            video("playing", "Video plays", Outcome::yes,
+                  "started " + e.value + " s after the page opened");
+        }
+        else if (e.type == "state")
+        {
+            if (e.value == "paused")
+            {
+                paused_ = true;
+                video("pause", "Pause", Outcome::yes, "");
+                save_progress(true);
+            }
+            else if (e.value == "playing" && paused_)
+                video("resume", "Play after pause", Outcome::yes, "");
+        }
+        else if (e.type == "progress")
+        {
+            // "position/duration" in seconds
+            const std::size_t slash = e.value.find('/');
+            const double pos = std::atof(e.value.substr(0, slash).c_str());
+            const double dur =
+                slash == std::string::npos ? 0.0 : std::atof(e.value.c_str() + slash + 1);
+            if (pos >= 0.0 && pos < 1e6)
+                position_ = pos;
+            if (dur > 0.0 && dur < 1e6)
+                duration_ = dur;
+            save_progress(e.detail != "timer");
+        }
+        else if (e.type == "seek")
+        {
+            if (e.value == "unsupported")
+                video("seek", "Seeking", Outcome::no, "the player offers no seeking");
+            else
+            {
+                if (!seeked_)
+                    video("seek", "Seeking", Outcome::yes,
+                          "to " + e.value + " s (" + e.detail + ")");
+                seeked_ = true;
+                position_ = std::atof(e.value.c_str());
+            }
+        }
+        else if (e.type == "ended")
+        {
+            ended_ = true;
+            video("ended", "Plays to the end", Outcome::yes, "");
+            save_progress(true);
+        }
+        else if (e.type == "error")
+        {
+            error_ = std::string{web::embed_kind_label(s_.embed.kind)} + " player: " + e.detail;
+            video("error", "Player error", Outcome::no, "error " + e.value + ": " + e.detail);
+            app_.report_error("video-only player", error_);
+        }
+        else if (e.type == "autoplay")
+            video("autoplay", "Starts by itself", Outcome::partial,
+                  "autoplay was blocked: the Play button starts it (" + e.detail + ")");
+        else if (e.type == "fullscreen")
+            video("fullscreen", "Full screen",
+                  e.value == "ok" || e.value == "requested" ? Outcome::yes : Outcome::no,
+                  e.value + (e.detail.empty() ? "" : ": " + e.detail));
+        else if (e.type == "log")
+            app_.report_error("video-only page", e.value + ": " + e.detail);
     }
 
     // The lab sends its results after every step: each report is saved at
@@ -614,6 +879,36 @@ class BrowserScreen final : public Screen
             youtube("youtube.return", "Back to AKENO STREAM afterwards", Outcome::yes,
                     "after " + minutes(spent));
         }
+        else if (s_.kind == WebSession::Kind::video)
+        {
+            save_progress(true);
+            const std::string service = web::embed_kind_label(s_.embed.kind);
+            if (!played_)
+                video("playing", "Video plays", Outcome::no,
+                      !error_.empty()  ? error_
+                      : !note_.empty() ? note_
+                                       : "no playing state reported before the browser closed");
+            if (!error_.empty())
+            {
+                summary = error_;
+                color = th::kError;
+            }
+            else if (played_)
+            {
+                summary =
+                    service + ": watched for " + minutes(spent) +
+                    (s_.item.id.empty() || position_ <= 0.0 ? std::string{} : ", position saved");
+                color = th::kSuccess;
+            }
+            else
+            {
+                summary = service + ": the video did not start" +
+                          (note_.empty() ? std::string{} : " (" + note_ + ")");
+                color = th::kWarning;
+            }
+            video("return", "Back to AKENO STREAM afterwards", Outcome::yes,
+                  "after " + minutes(spent));
+        }
         else if (s_.kind == WebSession::Kind::website)
         {
             summary = "Back from " + host_ + " (" + minutes(spent) + ")";
@@ -647,6 +942,10 @@ class BrowserScreen final : public Screen
     bool played_ = false;
     bool paused_ = false;
     bool playlist_pending_ = false;
+    bool seeked_ = false, ended_ = false;
+    double position_ = 0.0, duration_ = 0.0; // video-only player: last reported
+    std::uint64_t saved_ms_ = 0;
+    std::string fallback_url_; // the video's own page, offered when the embed fails
     bool lab_done_ = false;
     int lab_taken_ = 0;
     std::string lab_error_;

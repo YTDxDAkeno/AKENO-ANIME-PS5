@@ -53,6 +53,28 @@ std::string page_security(std::uint16_t port, bool frame)
            (frame ? "http://127.0.0.1:" + std::to_string(port) : std::string{"'none'"});
 }
 
+// The video-only page may show one embedded player and nothing else: YouTube's
+// (its API script, thumbnails and player frame) or one PeerTube instance's
+// player frame. It plays no media itself and talks only to this server.
+std::string watch_security(const EmbedTarget &watch)
+{
+    std::string scripts = "'self'", images = "'self' data:", frames = "'none'";
+    if (watch.valid() && watch.kind == EmbedKind::youtube)
+    {
+        scripts += " https://www.youtube.com https://s.ytimg.com";
+        images += " https://i.ytimg.com";
+        frames = "https://www.youtube.com https://www.youtube-nocookie.com";
+    }
+    else if (watch.valid() && watch.kind == EmbedKind::peertube)
+    {
+        frames = watch.origin(); // validated host: no spaces, ';' or line breaks
+    }
+    return "Content-Security-Policy: default-src 'none'; script-src " + scripts +
+           "; style-src 'self' 'unsafe-inline'; img-src " + images +
+           "; connect-src 'self'; frame-src " + frames +
+           "; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+}
+
 // The lab's HLS test: the bundled two-second MPEG-TS clip as one segment.
 constexpr char kTestPlaylist[] = "#EXTM3U\n"
                                  "#EXT-X-VERSION:3\n"
@@ -123,9 +145,9 @@ std::string clean(std::string_view text, std::size_t limit)
 bool event_type_known(std::string_view type)
 {
     static constexpr std::string_view kTypes[] = {
-        "loaded",  "api",    "ready", "state",   "error",    "quality",
-        "playing", "paused", "ended", "volume",  "autoplay", "fullscreen",
-        "time",    "log",    "input", "storage", "playlist"};
+        "loaded", "api",     "ready",    "state",    "error",      "quality", "playing",
+        "paused", "ended",   "volume",   "autoplay", "fullscreen", "time",    "log",
+        "input",  "storage", "playlist", "embed",    "progress",   "seek"};
     return std::find(std::begin(kTypes), std::end(kTypes), type) != std::end(kTypes);
 }
 
@@ -172,10 +194,11 @@ LocalPages::~LocalPages()
     stop();
 }
 
-bool LocalPages::start(const std::string &media_dir, std::string *error)
+bool LocalPages::start(const std::string &media_dir, std::string *error, const EmbedTarget &watch)
 {
     stop();
     media_.clear();
+    watch_ = watch.valid() ? watch : EmbedTarget{};
     if (!media_dir.empty())
     {
         static constexpr const char *kClips[][3] = {
@@ -332,12 +355,13 @@ LocalPages::Reply LocalPages::respond_to(std::string_view request)
     const std::string_view body = request.substr(std::min(request.size(), head_end + 4));
     last_contact_.store(platform::monotonic_us() / 1000);
 
+    const bool watch_page = page == "watch" || page == "watch.js";
     const auto page_reply = [&](std::string_view content, const char *type, bool frame = false)
     {
         reply.status = 200;
         reply.content_type = type;
         reply.body = std::string{content};
-        reply.headers = {page_security(port_, frame),
+        reply.headers = {watch_page ? watch_security(watch_) : page_security(port_, frame),
                          "Referrer-Policy: strict-origin-when-cross-origin",
                          "X-Content-Type-Options: nosniff"};
         if (!frame)
@@ -350,10 +374,14 @@ LocalPages::Reply LocalPages::respond_to(std::string_view request)
             return page_reply(youtube_page_html(), "text/html; charset=utf-8");
         if (page == "captest")
             return page_reply(capability_page_html(), "text/html; charset=utf-8");
-        if (page == "youtube.js" || page == "captest.js")
+        if (page == "watch")
+            return page_reply(watch_page_html(), "text/html; charset=utf-8");
+        if (page == "youtube.js" || page == "captest.js" || page == "watch.js")
         {
             page_loaded_.store(true);
-            return page_reply(page == "youtube.js" ? youtube_page_js() : capability_page_js(),
+            return page_reply(page == "youtube.js" ? youtube_page_js()
+                              : page == "watch.js" ? watch_page_js()
+                                                   : capability_page_js(),
                               "text/javascript; charset=utf-8");
         }
         if (page == "frame")

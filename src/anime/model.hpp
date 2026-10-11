@@ -82,6 +82,10 @@ struct Episode
     // The provider's own identifier when the resource is looked up at play
     // time (PeerTube: "uuid@host"); empty for catalogues that list media.
     std::string source_ref;
+    // An officially embeddable player for the episode (a YouTube or PeerTube
+    // embed address, anime/playback_route.hpp): played on AKENO's video-only
+    // page when no media is listed. Empty: none.
+    std::string embed;
     Availability availability = Availability::episodes_indexed;
     std::string availability_detail; // why, in one sentence
     std::string link;                // an official page (catalogue-only episodes)

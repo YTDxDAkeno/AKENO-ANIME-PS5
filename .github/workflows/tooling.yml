@@ -135,6 +135,17 @@ jobs:
       - name: Run host GoogleTest suite (player, HLS, FFmpeg, providers, UI)
         run: make test-unit
 
+      # The video-only player page in Chromium against official-style mock
+      # embeds (tests/browser/video_only.cjs), served by the real page server.
+      # Playwright is a pinned test-only tool, installed outside the
+      # repository and never packaged.
+      - name: Video-only player page in Chromium (Playwright, mock embeds)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-audit --no-fund playwright@1.56.1
+          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install --with-deps chromium
+          AKENO_BROWSER_TESTS=1 NODE_PATH="$RUNNER_TEMP/playwright/node_modules" \
+            make test-unit GTEST_ARGS='--gtest_filter=BrowserPage.*'
+
       - name: Run host integration tests
         run: make test-integration
 

@@ -7,6 +7,7 @@
 // check, events, byte ranges), the test-result log, icon decoding, and whole
 // browser sessions driven through the real App with the scripted stand-in
 // for the system browser (tests/host/host_web_view.hpp).
+#include "anime/session.hpp"
 #include "app/app.hpp"
 #include "app/screens.hpp"
 #include "core/fs.hpp"
@@ -15,6 +16,7 @@
 #include "net/http.hpp"
 #include "platform/platform.hpp"
 #include "web/address.hpp"
+#include "web/embed.hpp"
 #include "web/local_pages.hpp"
 #include "web/site_probe.hpp"
 #include "web/web_tests.hpp"
@@ -29,6 +31,7 @@ extern "C" unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <string>
@@ -986,6 +989,259 @@ TEST(BrowserSession, OpensASavedPrivateWebsite)
     EXPECT_TRUE(h.app().websites().recent().empty()); // private
     EXPECT_EQ(h.app().websites().find(id)->visits, 1);
     EXPECT_NE(h.app().websites().find(id)->last_result.find("opened"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// The video-only player (web/embed.hpp, the "watch" page).
+namespace
+{
+constexpr char kPeerTubeId[] = "9c9de5e8-0a1e-484a-b099-e80766180a6d";
+
+web::EmbedTarget peertube_target()
+{
+    web::EmbedTarget t;
+    t.kind = web::EmbedKind::peertube;
+    t.host = "video.blender.org";
+    t.video_id = kPeerTubeId;
+    return t;
+}
+
+// The reply to a GET of one of the running server's pages.
+web::LocalPages::Reply get_page(web::LocalPages &pages, const std::string &page)
+{
+    const std::string url = pages.page_url(page);
+    const std::string path = url.substr(url.find("/s/"));
+    return pages.respond_to("GET " + path + " HTTP/1.1\r\nHost: 127.0.0.1:" +
+                            std::to_string(pages.port()) + "\r\n\r\n");
+}
+
+std::string csp_of(const web::LocalPages::Reply &reply)
+{
+    for (const std::string &h : reply.headers)
+        if (h.starts_with("Content-Security-Policy: "))
+            return h;
+    return {};
+}
+
+// The embed page as the check sees it: status and frame headers.
+net::Transport embed_answer(long status, std::string frame_options = {}, std::string csp = {})
+{
+    return [=](const net::Request &r)
+    {
+        net::Response out;
+        out.status = status;
+        out.outcome = status < 400 ? net::Outcome::ok : net::Outcome::http_error;
+        out.final_url = r.url;
+        out.head.status = status;
+        out.head.frame_options = frame_options;
+        out.head.security_policy = csp;
+        out.body = "<!doctype html><title>PeerTube</title>";
+        return out;
+    };
+}
+
+MediaItem episode_item()
+{
+    MediaItem m;
+    m.provider = anime::kEpisodeItemProvider;
+    m.id = "web_blender/sprite-fright/s1/e1";
+    m.title = "Sprite Fright";
+    m.subtitle = "E1";
+    return m;
+}
+} // namespace
+
+TEST(LocalPages, TheVideoPageMayFrameOnlyItsOwnPlayer)
+{
+    web::LocalPages pages;
+    std::string error;
+    ASSERT_TRUE(pages.start("", &error, peertube_target())) << error;
+    web::LocalPages::Reply page = get_page(pages, "watch");
+    EXPECT_EQ(page.status, 200);
+    EXPECT_NE(page.body.find("watch.js"), std::string::npos);
+    std::string csp = csp_of(page);
+    EXPECT_NE(csp.find("frame-src https://video.blender.org;"), std::string::npos) << csp;
+    EXPECT_NE(csp.find("script-src 'self';"), std::string::npos) << csp; // no YouTube script
+    EXPECT_NE(csp.find("frame-ancestors 'none'"), std::string::npos) << csp;
+    EXPECT_NE(csp.find("default-src 'none'"), std::string::npos) << csp;
+    EXPECT_EQ(csp.find("youtube"), std::string::npos) << csp;
+    EXPECT_NE(std::find(page.headers.begin(), page.headers.end(), "X-Frame-Options: DENY"),
+              page.headers.end());
+    EXPECT_FALSE(pages.page_loaded());
+    page = get_page(pages, "watch.js");
+    EXPECT_EQ(page.status, 200);
+    EXPECT_TRUE(pages.page_loaded());
+    EXPECT_EQ(csp_of(page), csp);
+    // The capability test and YouTube pages keep their own policy.
+    EXPECT_EQ(csp_of(get_page(pages, "youtube")).find("video.blender.org"), std::string::npos);
+
+    // YouTube: its script, thumbnails and player frame; no other instance.
+    web::EmbedTarget yt;
+    yt.kind = web::EmbedKind::youtube;
+    yt.video_id = "aqz-KE-bpKQ";
+    ASSERT_TRUE(pages.start("", &error, yt)) << error;
+    csp = csp_of(get_page(pages, "watch"));
+    EXPECT_NE(csp.find("script-src 'self' https://www.youtube.com https://s.ytimg.com;"),
+              std::string::npos)
+        << csp;
+    EXPECT_NE(csp.find("frame-src https://www.youtube.com https://www.youtube-nocookie.com;"),
+              std::string::npos)
+        << csp;
+
+    // A forged host never reaches the header; no target allows no frame at all.
+    web::EmbedTarget forged = peertube_target();
+    forged.host = "video.blender.org; script-src *";
+    ASSERT_TRUE(pages.start("", &error, forged)) << error;
+    csp = csp_of(get_page(pages, "watch"));
+    EXPECT_NE(csp.find("frame-src 'none';"), std::string::npos) << csp;
+    EXPECT_EQ(csp.find("script-src *"), std::string::npos) << csp;
+    ASSERT_TRUE(pages.start("", &error)) << error;
+    EXPECT_NE(csp_of(get_page(pages, "watch")).find("frame-src 'none';"), std::string::npos);
+    pages.stop();
+}
+
+TEST(BrowserSession, VideoOnlyPlayerPlaysSeeksSavesTheEpisodeAndComesBack)
+{
+    AppHarness h;
+    net::Client::global_init();
+    net::set_test_transport(embed_answer(200));
+    auto &script = test::web_view_script();
+    script.finish_after_updates = -1; // open until the page asks to close
+    const MediaItem item = episode_item();
+    h.app().play_embed(peertube_target(), "Sprite Fright - E1", item);
+    ASSERT_TRUE(h.until([&] { return !script.opened.empty(); }));
+    net::set_test_transport({}); // checked: the requests below go to the page server
+    const std::string url = script.opened[0].url;
+    EXPECT_TRUE(url.starts_with("http://127.0.0.1:")) << url;
+    EXPECT_NE(url.find(std::string{"/watch?p=peertube&h=video.blender.org&v="} + kPeerTubeId),
+              std::string::npos)
+        << url;
+    EXPECT_EQ(url.find("&t="), std::string::npos) << url; // nothing to resume yet
+    ASSERT_NE(h.app().web_tests().get("video.peertube.frame"), nullptr);
+    EXPECT_EQ(h.app().web_tests().get("video.peertube.frame")->outcome, web::Outcome::info);
+
+    // What the page sends from the console's browser.
+    const std::string base = url.substr(0, url.find("/watch?"));
+    request(base + "/watch.js");
+    for (
+        const char *event :
+        {R"j({"type":"loaded","value":"peertube","detail":"Mozilla/5.0 (PlayStation; PlayStation 5)"})j",
+         R"({"type":"embed","value":"frame-loaded","detail":"https://video.blender.org"})",
+         R"({"type":"embed","value":"linked","detail":"publish handshake"})",
+         R"({"type":"ready","value":"1.2"})", R"({"type":"playing","value":"2.0"})",
+         R"({"type":"state","value":"playing","detail":"ready"})",
+         R"({"type":"progress","value":"35.0/629.0","detail":"timer"})",
+         R"({"type":"seek","value":"45","detail":"+10 s"})",
+         R"({"type":"fullscreen","value":"ok"})",
+         R"({"type":"progress","value":"65.5/629.0","detail":"paused"})",
+         R"({"type":"state","value":"paused","detail":"playing"})",
+         R"({"type":"input","value":"PageDown","detail":"keyCode 34"})"})
+        EXPECT_EQ(request(base + "/event", "POST", event).status, 204) << event;
+    h.step(3);
+    for (const char *id :
+         {"video.peertube.page", "video.peertube.frame_loaded", "video.peertube.linked",
+          "video.peertube.ready", "video.peertube.playing", "video.peertube.seek",
+          "video.peertube.fullscreen", "video.peertube.pause"})
+    {
+        ASSERT_NE(h.app().web_tests().get(id), nullptr) << id;
+        EXPECT_EQ(h.app().web_tests().get(id)->outcome, web::Outcome::yes) << id;
+    }
+    // A pause saves the position under the episode's key at once.
+    EXPECT_DOUBLE_EQ(h.app().store().resume_position(item.key()), 65.5);
+
+    // "Back" on the page closes the browser and returns to AKENO STREAM.
+    request(base + "/event", "POST", R"({"type":"progress","value":"70.0/629.0","detail":"exit"})");
+    EXPECT_EQ(request(base + "/close", "POST").status, 204);
+    ASSERT_TRUE(h.until([&] { return !h.app().browser_active(); }));
+    EXPECT_EQ(script.closes_requested, 1);
+    EXPECT_DOUBLE_EQ(h.app().store().resume_position(item.key()), 70.0);
+    EXPECT_EQ(h.app().web_tests().get("video.peertube.return")->outcome, web::Outcome::yes);
+    EXPECT_FALSE(h.app().local_pages().running());
+    EXPECT_NE(h.app().latest_toast().find("position saved"), std::string::npos)
+        << h.app().latest_toast();
+
+    // Played again: it resumes where it was left.
+    net::set_test_transport(embed_answer(200));
+    h.app().play_embed(peertube_target(), "Sprite Fright - E1", item);
+    ASSERT_TRUE(h.until([&] { return script.opened.size() == 2; }));
+    net::set_test_transport({});
+    EXPECT_NE(script.opened[1].url.find("&t=70"), std::string::npos) << script.opened[1].url;
+    request(script.opened[1].url.substr(0, script.opened[1].url.find("/watch?")) + "/close",
+            "POST");
+    ASSERT_TRUE(h.until([&] { return !h.app().browser_active(); }));
+}
+
+TEST(BrowserSession, VideoOnlyPlayerRespectsFrameRestrictionsAndOffersTheWebsite)
+{
+    AppHarness h;
+    net::Client::global_init();
+    net::set_test_transport(embed_answer(200, "DENY"));
+    auto &script = test::web_view_script();
+    h.app().play_embed(peertube_target(), "Sprite Fright", episode_item());
+    ASSERT_TRUE(
+        h.until([&] { return h.app().web_tests().get("video.peertube.frame") != nullptr; }));
+    h.step(3);
+    EXPECT_TRUE(script.opened.empty()); // the player is never opened against the rule
+    EXPECT_EQ(h.app().web_tests().get("video.peertube.frame")->outcome, web::Outcome::no);
+    EXPECT_NE(h.app().web_tests().get("video.peertube.error")->detail.find("does not allow"),
+              std::string::npos);
+    EXPECT_FALSE(h.app().local_pages().running());
+
+    // Square: the video's own website, opened as a website.
+    h.app().handle({input::Button::square, false});
+    ASSERT_TRUE(h.until([&] { return !script.opened.empty(); }));
+    EXPECT_EQ(script.opened[0].url, std::string{"https://video.blender.org/w/"} + kPeerTubeId);
+    EXPECT_EQ(script.opened[0].layout, platform::WebLayout::standard);
+    ASSERT_TRUE(h.until([&] { return !h.app().browser_active(); }));
+}
+
+TEST(BrowserSession, VideoOnlyPlayerExplainsAMissingOrPrivateVideo)
+{
+    AppHarness h;
+    net::Client::global_init();
+    auto &script = test::web_view_script();
+    net::set_test_transport(embed_answer(404));
+    h.app().play_embed(peertube_target(), "Gone", {});
+    ASSERT_TRUE(
+        h.until([&] { return h.app().web_tests().get("video.peertube.error") != nullptr; }));
+    EXPECT_NE(h.app().web_tests().get("video.peertube.error")->detail.find("HTTP 404"),
+              std::string::npos);
+    h.app().handle({input::Button::square, false}); // no website for a removed video
+    h.step(5);
+    EXPECT_TRUE(script.opened.empty());
+    h.app().handle({input::Button::circle, false});
+    h.step(2);
+    EXPECT_FALSE(h.app().browser_active());
+
+    h.app().web_tests().clear();
+    net::set_test_transport(embed_answer(403));
+    h.app().play_embed(peertube_target(), "Private", {});
+    ASSERT_TRUE(
+        h.until([&] { return h.app().web_tests().get("video.peertube.error") != nullptr; }));
+    EXPECT_NE(h.app().web_tests().get("video.peertube.error")->detail.find("never signs in"),
+              std::string::npos);
+    h.app().handle({input::Button::circle, false});
+    h.step(2);
+
+    // A YouTube video needs no check: YouTube's own errors come from the page.
+    net::set_test_transport({});
+    web::EmbedTarget yt;
+    yt.kind = web::EmbedKind::youtube;
+    yt.video_id = "aqz-KE-bpKQ";
+    yt.start_seconds = 12;
+    h.app().play_embed(yt, "Big Buck Bunny");
+    ASSERT_TRUE(h.until([&] { return !script.opened.empty(); }));
+    EXPECT_NE(script.opened[0].url.find("/watch?p=youtube&v=aqz-KE-bpKQ&t=12"), std::string::npos)
+        << script.opened[0].url;
+    const std::string base = script.opened[0].url.substr(0, script.opened[0].url.find("/watch?"));
+    request(base + "/watch.js");
+    request(
+        base + "/event", "POST",
+        R"({"type":"error","value":"150","detail":"The owner of this video does not allow it"})");
+    request(base + "/close", "POST");
+    ASSERT_TRUE(h.until([&] { return !h.app().browser_active(); }));
+    EXPECT_EQ(h.app().web_tests().get("video.youtube.error")->outcome, web::Outcome::no);
+    EXPECT_EQ(h.app().web_tests().get("video.youtube.playing")->outcome, web::Outcome::no);
 }
 
 TEST(Store, BrowserSettingsRoundTrip)

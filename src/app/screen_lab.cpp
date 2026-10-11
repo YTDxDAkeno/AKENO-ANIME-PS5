@@ -8,7 +8,8 @@
 // asks for DRM; public test pages from the projects behind the common web
 // players (HLS.js, dash.js, Shaka Player) and plain public test streams
 // show the same with real network video. After each public test the user
-// records what they saw (web/playback_check.hpp).
+// records what they saw (web/playback_check.hpp). The video-only player
+// row opens AKENO's own player page with a service's official embed.
 #include "app/screens.hpp"
 
 #include <algorithm>
@@ -47,7 +48,9 @@ const PublicTest kPublicTests[] = {
      "dash.js reference player"},
 };
 constexpr char kSecureDrmCheck[] = "https://shaka-player-demo.appspot.com/support.html";
-constexpr int kRows = 3 + static_cast<int>(std::size(kPublicTests));
+constexpr int kRows = 4 + static_cast<int>(std::size(kPublicTests));
+// Big Buck Bunny (Blender Foundation, CC BY) on YouTube, as in the YouTube tests.
+constexpr char kYouTubeTestVideo[] = "aqz-KE-bpKQ";
 
 class LabScreen final : public Screen
 {
@@ -91,21 +94,21 @@ class LabScreen final : public Screen
                   th::kBody, th::kTextSecondary, 960, 2);
 
         const int lw = 980;
-        int y = 350;
+        int y = 336;
         for (int i = 0; i < kRows; ++i)
         {
-            const Rect r{th::kMarginX, y, lw, 78};
+            const Rect r{th::kMarginX, y, lw, 72};
             const bool focused = i == focus_;
             p.s.fill_rounded(r, 18, focused ? th::kSurfaceHighlight : th::kSurfaceRaised);
             if (focused)
                 p.focus_ring(r, 18);
             const Row row = row_at(i);
-            p.text(r.x + 26, r.y + 8, row.title, th::kBodyStrong, th::kText, r.w - 330);
-            p.text(r.x + 26, r.y + 44, row.hint, th::kSmall, th::kTextMuted, r.w - 330);
+            p.text(r.x + 26, r.y + 6, row.title, th::kBodyStrong, th::kText, r.w - 330);
+            p.text(r.x + 26, r.y + 40, row.hint, th::kSmall, th::kTextMuted, r.w - 330);
             if (!row.status.empty())
-                p.chip(r.right() - 26 - p.measure(row.status, th::kSmall) - 24, r.y + 24,
+                p.chip(r.right() - 26 - p.measure(row.status, th::kSmall) - 24, r.y + 21,
                        row.status, gfx::with_alpha(row.color, 60), row.color);
-            y += r.h + 10;
+            y += r.h + 8;
         }
 
         const Rect panel{th::kMarginX + lw + 40, 150, th::kWidth - 2 * th::kMarginX - lw - 40, 800};
@@ -143,6 +146,7 @@ class LabScreen final : public Screen
         drm,
         test,
         link,
+        video,
     };
     static Kind kind(int i)
     {
@@ -150,7 +154,9 @@ class LabScreen final : public Screen
             return Kind::lab;
         if (i == 1)
             return Kind::drm;
-        return i - 2 < static_cast<int>(std::size(kPublicTests)) ? Kind::test : Kind::link;
+        if (i - 2 < static_cast<int>(std::size(kPublicTests)))
+            return Kind::test;
+        return i == kRows - 1 ? Kind::video : Kind::link;
     }
     static const PublicTest &test_at(int i)
     {
@@ -246,6 +252,18 @@ class LabScreen final : public Screen
             row.hint =
                 "A DRM-free HLS, MP4, MKV or TS address - plays natively, not in the browser";
             break;
+        case Kind::video:
+        {
+            row.title = "Video-only player (official embeds)";
+            row.hint = "YouTube or PeerTube's own player on AKENO's page: play, seek, full screen";
+            const web::TestRecord *a = app_.web_tests().get("video.peertube.playing");
+            const web::TestRecord *b = app_.web_tests().get("video.youtube.playing");
+            const bool played =
+                (a && a->outcome == web::Outcome::yes) || (b && b->outcome == web::Outcome::yes);
+            row.status = played ? "Played" : (a || b) ? "Did not play" : "Not tested";
+            row.color = played ? th::kSuccess : (a || b) ? th::kError : th::kTextMuted;
+            break;
+        }
         }
         return row;
     }
@@ -280,6 +298,25 @@ class LabScreen final : public Screen
         }
         case Kind::link:
             app_.ask_play_link();
+            return;
+        case Kind::video:
+            app_.push(make_menu_screen(
+                app_, "Video-only player",
+                "The service's own player, shown on AKENO's page with controller controls",
+                {{"YouTube: Big Buck Bunny",
+                  "Blender Foundation, CC BY - YouTube IFrame Player API",
+                  [&app]
+                  {
+                      web::EmbedTarget t;
+                      t.kind = web::EmbedKind::youtube;
+                      t.video_id = kYouTubeTestVideo;
+                      app.play_embed(t, "Big Buck Bunny");
+                  }},
+                 {"Enter a YouTube or PeerTube address",
+                  "https://<instance>/w/<id> or a YouTube link", [&app] { app.ask_embed_link(); }},
+                 {"PeerTube: an episode from Anime",
+                  "Anime > a PeerTube provider's series > Video-only player",
+                  [&app] { app.switch_mode(Mode::anime); }}}));
             return;
         }
     }

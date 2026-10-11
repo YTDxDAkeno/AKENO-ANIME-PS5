@@ -11,6 +11,12 @@
 //   storage that survives a restart) and really plays AKENO STREAM's own clip
 //   as an MP4 file, through MediaSource, as an HLS playlist and inside a frame
 //   from another origin, reporting each result.
+// watch: the video-only player - one video in its service's official
+//   embedded player (YouTube IFrame Player API, PeerTube Embed API), the
+//   picture filling the screen, controller and keyboard controls, and
+//   reports of its state and position. PeerTube's player is driven through
+//   its documented postMessage protocol (jschannel framing) by a small
+//   client written here; its AGPL embed-api library is not bundled.
 // frame: the lab's cross-origin frame (localhost instead of 127.0.0.1).
 // The scripts send only these results; they read nothing from other sites.
 #include "web/local_pages.hpp"
@@ -46,6 +52,18 @@ td.s{width:150px;font-weight:700}
 #top{position:sticky;top:0;background:#0b0e17;padding:20px 0;display:flex;gap:18px;align-items:center;z-index:2}
 video{width:480px;height:270px;background:#000;border-radius:16px}
 #keys{color:#b1bbcf;font-size:22px}
+body.watch{display:flex;flex-direction:column;overflow:hidden;background:#000}
+#loading{display:flex;align-items:center;justify-content:center;color:#b1bbcf;font-size:30px}
+#player{z-index:1}
+#player iframe{width:100%;height:100%;border:0}
+#panel{background:#131a29;border-top:2px solid #2a3348;padding:12px 36px 16px}
+#panel[hidden]{display:none}
+#panel #bar{padding:0;background:none;border:0}
+#line{display:flex;align-items:center;gap:18px;margin-bottom:10px;font-size:22px;color:#b1bbcf}
+#track{flex:1;height:10px;border-radius:5px;background:#2a3348;overflow:hidden}
+#fill{height:100%;width:0;background:#ff3d5a}
+#note{font-size:24px;line-height:1.35;color:#ffc247;margin:0 0 10px}
+#note.error{color:#ff5c6c}
 )AKENO";
 }
 
@@ -225,6 +243,393 @@ setInterval(function () {
   if (player && player.getCurrentTime && lastState === 1)
     send('time', Math.round(player.getCurrentTime()), 'seconds into the video');
 }, 30000);
+})();
+)AKENO";
+}
+
+std::string_view watch_page_html()
+{
+    return R"AKENO(<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AKENO STREAM - Video</title>
+<link rel="stylesheet" href="akeno.css">
+</head><body class="watch">
+<div id="stage"><div id="loading">Loading the video...</div><div id="player"></div></div>
+<div id="panel">
+<p id="note" hidden></p>
+<div id="line"><span id="time">0:00</span><div id="track"><div id="fill"></div></div><span id="length">--:--</span></div>
+<div id="bar" role="toolbar" aria-label="Player controls">
+<button id="back" class="btn" type="button">&#9664; Back</button>
+<button id="rew" class="btn" type="button">&#8634; 10 s</button>
+<button id="play" class="btn primary" type="button">&#9654; Play</button>
+<button id="fwd" class="btn" type="button">10 s &#8635;</button>
+<button id="fs" class="btn" type="button">Full screen</button>
+<span id="status">Loading...</span>
+</div></div>
+<script src="watch.js"></script>
+</body></html>
+)AKENO";
+}
+
+std::string_view watch_page_js()
+{
+    return R"AKENO((function () {
+'use strict';
+var q = new URLSearchParams(location.search);
+var kind = q.get('p') || '', host = (q.get('h') || '').toLowerCase(), vid = q.get('v') || '';
+var start = parseInt(q.get('t') || '0', 10) || 0, wait = parseInt(q.get('wait') || '20', 10) || 20;
+if (start < 0 || start > 172800) start = 0;
+wait = Math.max(3, Math.min(60, wait));
+var $ = function (id) { return document.getElementById(id); };
+var loadedAt = Date.now(), player = null, ready = false, everPlayed = false, failed = false;
+var state = 'loading', position = start, duration = 0, lastSent = '', sentErrors = 0;
+var hideTimer = 0, playAsked = 0, seekNoted = false;
+
+function send(type, value, detail) {
+  try {
+    var x = new XMLHttpRequest();
+    x.open('POST', 'event', true);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.send(JSON.stringify({type: type, value: String(value == null ? '' : value),
+                           detail: String(detail || '').slice(0, 200)}));
+  } catch (e) {}
+}
+function status(text) { $('status').textContent = text; }
+function note(text, error) {
+  var n = $('note');
+  n.textContent = text || ''; n.hidden = !text; n.className = error ? 'error' : '';
+  if (text) showPanel(false);
+}
+function clock(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = s % 60;
+  return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (r < 10 ? '0' : '') + r;
+}
+function drawTime() {
+  $('time').textContent = clock(position);
+  $('length').textContent = duration > 0 ? clock(duration) : '--:--';
+  $('fill').style.width = duration > 0 ? Math.min(100, position / duration * 100) + '%' : '0';
+}
+// The controls stay out of the picture while it plays; any key brings them back.
+function showPanel(autoHide) {
+  $('panel').hidden = false;
+  clearTimeout(hideTimer);
+  if (autoHide && state === 'playing' && $('note').hidden)
+    hideTimer = setTimeout(function () { if (state === 'playing') $('panel').hidden = true; }, 4000);
+}
+function progress(why) {
+  if (!(duration > 0 || position > 0)) return;
+  var v = position.toFixed(1) + '/' + duration.toFixed(1);
+  if (v === lastSent && why === 'timer') return;
+  lastSent = v;
+  send('progress', v, why);
+}
+function fail(code, text) {
+  failed = true;
+  $('loading').textContent = 'This video cannot play here.';
+  if (sentErrors++ < 10) send('error', code, text);
+  note(text, true);
+  status('Error');
+  $('back').focus();
+}
+
+window.addEventListener('error', function (e) {
+  send('log', 'js-error', (e.message || '') + ' @' + String(e.filename || '').split('/').pop() + ':' + e.lineno);
+});
+// What AKENO's own security policy refused (an unexpected frame or script).
+document.addEventListener('securitypolicyviolation', function (e) {
+  send('embed', 'csp', (e.violatedDirective || e.effectiveDirective || '') + ' ' + (e.blockedURI || ''));
+  if (!ready) fail('csp', 'AKENO STREAM\'s page refused to load ' + (e.blockedURI || 'the player') + '.');
+});
+send('loaded', kind, navigator.userAgent);
+
+// --- Shared player state ---------------------------------------------------
+function onReady() {
+  if (ready) return;
+  ready = true;
+  clearTimeout(readyTimer);
+  send('ready', Math.round((Date.now() - loadedAt) / 100) / 10, 'seconds after page load');
+  $('loading').textContent = '';
+  status('Ready');
+  player.play();
+  setTimeout(function () {
+    if (!everPlayed && state !== 'buffering' && !failed) {
+      send('autoplay', 'blocked', 'state ' + state + ' 6 s after ready');
+      status('Press X to start');
+      $('play').focus();
+    }
+  }, 6000);
+  $('play').focus();
+}
+function onState(s) {
+  if (s === state || failed) return;
+  var before = state;
+  state = s;
+  if (s !== 'unstarted') send('state', s, before);
+  $('play').innerHTML = s === 'playing' || s === 'buffering' ? '&#10074;&#10074; Pause' : '&#9654; Play';
+  if (s === 'playing') {
+    note('');
+    status('Playing');
+    if (!everPlayed) {
+      everPlayed = true;
+      send('playing', Math.round((Date.now() - loadedAt) / 100) / 10, 'seconds after page load');
+    }
+    showPanel(true);
+  } else if (s === 'paused') { status('Paused'); progress('paused'); showPanel(false); }
+  else if (s === 'buffering') status('Buffering...');
+  else if (s === 'ended') {
+    status('Finished');
+    if (duration > 0) position = duration;
+    drawTime();
+    progress('ended');
+    send('ended', '1', '');
+    showPanel(false);
+    $('back').focus();
+  }
+}
+function onTime(pos, dur) {
+  if (pos >= 0 && isFinite(pos)) position = pos;
+  if (dur > 0 && isFinite(dur)) duration = dur;
+  drawTime();
+}
+var readyTimer = setTimeout(function () {
+  if (!ready && !failed)
+    fail('embed-timeout', 'The ' + (kind === 'youtube' ? 'YouTube' : 'PeerTube') + ' player did not answer within ' + wait +
+         ' s. The service may not allow its player inside other pages, the video may be private or removed, or the network is slow.');
+}, wait * 1000);
+
+// --- PeerTube: the documented Embed API -------------------------------------
+// The embed (https://<instance>/videos/embed/<id>?api=1) talks to its parent
+// with window.postMessage: JSON text, methods named "peertube::<name>",
+// requests {id, method, params} answered {id, result} or {id, error}, and
+// notifications {method, params}. It opens with a "__ready" handshake
+// ({type: "publish-request"}; "ping" in older versions) that must be answered
+// once. It then announces "ready", reports "playbackStatusUpdate" every half
+// second ({position, duration, volume, playbackState}) and
+// "playbackStatusChange" ("playing", "paused", "ended").
+function PeerTube() {
+  var origin = 'https://' + host, scope = 'peertube', linked = false, nextId = 1, pending = {};
+  var frame = document.createElement('iframe');
+  function post(m) { try { frame.contentWindow.postMessage(JSON.stringify(m), origin); } catch (e) {} }
+  function call(method, params, done) {
+    var id = nextId++, m = {id: id, method: scope + '::' + method};
+    if (params !== undefined) m.params = params;
+    pending[id] = done || null;
+    post(m);
+  }
+  function link(p) {
+    if (linked) return; // a second handshake would make the embed's channel throw
+    linked = true;
+    if (p === 'ping') post({method: scope + '::__ready', params: 'pong'});
+    else if (p && p.type === 'publish-request')
+      post({method: scope + '::__ready', params: {type: 'publish-reply', publish: []}});
+    send('embed', 'linked', p === 'ping' || p === 'pong' ? 'ping/pong handshake' : 'publish handshake');
+    call('isReady', undefined, function (r) { if (r === true) onReady(); });
+  }
+  window.addEventListener('message', function (e) {
+    if (e.source !== frame.contentWindow || e.origin !== origin) return;
+    var m = null;
+    try { m = typeof e.data === 'string' ? JSON.parse(e.data) : null; } catch (x) { return; }
+    if (!m || typeof m !== 'object') return;
+    if (typeof m.method === 'string') {
+      var parts = m.method.split('::');
+      if (parts.length !== 2 || parts[0] !== scope) return;
+      if (m.id) { post({id: m.id, error: 'method_not_found', message: 'not offered'}); return; }
+      var name = parts[1], p = m.params;
+      if (name === '__ready') link(p);
+      else if (name === 'ready') { if (p !== false) onReady(); }
+      else if (name === 'playbackStatusUpdate' && p && typeof p === 'object') {
+        onTime(Number(p.position), Number(p.duration));
+        if (typeof p.playbackState === 'string' && (ready || p.playbackState !== 'unstarted')) onState(p.playbackState);
+      } else if (name === 'playbackStatusChange' && typeof p === 'string') onState(p);
+      return;
+    }
+    if (m.id && Object.prototype.hasOwnProperty.call(pending, m.id)) {
+      var done = pending[m.id];
+      delete pending[m.id];
+      if (m.error) send('log', 'peertube-' + m.error, String(m.message || ''));
+      else if (done) done(m.result);
+    }
+  });
+  var params = 'api=1&autoplay=1&controls=0&title=0&warningTitle=0&peertubeLink=0';
+  if (start > 0) params += '&start=' + start;
+  frame.src = origin + '/videos/embed/' + encodeURIComponent(vid) + '?' + params;
+  frame.title = 'PeerTube video';
+  frame.setAttribute('allow', 'autoplay; fullscreen');
+  frame.setAttribute('allowfullscreen', '');
+  frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  // Scripts and the instance's own storage; no pop-ups, no navigating AKENO's page.
+  frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+  frame.addEventListener('load', function () {
+    send('embed', 'frame-loaded', origin);
+    // The embed opens the handshake itself; ask once more if it stays silent.
+    setTimeout(function () {
+      if (!linked) post({method: scope + '::__ready', params: {type: 'publish-request', publish: []}});
+    }, 1500);
+  });
+  $('player').appendChild(frame);
+  return {
+    play: function () { call('play'); },
+    pause: function () { call('pause'); },
+    seek: function (s) { call('seek', s); return true; }
+  };
+}
+
+// --- YouTube: the IFrame Player API ------------------------------------------
+var ytStates = {'-1': 'unstarted', 0: 'ended', 1: 'playing', 2: 'paused', 3: 'buffering', 5: 'cued'};
+var ytReasons = {
+  2: 'The video address is not valid.',
+  5: 'The video cannot be played by this browser (HTML5 player error).',
+  100: 'The video was not found: it was removed or is private.',
+  101: 'The owner of this video does not allow it to be played in other apps and sites.',
+  150: 'The owner of this video does not allow it to be played in other apps and sites.',
+  152: 'This video cannot be played in an embedded player.',
+  153: 'YouTube did not accept the player\'s identification (missing HTTP Referer).'
+};
+function YouTube() {
+  var yt = null;
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  tag.onerror = function () { send('api', 'failed', tag.src + ' could not be loaded'); fail('api', 'The YouTube player could not be loaded (network or certificate problem).'); };
+  window.onYouTubeIframeAPIReady = function () {
+    send('api', 'ok', '');
+    var vars = {autoplay: 1, playsinline: 1, rel: 0, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3,
+                enablejsapi: 1, origin: location.origin, widget_referrer: location.origin};
+    if (start) vars.start = start;
+    yt = new YT.Player('player', {width: '100%', height: '100%', videoId: vid, playerVars: vars, events: {
+      onReady: function () { if (yt.getDuration) onTime(yt.getCurrentTime(), yt.getDuration()); onReady(); },
+      onStateChange: function (e) { var s = ytStates[e.data]; if (s && s !== 'cued') onState(s); },
+      onError: function (e) { fail(e.data, (ytReasons[e.data] || 'YouTube player error ' + e.data + '.') + ' (error ' + e.data + ')'); }
+    }});
+  };
+  document.head.appendChild(tag);
+  setInterval(function () {
+    if (ready && yt && yt.getCurrentTime) onTime(yt.getCurrentTime(), yt.getDuration ? yt.getDuration() : 0);
+  }, 500);
+  return {
+    play: function () { if (yt && yt.playVideo) yt.playVideo(); },
+    pause: function () { if (yt && yt.pauseVideo) yt.pauseVideo(); },
+    seek: function (s) { if (!yt || !yt.seekTo) return false; yt.seekTo(s, true); return true; }
+  };
+}
+
+// --- Controls -------------------------------------------------------------------
+function toggle() {
+  if (!ready || !player) return;
+  if (state === 'playing' || state === 'buffering') player.pause();
+  else {
+    if (state === 'ended') { position = 0; player.seek(0); }
+    player.play();
+    playAsked = Date.now();
+    setTimeout(function () {
+      if (!everPlayed && !failed && Date.now() - playAsked >= 4000)
+        note('The browser did not let AKENO start the video. Move the pointer onto the picture and press X.');
+    }, 4000);
+  }
+}
+function seekBy(delta) {
+  if (!ready || !player) return;
+  // Before the player reports its length, forward seeks are left to it to bound.
+  var target = Math.max(0, Math.min(duration > 0 ? duration - 1 : Infinity, position + delta));
+  if (!player.seek(target)) { if (!seekNoted) { seekNoted = true; send('seek', 'unsupported', ''); } return; }
+  position = target;
+  drawTime();
+  send('seek', Math.round(target), (delta > 0 ? '+' : '') + delta + ' s');
+  showPanel(true);
+}
+function fullScreen() {
+  var el = document.documentElement, f = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    var x = document.exitFullscreen || document.webkitExitFullscreen;
+    if (x) x.call(document);
+    return;
+  }
+  if (!f) { send('fullscreen', 'unsupported', 'no Fullscreen API'); status('Full screen is not available'); return; }
+  try {
+    var r = f.call(el);
+    if (r && r.then) r.then(function () { send('fullscreen', 'ok', ''); },
+                            function (err) { send('fullscreen', 'refused', String(err)); status('Full screen was refused'); });
+    else send('fullscreen', 'requested', '');
+  } catch (err) { send('fullscreen', 'refused', String(err)); }
+}
+function backToApp() {
+  progress('exit');
+  send('state', 'exit', 'back button');
+  try { if (player && ready) player.pause(); } catch (e) {}
+  try { var x = new XMLHttpRequest(); x.open('POST', 'close', true); x.send(''); } catch (e) {}
+  status('Returning to AKENO STREAM...');
+}
+$('back').onclick = backToApp;
+$('play').onclick = toggle;
+$('rew').onclick = function () { seekBy(-10); };
+$('fwd').onclick = function () { seekBy(10); };
+$('fs').onclick = fullScreen;
+
+// A controller button can arrive as a key and as a Gamepad press at once: the
+// second report of the same press is dropped. Quick presses from one source
+// (pause, then play again) all count.
+var lastAction = {};
+function once(name, source, run) {
+  var now = Date.now(), last = lastAction[name];
+  if (last && last.source !== source && now - last.at < 250) return;
+  lastAction[name] = {at: now, source: source};
+  run();
+}
+var keysLogged = 0;
+document.addEventListener('keydown', function (e) {
+  if (keysLogged++ < 25) send('input', e.key || '', 'keyCode ' + e.keyCode);
+  var wasHidden = $('panel').hidden;
+  showPanel(true);
+  var k = e.key, c = e.keyCode;
+  var buttons = Array.prototype.filter.call(document.querySelectorAll('#bar .btn'), function (b) { return !b.hidden; });
+  var i = buttons.indexOf(document.activeElement);
+  if (k === 'ArrowRight' || c === 39) { if (!wasHidden) buttons[(i + 1) % buttons.length].focus(); e.preventDefault(); }
+  else if (k === 'ArrowLeft' || c === 37) { if (!wasHidden) buttons[(i + buttons.length - 1) % buttons.length].focus(); e.preventDefault(); }
+  else if (k === ' ' || k === 'MediaPlayPause' || k === 'k' || c === 179) { once('toggle', 'key', toggle); e.preventDefault(); }
+  else if (k === 'MediaRewind' || k === 'j' || k === 'PageUp' || c === 227) { once('rew', 'key', function () { seekBy(-10); }); e.preventDefault(); }
+  else if (k === 'MediaFastForward' || k === 'l' || k === 'PageDown' || c === 228) { once('fwd', 'key', function () { seekBy(10); }); e.preventDefault(); }
+  else if (k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || c === 27) { once('back', 'key', backToApp); e.preventDefault(); }
+  else if (k === 'Enter' && i < 0) { once('toggle', 'key', toggle); e.preventDefault(); }
+}, true);
+// The Gamepad API, where the console's browser offers it: L1 / R1 seek, square
+// plays and pauses, triangle switches full screen. Cross and circle stay with
+// the browser (pointer and back).
+var padHeld = {}, padLogged = {};
+var padMap = {2: ['toggle', toggle], 3: ['fs', fullScreen], 4: ['rew', function () { seekBy(-10); }],
+              5: ['fwd', function () { seekBy(10); }], 6: ['rew30', function () { seekBy(-30); }],
+              7: ['fwd30', function () { seekBy(30); }]};
+setInterval(function () {
+  var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (var p = 0; pads && p < pads.length; ++p) {
+    var pad = pads[p];
+    if (!pad || !pad.buttons) continue;
+    for (var b in padMap) {
+      var pressed = pad.buttons[b] && pad.buttons[b].pressed, key = p + ':' + b;
+      if (pressed && !padHeld[key]) {
+        if (!padLogged[b]) { padLogged[b] = true; send('input', 'gamepad ' + b, pad.id || 'gamepad'); }
+        showPanel(true);
+        once(padMap[b][0], 'pad', padMap[b][1]);
+      }
+      padHeld[key] = pressed;
+    }
+  }
+}, 100);
+
+setInterval(function () { try { var x = new XMLHttpRequest(); x.open('GET', 'ping', true); x.send(null); } catch (e) {} }, 3000);
+setInterval(function () { if (state === 'playing') progress('timer'); }, 5000);
+drawTime();
+
+if (kind === 'peertube' && /^[a-z0-9.-]+(:[0-9]{1,5})?$/.test(host) &&
+    (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(vid) ||
+     /^[1-9A-HJ-NP-Za-km-z]{16,24}$/.test(vid)))
+  player = PeerTube();
+else if (kind === 'youtube' && /^[A-Za-z0-9_-]{11}$/.test(vid))
+  player = YouTube();
+else
+  fail('bad-target', 'No video was given, or its address is not one AKENO STREAM can embed.');
+$('play').focus();
 })();
 )AKENO";
 }

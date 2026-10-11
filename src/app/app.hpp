@@ -171,12 +171,15 @@ struct WebSession
         website,         // a site the user chose: opened as is, nothing added to it
         youtube,         // AKENO STREAM's page with the official YouTube player
         capability_test, // AKENO STREAM's browser capability test page
+        video,           // AKENO STREAM's video-only player: one official embed
     };
     Kind kind = Kind::website;
     std::string url;     // Kind::website: the address
     std::string title;   // shown while it opens
     std::string site_id; // the saved website, if it is one
     web::YouTubeTarget youtube;
+    web::EmbedTarget embed;  // Kind::video: the video and where to start
+    MediaItem item;          // Kind::video: progress is saved under its key (empty id: not saved)
     bool check_first = true; // look at the site before opening (Settings)
     // Runs on the next frame after the browser has closed (to ask what the
     // user saw, for example).
@@ -273,6 +276,11 @@ class App final
     // when it cannot play. start < 0: resume from history.
     void play_episode(const std::string &provider_id, const std::string &series_id,
                       anime::EpisodeRef ref, double start = -1.0);
+    // The same episode in its service's official embedded player on the
+    // video-only page (anime/playback_route.hpp), sharing its saved position
+    // with AKENO's player. False (and a message) when it has none.
+    bool play_episode_embedded(const std::string &provider_id, const std::string &series_id,
+                               anime::EpisodeRef ref, double start = -1.0);
     void show_qr(const MediaItem &item);
     void show_provider_status(const Provider &provider);
     // The embedded browser: websites, the official YouTube player and the
@@ -281,6 +289,14 @@ class App final
     // Address bar: an address opens, other text is searched for.
     void open_address(const std::string &typed);
     void play_youtube(const web::YouTubeTarget &target, const std::string &title);
+    // The video-only player: one video in its service's official embedded
+    // player (web/embed.hpp), progress saved under item's key (an anime
+    // episode's, so native and embedded playback share it). start < 0
+    // resumes from history, else from the target's own start.
+    void play_embed(web::EmbedTarget target, const std::string &title, const MediaItem &item = {},
+                    double start = -1.0);
+    // Asks for a YouTube or PeerTube video address and plays it there.
+    void ask_embed_link();
     // Asks for a YouTube link or video ID and plays it in the official player.
     void ask_youtube_link();
     // youtube.com in the embedded browser.

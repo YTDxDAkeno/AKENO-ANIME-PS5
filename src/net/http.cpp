@@ -29,7 +29,19 @@ struct Transfer
     bool sink_stopped = false;
     bool head_sent = false;
     std::int64_t range_total = -1;
+    std::string frame_options, security_policy;
 };
+
+// A header's value without the name, the colon and surrounding blanks.
+std::string header_value(const char *data, std::size_t size, std::size_t name_length)
+{
+    std::string value(data + name_length, size - name_length);
+    while (!value.empty() && (value.back() == '\r' || value.back() == '\n' || value.back() == ' ' ||
+                              value.back() == '\t'))
+        value.pop_back();
+    const std::size_t first = value.find_first_not_of(" \t");
+    return first == std::string::npos ? std::string{} : value.substr(first);
+}
 
 bool starts_with_nocase(const char *data, std::size_t size, const char *prefix)
 {
@@ -52,7 +64,19 @@ std::size_t on_header(char *data, std::size_t size, std::size_t count, void *con
     auto &t = *static_cast<Transfer *>(context);
     const std::size_t bytes = size * count;
     if (starts_with_nocase(data, bytes, "http/"))
+    {
         t.range_total = -1; // a new response (after a redirect)
+        t.frame_options.clear();
+        t.security_policy.clear();
+    }
+    else if (starts_with_nocase(data, bytes, "x-frame-options:"))
+        t.frame_options = header_value(data, bytes, 16);
+    else if (starts_with_nocase(data, bytes, "content-security-policy:"))
+    {
+        const std::string value = header_value(data, bytes, 24);
+        if (t.security_policy.size() + value.size() < 16 * 1024)
+            t.security_policy += (t.security_policy.empty() ? "" : ", ") + value;
+    }
     else if (starts_with_nocase(data, bytes, "content-range:"))
     {
         // Content-Range: bytes 0-99/1234
@@ -71,6 +95,8 @@ bool announce_head(Transfer &t)
         return true;
     t.head_sent = true;
     Head &head = t.response->head;
+    head.frame_options = t.frame_options;
+    head.security_policy = t.security_policy;
     if (t.easy)
     {
         curl_easy_getinfo(t.easy, CURLINFO_RESPONSE_CODE, &head.status);

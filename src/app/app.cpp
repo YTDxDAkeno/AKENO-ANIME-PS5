@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/app.hpp"
 
+#include "anime/playback_route.hpp"
 #include "anime/session.hpp"
 #include "anime/website.hpp"
 #include "app/backup.hpp"
@@ -807,6 +808,37 @@ void App::play_episode(const std::string &provider_id, const std::string &series
         });
 }
 
+bool App::play_episode_embedded(const std::string &provider_id, const std::string &series_id,
+                                anime::EpisodeRef ref, double start)
+{
+    const anime::Series *series = anime_.find_series(provider_id, series_id);
+    if (!series || ref.season >= series->seasons.size() ||
+        ref.episode >= series->seasons[ref.season].episodes.size())
+    {
+        toast("This episode is no longer offered by its provider", th::kWarning);
+        return false;
+    }
+    const anime::Episode &episode = series->seasons[ref.season].episodes[ref.episode];
+    const anime::PlaybackRoute route = anime::route_episode(episode);
+    const auto target = anime::episode_embed(episode);
+    if (route.route == anime::Route::unavailable || !target)
+    {
+        toast(route.route == anime::Route::unavailable
+                  ? route.reason
+                  : std::string{"This episode has no official embedded player"},
+              th::kWarning);
+        return false;
+    }
+    const anime::PlaybackSession session =
+        anime::make_session(*series, ref, anime::MediaResource{}, start);
+    MediaItem item = anime::session_item(session, *series);
+    item.playable.reset(); // not a stream for AKENO's own player
+    item.external_url = target->page_url();
+    item.external_label = std::string{"Watch on "} + web::embed_kind_label(target->kind);
+    play_embed(*target, series->title + " - " + item.subtitle, item, start);
+    return true;
+}
+
 void App::finish_playback_record()
 {
     if (!playing_active_)
@@ -961,6 +993,48 @@ void App::play_youtube(const web::YouTubeTarget &target, const std::string &titl
     session.youtube = target;
     session.title = title.empty() ? std::string{"YouTube"} : title;
     open_web(std::move(session));
+}
+
+void App::play_embed(web::EmbedTarget target, const std::string &title, const MediaItem &item,
+                     double start)
+{
+    if (!target.valid())
+    {
+        toast("This video cannot be shown in the video-only player", th::kWarning);
+        return;
+    }
+    if (start < 0.0)
+        start = !item.id.empty() && store_.settings().resume_playback
+                    ? store_.resume_position(item.key())
+                    : target.start_seconds;
+    target.start_seconds = static_cast<int>(std::clamp(start, 0.0, 172800.0));
+    WebSession session;
+    session.kind = WebSession::Kind::video;
+    session.embed = std::move(target);
+    session.item = item;
+    session.title = title.empty() ? std::string{web::embed_kind_label(session.embed.kind)} : title;
+    open_web(std::move(session));
+}
+
+void App::ask_embed_link()
+{
+    open_keyboard("YouTube or PeerTube video address", "https://", 300, false,
+                  [this](bool ok, const std::string &text)
+                  {
+                      if (!ok || text.empty() || text == "https://")
+                          return;
+                      const auto target = web::parse_embed(text);
+                      if (!target)
+                      {
+                          toast("Not a YouTube or PeerTube video address (PeerTube: "
+                                "https://<instance>/w/<id>)",
+                                th::kWarning);
+                          return;
+                      }
+                      play_embed(*target, target->kind == web::EmbedKind::peertube
+                                              ? target->host
+                                              : std::string{"YouTube"});
+                  });
 }
 
 void App::ask_youtube_link()

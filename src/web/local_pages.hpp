@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // While the browser shows one of AKENO STREAM's own pages (the official
-// YouTube player, the browser capability test), the app serves them from
+// YouTube player, the video-only player, the browser capability test), the
+// app serves them from
 // http://127.0.0.1:<port>/s/<token>/... The page gets a real web origin - which
 // YouTube's embedded player requires, since it identifies the embedding site
 // by the HTTP Referer - and can tell the app what happened (player ready,
@@ -20,6 +21,7 @@
 #pragma once
 
 #include "platform/platform.hpp"
+#include "web/embed.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -51,8 +53,10 @@ class LocalPages final
     LocalPages &operator=(const LocalPages &) = delete;
 
     // Starts serving with a new token. media_dir holds the bundled clips the
-    // playback lab plays (assets/selftest; empty: no media is served).
-    bool start(const std::string &media_dir, std::string *error);
+    // playback lab plays (assets/selftest; empty: no media is served). watch
+    // is the one embedded player the video-only page may show: its origin is
+    // the only frame its security policy allows (none: the page shows nothing).
+    bool start(const std::string &media_dir, std::string *error, const EmbedTarget &watch = {});
     void stop();
     [[nodiscard]] bool running() const noexcept
     {
@@ -110,6 +114,7 @@ class LocalPages final
         std::string bytes;
     };
     std::vector<Media> media_;
+    EmbedTarget watch_;
     std::atomic<bool> running_{false};
     std::atomic<std::uint64_t> last_contact_{0};
     std::atomic<bool> page_loaded_{false};
@@ -126,6 +131,9 @@ std::string_view youtube_page_html();
 std::string_view youtube_page_js();
 std::string_view capability_page_html();
 std::string_view capability_page_js();
+// The video-only player: one officially embeddable video (web/embed.hpp).
+std::string_view watch_page_html();
+std::string_view watch_page_js();
 // The lab's cross-origin frame (served as http://localhost:<port>/... inside
 // the capability page at http://127.0.0.1:<port>/...).
 std::string_view frame_page_html();

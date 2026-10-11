@@ -32,6 +32,10 @@ struct Head
     std::int64_t content_length = -1; // bytes in this response, -1 when unknown
     std::int64_t total_length = -1;   // whole resource (Content-Range or Content-Length)
     bool partial = false;             // 206: the server honoured the Range header
+    // Frame restrictions of the final response (web/embed.hpp frame_policy):
+    // X-Frame-Options and Content-Security-Policy (several joined with ", ").
+    std::string frame_options;
+    std::string security_policy;
 };
 
 struct Request

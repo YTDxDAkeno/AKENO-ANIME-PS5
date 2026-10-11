@@ -10,6 +10,7 @@
 // playable; AniList-only titles are labelled as catalogue entries and say
 // which capability is missing.
 #include "anime/address.hpp"
+#include "anime/playback_route.hpp"
 #include "anime/session.hpp"
 #include "anime/site_policy.hpp"
 #include "anime/website.hpp"
@@ -872,6 +873,7 @@ class SeriesScreen final : public Screen
         source_info,
         retry,
         website,
+        embed,
     };
     struct Action
     {
@@ -1179,6 +1181,10 @@ class SeriesScreen final : public Screen
                                         : "Play " + label,
                                     Icon::play});
                 next_up_ = up;
+                // The same episode in its service's own player (PeerTube, an
+                // embed the provider names), on AKENO's video-only page.
+                if (anime::episode_embed(season.episodes[up->ref.episode]))
+                    actions_.push_back({ActionKind::embed, "Video-only player", Icon::play});
             }
             else
                 next_up_.reset();
@@ -1211,6 +1217,11 @@ class SeriesScreen final : public Screen
             if (next_up_)
                 app_.play_episode(source_provider_, source_series_, next_up_->ref,
                                   next_up_->resume ? next_up_->position : 0.0);
+            return;
+        case ActionKind::embed:
+            if (next_up_)
+                app_.play_episode_embedded(source_provider_, source_series_, next_up_->ref,
+                                           next_up_->resume ? next_up_->position : 0.0);
             return;
         case ActionKind::watchlist:
             toggle_watchlist();
