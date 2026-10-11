@@ -43,12 +43,16 @@ Full list: [CHANGELOG.md](https://github.com/YTDxDAkeno/AKENO-ANIME-PS5/blob/v1.
 
 | Test | Where | Result |
 | --- | --- | --- |
-| Host unit and end-to-end tests with ASan/UBSan (controller-driven: provider import, catalogue, series, episode, native player, verified state, next episode, resume, restart, AnimePahe never contacted) | Build machine, offline fixtures | Passed (see the CI run of this tag) |
-| Real-network acceptance: `video.blender.org` through the controller into AKENO's player (FFmpeg software decoder) | GitHub runner, real internet | See the *Real-network acceptance* run of this commit |
-| PS5 cross-build, import check (system modules), package contents | Build machine | Passed |
+| Host unit and end-to-end tests with ASan/UBSan: 235 tests, controller-driven (provider import, catalogue, series, episode, native player, verified state, next episode, resume, restart, pause, AnimePahe never contacted) | Build machine, offline fixtures | **234 passed, 0 failed**, 1 skipped (the real-network test, which runs separately) |
+| Host integration tests (tooling, packaging) | Build machine | **13 passed** |
+| **Real-network acceptance**: `video.blender.org` through the controller - *Add Streaming Provider*, 17 series, *Blender Studio* -> season *Sprite Fright Weekly* (33 episodes) -> S1 E1 in AKENO's player (MP4, H.264 1920x1080, AAC; FFmpeg software decoder) -> *Native playback verified* -> pause/resume, seek +10 s / -10 s, next (R2) and previous (L2) episode, progress saved, restart, *Continue* resumed at 11.1 s of 12.1 s | GitHub runner, real internet ([run](https://github.com/YTDxDAkeno/AKENO-ANIME-PS5/actions/runs/38159316285)) | **All steps passed**; subtitles not applicable (those episodes publish no captions; WebVTT selection is covered by the host tests) |
+| PS5 cross-build, import check (254 imports from 13 system modules, unchanged), runtime shim reproduced, package contents | Build machine ([run](https://github.com/YTDxDAkeno/AKENO-ANIME-PS5/actions/runs/38159316327)) | Passed |
 | **Console** (firmware 12.20): launch, DualSense, native playback with the hardware decoder, restart | **Your PS5** | **Pending - checklist section 15** |
 
-A passing CI build is not a console result.
+The real-network run found two defects that offline fixtures could not show,
+both fixed in rc.2: `video.blender.org` refused AKENO's first detection request
+with HTTP 406 (so it could not be added at all), and a pause during start-up
+read *Buffering*. A passing CI build is not a console result.
 
 ## Install or update
 
