@@ -45,6 +45,31 @@ const char *provider_type_label(ProviderType t) noexcept;
 // is and never reinterpreted as another type.
 std::optional<ProviderType> provider_type_from_id(std::string_view id) noexcept;
 
+// What a provider's episodes do in AKENO STREAM, shown wherever the provider
+// appears (Add Streaming Provider, its card, its home, its series). Only
+// "plays" and "partly plays" ever come with a Play button: a catalogue-only
+// or website-only provider shows its series and details, never a Play button.
+enum class PlaybackClass : std::uint8_t
+{
+    unknown,         // not checked yet, or its videos could not be reached
+    native,          // the checked episodes play in AKENO STREAM's own player
+    partial,         // some checked episodes play; others are protected or missing
+    catalogue_only,  // series and details only: no episode names a video AKENO may play
+    browser_only,    // a known website whose episodes play only on its own pages (PS5 browser)
+    protected_media, // every checked episode needs DRM, a sign-in or another region
+    unsupported,     // no adapter recognises it, or no permitted way in
+};
+const char *playback_class_id(PlaybackClass c) noexcept;    // "catalogue-only"
+const char *playback_class_label(PlaybackClass c) noexcept; // "Catalogue only"
+// One sentence: what the user can do with such a provider.
+const char *playback_class_detail(PlaybackClass c) noexcept;
+std::optional<PlaybackClass> playback_class_from_id(std::string_view id) noexcept;
+// True when its episodes may have a Play button.
+inline bool plays_natively(PlaybackClass c) noexcept
+{
+    return c == PlaybackClass::native || c == PlaybackClass::partial;
+}
+
 struct ProviderConfig
 {
     std::string id;
@@ -66,7 +91,8 @@ struct ProviderConfig
     // What the last check found (shown before the provider has loaded).
     int known_series = 0;
     int known_episodes = 0;
-    std::uint64_t checked = 0; // Unix seconds of that check
+    std::uint64_t checked = 0;                       // Unix seconds of that check
+    PlaybackClass playback = PlaybackClass::unknown; // what that check found
 };
 
 // What a source turned out to be (Websites and the provider check use it).
@@ -115,7 +141,17 @@ struct ProviderReport
     std::vector<std::string> evidence; // "JSON-LD: an ItemList of 12 TVSeries"
     int total_series = -1;             // the whole catalogue, when the site says so
     std::string existing_id;           // the address is already this provider
+    // What its episodes do in AKENO STREAM (classify_playback()).
+    PlaybackClass playback = PlaybackClass::unknown;
+    // A known website (anime/site_policy.hpp): its name and how to watch it in
+    // the PS5 browser instead ("Turn on Autoplay in Miruro's player").
+    std::string known_site;
+    std::string browser_hint;
 };
+
+// The playback class a check found, from its counts alone: a page that loads
+// or an HTTP 200 never counts as playback.
+PlaybackClass classify_playback(const ProviderReport &report) noexcept;
 
 struct LoadedCatalog
 {

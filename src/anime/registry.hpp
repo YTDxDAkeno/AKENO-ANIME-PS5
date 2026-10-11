@@ -92,6 +92,14 @@ class Registry final
     bool set_enabled(std::string_view id, bool enabled);
     // Website providers: what the last check of the catalogue found.
     void set_summary(std::string_view id, int series, int episodes);
+    // Website providers: what the last full check (Add, Check Again) found
+    // their episodes do in AKENO STREAM.
+    void set_playback(std::string_view id, PlaybackClass playback);
+    // What a provider's episodes do in AKENO STREAM now: an episode checked
+    // and found playable wins; a website's unopened series keep what its last
+    // check found; a known website (Miruro) is website-only unless its pages
+    // named a video that played.
+    [[nodiscard]] PlaybackClass playback_of(std::string_view id) const;
     // Entries the provider files hold but this version does not load, and
     // other problems found while reading them (one sentence each).
     [[nodiscard]] const std::vector<std::string> &storage_problems() const noexcept

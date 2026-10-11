@@ -485,6 +485,114 @@ const char *source_class_label(SourceClass c) noexcept
     return "";
 }
 
+const char *playback_class_id(PlaybackClass c) noexcept
+{
+    switch (c)
+    {
+    case PlaybackClass::unknown:
+        return "unknown";
+    case PlaybackClass::native:
+        return "native";
+    case PlaybackClass::partial:
+        return "partial";
+    case PlaybackClass::catalogue_only:
+        return "catalogue-only";
+    case PlaybackClass::browser_only:
+        return "browser-only";
+    case PlaybackClass::protected_media:
+        return "protected";
+    case PlaybackClass::unsupported:
+        return "unsupported";
+    }
+    return "unknown";
+}
+
+const char *playback_class_label(PlaybackClass c) noexcept
+{
+    switch (c)
+    {
+    case PlaybackClass::unknown:
+        return "Not checked yet";
+    case PlaybackClass::native:
+        return "Plays in AKENO";
+    case PlaybackClass::partial:
+        return "Partly plays in AKENO";
+    case PlaybackClass::catalogue_only:
+        return "Catalogue only";
+    case PlaybackClass::browser_only:
+        return "Website only (PS5 browser)";
+    case PlaybackClass::protected_media:
+        return "Protected (DRM or sign-in)";
+    case PlaybackClass::unsupported:
+        return "Not supported";
+    }
+    return "";
+}
+
+const char *playback_class_detail(PlaybackClass c) noexcept
+{
+    switch (c)
+    {
+    case PlaybackClass::unknown:
+        return "Its videos have not been checked yet; each one is checked before it plays.";
+    case PlaybackClass::native:
+        return "Its checked episodes play in AKENO STREAM's own player.";
+    case PlaybackClass::partial:
+        return "Some checked episodes play in AKENO STREAM's own player; the others say why "
+               "not.";
+    case PlaybackClass::catalogue_only:
+        return "Its series and details appear in AKENO STREAM without Play buttons: no episode "
+               "names a video AKENO STREAM may play.";
+    case PlaybackClass::browser_only:
+        return "Its series appear in AKENO STREAM without Play buttons; episodes play only on "
+               "the website itself, in the PS5 browser (Open on Website).";
+    case PlaybackClass::protected_media:
+        return "Its episodes need DRM, a sign-in or another region. AKENO STREAM plays only "
+               "DRM-free video.";
+    case PlaybackClass::unsupported:
+        return "No adapter reads it, or it offers no permitted way in. It can still open in "
+               "Websites (the PS5 browser).";
+    }
+    return "";
+}
+
+std::optional<PlaybackClass> playback_class_from_id(std::string_view id) noexcept
+{
+    for (const PlaybackClass c :
+         {PlaybackClass::unknown, PlaybackClass::native, PlaybackClass::partial,
+          PlaybackClass::catalogue_only, PlaybackClass::browser_only,
+          PlaybackClass::protected_media, PlaybackClass::unsupported})
+        if (id == playback_class_id(c))
+            return c;
+    return std::nullopt;
+}
+
+PlaybackClass classify_playback(const ProviderReport &r) noexcept
+{
+    const int blocked = r.drm + r.auth + r.region;
+    if (r.playable > 0)
+        return blocked + r.missing + r.unsupported > 0 ? PlaybackClass::partial
+                                                       : PlaybackClass::native;
+    switch (r.source)
+    {
+    case SourceClass::unreachable:
+        return PlaybackClass::unknown;
+    case SourceClass::web_page:
+    case SourceClass::media_file:
+    case SourceClass::playlist:
+        return PlaybackClass::unsupported;
+    default:
+        break;
+    }
+    if (r.with_media == 0)
+        return r.series > 0 ? PlaybackClass::catalogue_only : PlaybackClass::unknown;
+    if (blocked > 0 && r.network == 0 && r.missing == 0)
+        return PlaybackClass::protected_media;
+    if (r.probed == 0 || (r.network > 0 && r.network == r.probed))
+        return PlaybackClass::unknown; // videos listed, not (yet) reachable
+    return PlaybackClass::unsupported;
+}
+
 PeerTubeAddress parse_peertube_address(const std::string &address)
 {
     PeerTubeAddress out;

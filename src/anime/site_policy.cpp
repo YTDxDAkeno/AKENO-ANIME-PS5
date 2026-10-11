@@ -1,4 +1,4 @@
-// AKENO STREAM PS5 - Websites that cannot become providers, and the precise reason.
+// AKENO STREAM PS5 - Websites investigated as providers, and the precise result.
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "anime/site_policy.hpp"
@@ -43,6 +43,31 @@ bool anikoto_host(const std::string &host)
             return true;
     return false;
 }
+
+// Miruro's own list of its domains (miruro.com); look-alike domains such as
+// miruro.cx are not Miruro's and are not named here.
+bool miruro_host(const std::string &host)
+{
+    static const char *const kDomains[] = {"miruro.tv", "miruro.to", "miruro.bz", "miruro.ru",
+                                           "miruro.com"};
+    for (const char *domain : kDomains)
+    {
+        const std::string d = domain;
+        if (host == d || (host.size() > d.size() && host.ends_with(d) &&
+                          host[host.size() - d.size() - 1] == '.'))
+            return true;
+    }
+    return false;
+}
+
+std::optional<url::Url> host_of(std::string_view address)
+{
+    const SiteAddress normalised = normalize_site_address(address);
+    auto u = url::parse(normalised.ok ? std::string_view{normalised.url} : address);
+    if (!u || u->host.empty())
+        return std::nullopt;
+    return u;
+}
 } // namespace
 
 std::optional<SitePolicy> unsupported_site(std::string_view address)
@@ -67,5 +92,29 @@ std::optional<SitePolicy> unsupported_site(std::string_view address)
         "Still possible: open it in Websites (the PS5 browser), as before.",
     };
     return p;
+}
+
+std::optional<KnownSite> known_site(std::string_view address)
+{
+    const auto u = host_of(address);
+    if (!u || !miruro_host(u->host))
+        return std::nullopt;
+    KnownSite k;
+    k.site = "Miruro";
+    k.playback = PlaybackClass::browser_only;
+    k.document = "docs/MIRURO.md";
+    k.reasons = {
+        "Episodes: no public API - a private interface behind Cloudflare bot protection, with "
+        "obfuscated answers. Never got around.",
+        "Video: third-party hosts that answer only their own player's Referer, via Miruro's "
+        "proxy. No file for other players.",
+        "Licence: none published; a 2026 MPA/ACE DMCA subpoena to Cloudflare names miruro.to.",
+        "Catalogue: only what its pages publish as schema.org data, as for any website - no "
+        "Play buttons.",
+    };
+    k.browser_hint = "Watch it in Websites (PS5 browser) with Autoplay on in Miruro's player: on "
+                     "firmware 12.20 episodes start only that way.";
+    k.adapters = {"schema-org"};
+    return k;
 }
 } // namespace akeno::anime

@@ -276,10 +276,16 @@ int website_adapter_version(const std::string &adapter_id) noexcept
 SiteDetection detect_website(const SitePage &page, const net::CancelFlag &cancel)
 {
     SiteDetection closest;
+    // A known website is asked only by the adapters that can read it.
+    const auto known = known_site(page.url);
     for (const WebsiteAdapter *a : website_adapters())
     {
         if (cancel && cancel->load())
             break;
+        if (known && !known->adapters.empty() &&
+            std::find(known->adapters.begin(), known->adapters.end(), a->id()) ==
+                known->adapters.end())
+            continue;
         SiteDetection d = a->detect(page, cancel);
         if (d.recognised)
         {
