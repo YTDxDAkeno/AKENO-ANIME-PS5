@@ -35,8 +35,11 @@ enum class Seen : std::uint8_t
     error_message,  // the player shows an error message or code
     format_message, // "format / browser not supported", or picture or sound missing
     embed_message,  // "playback on other websites is disabled" / "not allowed here"
+    // Play does nothing; with the site's own Autoplay setting on, the video
+    // starts and plays (Miruro on firmware 12.20).
+    autoplay_only,
 };
-inline constexpr int kSeenCount = 8;
+inline constexpr int kSeenCount = 9;
 const char *seen_id(Seen seen) noexcept;
 Seen seen_from_id(std::string_view id) noexcept;
 const char *seen_label(Seen seen) noexcept;
@@ -56,6 +59,9 @@ enum class PlaybackState : std::uint8_t
     drm_unavailable,
     embedding_denied,
     undetermined,
+    // The video plays once started, but a press on the page's Play button
+    // does not start it: only the site's own Autoplay does.
+    start_blocked,
 };
 const char *state_label(PlaybackState state) noexcept;
 
@@ -109,11 +115,23 @@ struct LabFacts
     // browser can decrypt and play encrypted video (no commercial DRM).
     Outcome encrypted_playback = Outcome::unknown;
     Outcome drm = Outcome::unknown; // any commercial key system (yes/no/unknown)
-    bool measured = false;          // the lab ran at least once
+    // Starting playback: by itself, and from a press on a page's Play button
+    // (the lab's "Test a Play button").
+    Outcome autoplay_sound = Outcome::unknown;     // play() with sound, no press
+    Outcome autoplay_attribute = Outcome::unknown; // <video autoplay> with sound
+    Outcome press_sync = Outcome::unknown;         // play() inside the press's click
+    Outcome press_after_load = Outcome::unknown;   // play() once the page loaded the file
+    Outcome press_delayed = Outcome::unknown;      // play() 1.5 s after the press
+    Outcome press_frame = Outcome::unknown;        // a press inside another site's frame
+    std::string press_events;                      // "keydown(Enter) > click"
+    bool measured = false;                         // the lab ran at least once
 };
 LabFacts lab_facts(const WebTestLog &lab);
 // What the facts mean for websites, in a few plain sentences.
 std::string lab_meaning(const LabFacts &facts);
+// How video can be started here (by itself, by a press on a page's Play
+// button), from the lab's start tests; says what is not measured yet.
+std::string start_meaning(const LabFacts &facts);
 
 struct Classification
 {

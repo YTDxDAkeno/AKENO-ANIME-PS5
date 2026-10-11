@@ -683,6 +683,14 @@ TEST(LocalPages, PagesCarryASecurityPolicy)
     EXPECT_NE(web::youtube_page_js().find("origin: location.origin"), std::string::npos);
     EXPECT_NE(web::capability_page_js().find("requestMediaKeySystemAccess"), std::string::npos);
     EXPECT_NE(web::capability_page_js().find("com.widevine.alpha"), std::string::npos);
+    // The Play button test: a press's events, play() at once / after loading /
+    // later, and a press inside another origin's frame (frame page, press mode).
+    EXPECT_NE(web::capability_page_html().find("Test a Play button"), std::string::npos);
+    for (const char *id : {"start.press_events", "start.press_sync", "start.press_after_load",
+                           "start.press_delayed", "start.press_frame", "start.autoplay_attribute"})
+        EXPECT_NE(web::capability_page_js().find(id), std::string::npos) << id;
+    EXPECT_NE(web::frame_page_js().find("press=1"), std::string::npos);
+    EXPECT_NE(web::frame_page_js().find("send('press'"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

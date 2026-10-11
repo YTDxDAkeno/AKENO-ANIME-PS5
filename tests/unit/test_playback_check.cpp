@@ -296,3 +296,80 @@ TEST(PlaybackCheck, ClearKeyPlaybackIsEvidence)
         EXPECT_FALSE(cls.measured);
     }
 }
+
+// A site whose video plays only when its own Autoplay setting is on (Miruro on
+// firmware 12.20): decoding and the streaming player work, only the start
+// differs. The lab's Play button tests decide what is measured - never more.
+TEST(PlaybackStart, AutoplayOnlyIsNotDeterminedWithoutThePlayButtonTest)
+{
+    web::WebTestLog log(fresh_dir());
+    lab_without_drm(log);
+    put(log, "playback.autoplay_sound", Outcome::yes);
+    const auto c = web::classify(seen(Seen::autoplay_only), false, web::lab_facts(log));
+    EXPECT_EQ(c.state, PlaybackState::start_blocked);
+    EXPECT_FALSE(c.measured);
+    EXPECT_NE(c.reason.find("Test a Play button"), std::string::npos) << c.reason;
+    EXPECT_NE(c.reason.find("Keep the site's own Autoplay on"), std::string::npos);
+    EXPECT_STREQ(web::state_label(c.state), "Starts only by itself (Autoplay)");
+    EXPECT_STREQ(web::seen_id(Seen::autoplay_only), "autoplay-only");
+    const std::string meaning = web::start_meaning(web::lab_facts(log));
+    EXPECT_NE(meaning.find("start video with sound by themselves"), std::string::npos) << meaning;
+    EXPECT_NE(meaning.find("not measured yet"), std::string::npos) << meaning;
+}
+
+TEST(PlaybackStart, APressWithoutAClickIsMeasured)
+{
+    web::WebTestLog log(fresh_dir());
+    lab_without_drm(log);
+    // What the page posts when a press reaches it as keys only.
+    ASSERT_EQ(log.accept_report(
+                  R"json({"version": 2, "results": [
+                    {"id": "start.press_events", "group": "Starting playback", "name": "Events",
+                     "status": "info", "detail": "keydown(Enter) > keyup(Enter) (no click)"},
+                    {"id": "start.press_sync", "group": "Starting playback", "name": "At once",
+                     "status": "no", "detail": "the press sent no click event"}]})json",
+                  1, nullptr),
+              2);
+    const auto c = web::classify(seen(Seen::autoplay_only), false, web::lab_facts(log));
+    EXPECT_EQ(c.state, PlaybackState::start_blocked);
+    EXPECT_TRUE(c.measured);
+    EXPECT_NE(c.reason.find("sent no click event"), std::string::npos) << c.reason;
+    EXPECT_NE(c.reason.find("keydown(Enter)"), std::string::npos) << c.reason;
+}
+
+TEST(PlaybackStart, AGestureLostWhileLoadingIsMeasured)
+{
+    web::WebTestLog log(fresh_dir());
+    lab_without_drm(log);
+    put(log, "start.press_sync", Outcome::yes);
+    put(log, "start.press_after_load", Outcome::no);
+    put(log, "start.press_delayed", Outcome::no);
+    const web::LabFacts facts = web::lab_facts(log);
+    const auto c = web::classify(seen(Seen::autoplay_only), false, facts);
+    EXPECT_TRUE(c.measured);
+    EXPECT_NE(c.reason.find("first loads its stream after the press"), std::string::npos)
+        << c.reason;
+    EXPECT_NE(web::start_meaning(facts).find("no longer counts"), std::string::npos);
+    EXPECT_NE(web::lab_meaning(facts).find("no longer counts"), std::string::npos);
+}
+
+TEST(PlaybackStart, PassingPressTestsPointAtTheSitesOwnButton)
+{
+    web::WebTestLog log(fresh_dir());
+    lab_without_drm(log);
+    for (const char *id : {"start.press_sync", "start.press_after_load", "start.press_delayed",
+                           "start.press_frame", "playback.autoplay_sound"})
+        put(log, id, Outcome::yes);
+    const auto c = web::classify(seen(Seen::autoplay_only), false, web::lab_facts(log));
+    EXPECT_EQ(c.state, PlaybackState::start_blocked);
+    EXPECT_FALSE(c.measured); // a likely cause, not a measurement of the site
+    EXPECT_EQ(c.reason.rfind("Likely:", 0), 0u) << c.reason;
+    // A frame that refuses the press is measured.
+    put(log, "start.press_frame", Outcome::no);
+    const auto frame = web::classify(seen(Seen::autoplay_only), false, web::lab_facts(log));
+    EXPECT_TRUE(frame.measured);
+    EXPECT_NE(frame.reason.find("frame"), std::string::npos);
+    // The other states are unchanged by the new tests.
+    EXPECT_EQ(web::classify(seen(Seen::plays), false, web::lab_facts(log)).state,
+              PlaybackState::works);
+}

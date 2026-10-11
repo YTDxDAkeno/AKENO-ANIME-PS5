@@ -1323,6 +1323,17 @@ DiagnosticSnapshot App::snapshot() const
     for (const auto &r : web_tests_.records())
         s.browser.push_back("  [" + std::string{web::outcome_id(r.outcome)} + "] " + r.id + " - " +
                             r.name + (r.detail.empty() ? "" : ": " + r.detail));
+    // How video starts in this browser, and what was recorded per site (host
+    // names only - no paths, cookies, tokens or account data).
+    const web::LabFacts facts = web::lab_facts(web_tests_);
+    s.browser.push_back("Starting playback: " + web::start_meaning(facts));
+    for (const web::PlaybackCheck &c : playback_checks_.checks())
+    {
+        const web::Classification cls = web::classify(c, c.key == "crunchyroll.com", facts);
+        s.browser.push_back("  Site " + c.key + ": you saw \"" + web::seen_label(c.seen) +
+                            "\" -> " + web::state_label(cls.state) +
+                            (cls.measured ? " (measured)" : "") + ". " + cls.reason);
+    }
     return s;
 }
 } // namespace akeno
