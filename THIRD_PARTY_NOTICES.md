@@ -36,7 +36,13 @@ GPL-3.0 projects:
 verified them on hardware. The YouTube player page uses Google's
 [IFrame Player API](https://developers.google.com/youtube/iframe_api_reference)
 under the YouTube API Services Terms; the player itself is loaded from
-youtube.com at run time.
+youtube.com at run time. The video-only player drives PeerTube's embedded
+player through the
+[PeerTube Embed API](https://docs.joinpeertube.org/api/embed-player) with a
+small client written for AKENO STREAM from the documented protocol (the
+`jschannel` message format over `postMessage`); neither PeerTube's
+`@peertube/embed-api` package (AGPL-3.0) nor `jschannel` (LGPL) is bundled,
+copied or linked. The PeerTube player is loaded from the instance at run time.
 
 Catalogue data shown at run time comes from [AniList](https://anilist.co)
 (public GraphQL API; data under AniList's terms) and from the
@@ -97,6 +103,11 @@ The host unit-test target downloads
 SHA-256 `65fab701d9829d38cb77c14acdc431d2108bfdbf8979e40eb8ae567edf10b27c`.
 It remains under ignored `.deps/test/`, retains its BSD-3-Clause license, and
 is not linked into any PS5 application, runtime, or package artifact.
+
+The optional browser tests (`AKENO_BROWSER_TESTS=1`, run in CI) use
+[Playwright](https://github.com/microsoft/playwright) 1.56.1 (Apache-2.0) and
+its Chromium, installed outside the repository; neither is part of the
+repository or of any package artifact.
 
 ## Optional PS5-Lapy-JB-Daemon integration
 

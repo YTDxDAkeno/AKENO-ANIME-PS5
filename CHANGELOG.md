@@ -3,6 +3,55 @@
 AKENO STREAM for PS5 (`PPSA99276`). Versions are `MAJOR.MINOR.PATCH`; release
 candidates are tagged `vX.Y.Z-rc.N` and published as GitHub pre-releases.
 
+## Unreleased: video-only player (test build after `v1.1.0-rc.2`)
+
+Not released and not hardware-tested yet: a CI build for the
+[hardware checklist](docs/HARDWARE_ACCEPTANCE.md) section 16. `v1.1.0`
+stays gated on section 15.
+
+### Added
+
+- **Video-only player** ([docs/VIDEO_ONLY_PLAYER.md](docs/VIDEO_ONLY_PLAYER.md)):
+  one video in its service's own, officially supported embedded player -
+  PeerTube's Embed API or YouTube's IFrame Player API - on AKENO's page, the
+  picture filling the screen, with AKENO's controls: play/pause, -10/+10 s,
+  full screen, Back. DualSense buttons work as the browser delivers them
+  (keys, and the Gamepad API where offered); one press never acts twice.
+  States (loading, ready, playing, paused, buffering, ended, error) and the
+  position are reported to AKENO, which saves the position under the
+  episode's key: stop in one player, continue in the other.
+- **Playback routes** for an episode: AKENO's native player first; the
+  official embed when the episode names only a YouTube or PeerTube embed, or
+  when AKENO's player cannot play a PeerTube video's format; the provider's
+  website, labelled as its own player; otherwise *unavailable* with the
+  reason. DRM, sign-ins, regions and missing videos never fall through.
+- Anime: **Video-only player** next to *Play* for PeerTube series. Websites
+  -> Playback Lab: **Video-only player (official embeds)** (YouTube test
+  video, any YouTube or PeerTube address).
+- PeerTube's Embed API is spoken by a small client written from the
+  documented protocol; `@peertube/embed-api` (AGPL-3.0) is not bundled.
+
+### Security
+
+- The page's Content-Security-Policy allows exactly one frame origin per
+  session (the PeerTube instance, or YouTube's player hosts), with strictly
+  validated hosts; the PeerTube frame is sandboxed (no pop-ups, no
+  navigation). Before opening a PeerTube video AKENO reads its embed page's
+  `X-Frame-Options` and `frame-ancestors`: a refusal, a removed (404) or
+  private (401/403) video is explained, never worked around; Square then
+  opens the video's website, labelled as such.
+
+### Tests
+
+- Host: documented embed addresses and refusals, the browsers' frame rules,
+  routes, the page policy per session, whole sessions through the App
+  (progress, resume, frame refusal and website fallback, missing and private
+  videos, YouTube error 150).
+- Chromium (Playwright, CI): the real page from the real page server against
+  an official-style mock PeerTube embed speaking the jschannel protocol
+  (three handshake variants), a framing refusal, a CSP refusal, and a
+  stand-in for YouTube's IFrame API.
+
 ## 1.1.0 (release candidate 2: `v1.1.0-rc.2`)
 
 `contentVersion` 01.110.000 (unchanged from rc.1: same version, next

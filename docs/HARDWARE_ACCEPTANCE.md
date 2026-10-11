@@ -586,6 +586,68 @@ Result: ______ passed, ______ failed, ______ not tested.
 
 Only when items 1-9 and 11-15 pass may `v1.1.0` be published as stable.
 
+## 16. Video-only player (official embeds) test build
+
+New after rc.2 ([VIDEO_ONLY_PLAYER.md](VIDEO_ONLY_PLAYER.md)): a PeerTube or
+YouTube video in the service's **own embedded player** on AKENO's page, with
+AKENO's controls. Host tests and Chromium cannot show what the PS5's WebKit
+allows here; this section does. It does **not** replace section 15: AKENO's
+native player stays the first choice.
+
+Hardware: PS5 firmware **12.20**. Build: the CI artifact
+`AKENO-STREAM-<commit>` of the branch named in the hand-over (ZIP +
+`SHA256SUMS`); build label ______ · SHA-256 ______ · date ______. Run once
+with Settings -> *Player pages without browser controls* **Off** (default),
+then items 2-6 again with it **On**: ______ / ______.
+
+1. [ ] **critical** **No regression**: section 15 items 1, 2, 6 and 8 pass on
+       this build (native playback of a `video.blender.org` episode).
+2. [ ] **critical** **PeerTube in the video-only player**: Anime ->
+       `video.blender.org` provider -> a series -> **Video-only player**
+       (next to *Play*). "Checking video.blender.org..." then the browser
+       opens; within ~20 s the **video** fills the page (no PeerTube website
+       around it) and plays with sound. If it shows *Press X to start*: press
+       Cross on *Play* - did it start? ______ If it still did not: move the
+       pointer onto the picture and press Cross - did that start it? ______
+3. [ ] **critical** **Controls**: Cross on *Play/Pause* pauses and resumes.
+       D-pad left/right moves between the buttons. *+10 s* / *-10 s* jump
+       (the time line updates). Which controller buttons acted directly
+       (Square, L1/R1, L2/R2, Triangle)? ______ The bar hides about 4 s after
+       playing starts and returns on a button: ______
+4. [ ] **Full screen**: *Full screen* (or Triangle): what happened (fills
+       the screen / nothing / message)? ______
+5. [ ] **critical** **Back and progress**: after ~1 minute press *Back*
+       (or Circle). AKENO returns to the series screen with a message "PeerTube:
+       watched for ..., position saved". The series' *Continue* action now
+       resumes **in AKENO's native player** at about that position (note it
+       ______). Then *Video-only player* again: it starts at about the same
+       position.
+6. [ ] **Plays to the end** (optional, a short video): the bar reads
+       *Finished*, *Back* has the focus; back in AKENO the episode counts as
+       watched.
+7. [ ] **YouTube in the video-only player**: Websites -> Playback Lab ->
+       *Video-only player (official embeds)* -> *YouTube: Big Buck Bunny*.
+       It plays (YouTube's player, AKENO's bar **below** the picture); pause,
+       +10 s, *Back*. Result / YouTube error code if any ______
+8. [ ] **An address**: the same menu -> *Enter a YouTube or PeerTube
+       address* -> `https://video.blender.org/w/<id>` of any video there. It
+       plays as in item 2.
+9. [ ] **Frame restriction (if you know such a site)**: a PeerTube instance
+       that refuses embedding shows *"... does not allow its player inside
+       other pages"* without opening the browser, and Square opens its
+       website labelled as such. ______
+10. [ ] **critical** **No crashes** during items 1-9; the PS button was not
+        needed to leave the browser.
+11. [ ] Settings -> Diagnostics -> Browser: the group *Video-only player
+        (PeerTube)* (and *(YouTube)*) lists each step: page, frame loads,
+        Embed API answers, ready, plays, pause, seeking, full screen, back.
+        Photograph or note the rows that read *no* ______
+
+Result: ______ passed, ______ failed, ______ not tested.
+
+Items 1-3, 5 and 10 decide whether the video-only player ships in `v1.1.0`
+or stays a test feature; they do not replace section 15.
+
 ## 9. Stability
 
 - [ ] Play, stop and reopen videos 10 times in a row without a crash

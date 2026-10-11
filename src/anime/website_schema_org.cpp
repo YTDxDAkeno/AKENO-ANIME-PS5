@@ -23,14 +23,17 @@
 //              regionsAllowed; isAccessibleForFree false or
 //              requiresSubscription marks it as for subscribers.
 //
-// Only contentUrl names a video file. embedUrl is a player page and is never
-// played; an episode without a contentUrl is listed but not playable, and an
-// episode page is read for its own structured data only when it plays.
+// Only contentUrl names a video file for AKENO's player. embedUrl is a player
+// page: an episode with only a YouTube or PeerTube embedUrl plays in that
+// service's official player on AKENO's video-only page (web/embed.hpp); any
+// other embedUrl is listed but not playable. An episode page is read for its
+// own structured data only when it plays.
 #include "anime/website.hpp"
 
 #include "anime/catalog_format.hpp"
 #include "core/url.hpp"
 #include "providers/provider.hpp"
+#include "web/embed.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -375,6 +378,22 @@ struct Reader
 {
     std::string base; // the page these nodes came from
 
+    // An officially embeddable player (YouTube, PeerTube) the node or its
+    // video names as embedUrl; empty when there is none AKENO knows.
+    std::string embed(const json::Value &node, int depth = 0) const
+    {
+        if (depth > 2 || !node.is_object())
+            return {};
+        const std::string address = address_of(base, node["embedUrl"]);
+        if (!address.empty() && web::parse_embed(address))
+            return address;
+        for (const char *property : {"video", "associatedMedia"})
+            for (const json::Value &x : each(node[property]))
+                if (std::string found = embed(x, depth + 1); !found.empty())
+                    return found;
+        return {};
+    }
+
     // The video file of an episode, film or video, when the site names one.
     std::optional<MediaResource> media(const json::Value &node, int depth = 0) const
     {
@@ -458,6 +477,8 @@ struct Reader
             e.air_date = date_of(node["uploadDate"]);
         const std::string page = address_of(base, node["url"]);
         e.media = media(node);
+        if (!e.media)
+            e.embed = embed(node);
         if (e.media)
         {
             e.availability = Availability::unverified;
@@ -469,6 +490,12 @@ struct Reader
             e.source_ref = page;
             e.availability = Availability::unverified;
             e.availability_detail = "Looked up on the episode's page when it plays.";
+        }
+        else if (const auto target = web::parse_embed(e.embed))
+        {
+            e.availability = Availability::unverified;
+            e.availability_detail = std::string{"Plays in "} + web::embed_kind_label(target->kind) +
+                                    "'s official player on AKENO's video-only page.";
         }
         else
         {
@@ -498,7 +525,8 @@ struct Reader
             // A list position counts as the episode's number only in an ItemList.
             if (auto e = episode(item, x.has("item") ? number_of(x["position"]) : 0))
             {
-                if (!e->title.empty() || e->number || e->media || !e->source_ref.empty())
+                if (!e->title.empty() || e->number || e->media || !e->source_ref.empty() ||
+                    !e->embed.empty())
                 {
                     e->id = unique_id(e->id.empty() ? "e" + std::to_string(position) : e->id, ids);
                     out.push_back(std::move(*e));
@@ -1058,6 +1086,17 @@ class SchemaOrgAdapter final : public WebsiteAdapter
             r.availability = Availability::provider_unsupported;
             r.detail = "The episode's page names no video file AKENO STREAM can play (a web "
                        "player stays in the browser).";
+            for (const json::Value *n : data.nodes)
+            {
+                if (!(schema::is_type(*n, "TVEpisode") || schema::is_type(*n, "Movie") ||
+                      is_video_type(*n)))
+                    continue;
+                if (r.embed = reader.embed(*n); !r.embed.empty())
+                {
+                    r.detail = "The episode's page offers an official embedded player only.";
+                    break;
+                }
+            }
             return r;
         }
         if (found->requires_auth)

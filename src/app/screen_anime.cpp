@@ -812,9 +812,13 @@ class SeriesScreen final : public Screen
         else if (loading_)
             p.spinner(tx + 24, y + 24, 16, now_ms, th::kAccentAnime);
 
-        // Actions.
+        // Actions; when they do not fit, the row moves so the focused one shows.
         int ax = tx;
         const int ay = 446;
+        int focus_right = tx;
+        for (std::size_t i = 0; i <= static_cast<std::size_t>(action_) && i < actions_.size(); ++i)
+            focus_right += p.button_width(actions_[i].label, actions_[i].icon) + 16;
+        ax -= std::max(0, focus_right - (th::kWidth - th::kMarginX));
         for (std::size_t i = 0; i < actions_.size(); ++i)
             ax += p.button(ax, ay, actions_[i].label, zone_ == 0 && static_cast<int>(i) == action_,
                            th::kAccentAnime, actions_[i].icon) +
@@ -907,9 +911,13 @@ class SeriesScreen final : public Screen
         if (episode_ >= static_cast<int>(season.episodes.size()))
             return false;
         const anime::Episode &e = season.episodes[static_cast<std::size_t>(episode_)];
-        return (e.media || !e.source_ref.empty()) &&
-               (e.availability == anime::Availability::playable ||
-                e.availability == anime::Availability::unverified);
+        const anime::Route route = anime::route_episode(e).route;
+        return (route == anime::Route::embed ||
+                (route == anime::Route::native && anime::episode_embed(e) &&
+                 anime::embed_may_follow(e.availability))) ||
+               ((e.media || !e.source_ref.empty()) &&
+                (e.availability == anime::Availability::playable ||
+                 e.availability == anime::Availability::unverified));
     }
 
     // A website provider's series: its own page on the site (from the site's
@@ -1471,11 +1479,16 @@ class SeriesScreen final : public Screen
             else if (progress.started)
                 p.text_right(rx, row.y + 12, "Resume " + format_clock(progress.position),
                              th::kCaptionStrong, th::kAccentAnime);
-            const bool playable = e.availability == anime::Availability::playable ||
+            // The official embed (video-only page) is said as such, never "Play".
+            const bool embedded =
+                anime::route_episode(e).route == anime::Route::embed ||
+                (anime::embed_may_follow(e.availability) && anime::episode_embed(e).has_value());
+            const bool playable = embedded || e.availability == anime::Availability::playable ||
                                   e.availability == anime::Availability::unverified;
-            const std::string status = playable && from_provider()
-                                           ? (focused ? "Cross: Play" : "Play")
-                                           : anime::availability_label(e.availability);
+            const std::string status =
+                !playable || !from_provider() ? anime::availability_label(e.availability)
+                : embedded ? (focused ? "Cross: Video-only player" : "Video-only player")
+                           : (focused ? "Cross: Play" : "Play");
             p.text_right(rx, row.y + 48, status, th::kCaptionStrong,
                          playable && from_provider() ? th::kSuccess
                                                      : availability_color(e.availability));

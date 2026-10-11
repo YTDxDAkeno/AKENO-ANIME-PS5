@@ -185,6 +185,9 @@ struct Resolution
     MediaResource media;
     Availability availability = Availability::episodes_indexed;
     std::string detail;
+    // Not ok, but the episode's page names an officially embeddable player
+    // (a YouTube or PeerTube embed, anime/playback_route.hpp) instead.
+    std::string embed;
 };
 
 struct ProviderContext

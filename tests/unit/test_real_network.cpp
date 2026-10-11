@@ -31,10 +31,12 @@
 //
 // AKENO_NETWORK_REPORT names a Markdown file for the step-by-step report and
 // AKENO_NETWORK_SHOTS a folder for screenshots of the real screens.
+#include "anime/playback_route.hpp"
 #include "anime/registry.hpp"
 #include "anime/session.hpp"
 #include "app/app.hpp"
 #include "app/screens.hpp"
+#include "browser_page.hpp"
 #include "core/fs.hpp"
 #include "core/url.hpp"
 #include "host_web_view.hpp"
@@ -42,6 +44,8 @@
 #include "platform/platform.hpp"
 #include "software_sink.hpp"
 #include "stb/stb_image_write.h"
+#include "web/embed.hpp"
+#include "web/local_pages.hpp"
 
 #include <gtest/gtest.h>
 
@@ -50,6 +54,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -478,6 +483,9 @@ TEST(RealNetwork, AuthorizedProviderToNativePlayerEndToEnd)
     report.fact("Season",
                 chosen.title + " (" + std::to_string(chosen.episodes.size()) + " episodes)");
     report.fact("Episode 1", anime::episode_heading(chosen, first));
+    // Kept for the video-only player at the end (the registry is replaced by
+    // the restart).
+    const std::optional<web::EmbedTarget> embed = anime::episode_embed(first);
     report.fact("Episode 2", anime::episode_heading(chosen, second));
     report.step("Season and episode list", true,
                 std::to_string(chosen.episodes.size()) + " episodes listed; episode 1 checked: " +
@@ -701,4 +709,56 @@ TEST(RealNetwork, AuthorizedProviderToNativePlayerEndToEnd)
     h.shot("07-resumed");
     h.press(input::Button::circle);
     h.step(10);
+
+    // 12. The same episode in PeerTube's own embedded player (the video-only
+    // player): may the instance's embed be framed by AKENO's page, and does
+    // its real Embed API answer AKENO's client?
+    if (!embed)
+    {
+        report.info("Video-only player", "SKIP", "the episode names no PeerTube video");
+        return;
+    }
+    net::Client client;
+    net::Request request;
+    request.url = embed->origin() + "/videos/embed/" + embed->video_id;
+    request.max_bytes = 512 * 1024;
+    request.total_timeout_ms = 20000;
+    const net::Response answer = client.perform(request);
+    const web::FrameCheck frame =
+        web::frame_policy(answer.head.frame_options, answer.head.security_policy, embed->origin(),
+                          "http://127.0.0.1:8095");
+    const bool frameable = answer.ok() && frame.policy != web::FramePolicy::blocked;
+    report.step("Video-only player: the embed may be framed", frameable,
+                "HTTP " + std::to_string(answer.status) + "; " + frame.detail);
+    EXPECT_TRUE(frameable);
+    if (!test::browser_tests_enabled())
+    {
+        report.info("Video-only player: real Embed API", "SKIP",
+                    "AKENO_BROWSER_TESTS=1 runs the page in a browser (Playwright)");
+        return;
+    }
+    web::LocalPages pages;
+    std::string error, output;
+    ASSERT_TRUE(pages.start("", &error, *embed)) << error;
+    const int code = test::run_browser_page(
+        "peertube-real", pages.page_url("watch", web::watch_query(*embed)), &output);
+    const std::vector<web::PageEvent> events = pages.take_events();
+    pages.stop();
+    const auto sent = [&](const char *type, const char *value)
+    {
+        return std::any_of(events.begin(), events.end(), [&](const web::PageEvent &e)
+                           { return e.type == type && (!*value || e.value == value); });
+    };
+    std::string seen;
+    for (const web::PageEvent &e : events)
+        if (e.type != "input" && e.type != "progress" && seen.size() < 600)
+            seen += (seen.empty() ? "" : ", ") + e.type + (e.value.empty() ? "" : "=" + e.value);
+    std::printf("%s", output.c_str());
+    const bool linked = sent("embed", "linked"), ready = sent("ready", "");
+    report.step("Video-only player: PeerTube's Embed API answers AKENO's client",
+                linked && ready && code == 0, seen);
+    report.info("Video-only player: plays in the browser", sent("playing", "") ? "YES" : "NO",
+                sent("state", "paused") ? "played, paused, Back" : "see the log");
+    EXPECT_TRUE(linked && ready) << output;
+    EXPECT_EQ(code, 0) << output;
 }

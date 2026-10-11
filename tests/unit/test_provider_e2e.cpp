@@ -351,6 +351,68 @@ TEST(ProviderEndToEnd, AddBrowsePlaySearchMoreDuplicateRestartRemove)
     EXPECT_FALSE(fs::exists(fs::join(h.dir(), anime::kProvidersFile)));
 }
 
+// Episodes the site offers only in YouTube's or PeerTube's official player:
+// AKENO's video-only page, never its native player, never a guess.
+TEST(ProviderEndToEnd, EpisodesWithOnlyAnOfficialEmbedPlayOnTheVideoOnlyPage)
+{
+    Harness h;
+    App &app = h.app();
+    add_by_typing(h, "anime.fixture.test");
+    ASSERT_TRUE(h.settled());
+    h.press(input::Button::cross); // Add Provider
+    ASSERT_TRUE(h.until(
+        [&]
+        {
+            const anime::ProviderState *s = app.anime_registry().state(kProvider);
+            return s && s->loaded;
+        }));
+    h.settled();
+    // A series of the site that its catalogue does not list: opened by address.
+    anime::Series entry;
+    entry.provider_id = kProvider;
+    entry.provider_name = "Open Anime Fixture";
+    entry.id = "official-embeds";
+    entry.title = "Official Embeds";
+    entry.source_ref = std::string{test::kFixtureSite} + "/anime/official-embeds.html";
+    entry.details_pending = true;
+    app.anime_registry().merge_series(kProvider, {entry}, nullptr);
+    app.load_anime_series(kProvider, entry.id);
+    ASSERT_TRUE(h.until(
+        [&]
+        {
+            const anime::Series *s = app.anime_registry().find_series(kProvider, entry.id);
+            return s && !s->details_pending;
+        }));
+    h.settled();
+    auto &script = test::web_view_script();
+    script.finish_after_updates = 5;
+
+    // Only a YouTube embed: YouTube's player on the video-only page.
+    app.play_episode(kProvider, entry.id, {0, 0});
+    ASSERT_TRUE(h.until([&] { return !script.opened.empty(); }));
+    EXPECT_NE(script.opened[0].url.find("/watch?p=youtube&v=aqz-KE-bpKQ"), std::string::npos)
+        << script.opened[0].url;
+    ASSERT_TRUE(h.until([&] { return !app.browser_active(); }));
+    EXPECT_FALSE(app.player().active()); // AKENO's own player was never asked
+
+    // A player AKENO does not know: explained, nothing opens.
+    app.play_episode(kProvider, entry.id, {0, 2});
+    h.settled();
+    EXPECT_EQ(script.opened.size(), 1u);
+
+    // The episode's own page names only a PeerTube embed: read when it plays,
+    // then PeerTube's player (the instance's check is offline here: tried anyway).
+    app.play_episode(kProvider, entry.id, {0, 3});
+    ASSERT_TRUE(h.until([&] { return script.opened.size() == 2; })) << app.latest_toast();
+    EXPECT_TRUE(h.requested("/anime/official-embeds/e4.html"));
+    EXPECT_NE(
+        script.opened[1].url.find("/watch?p=peertube&h=video.blender.org&v=kkGMgK9ZtnKfYAgnEtQxbv"),
+        std::string::npos)
+        << script.opened[1].url;
+    ASSERT_TRUE(h.until([&] { return !app.browser_active(); }));
+    EXPECT_FALSE(app.player().active());
+}
+
 TEST(ProviderEndToEnd, AWebPageWithoutAnAdapterIsNotAdded)
 {
     Harness h;

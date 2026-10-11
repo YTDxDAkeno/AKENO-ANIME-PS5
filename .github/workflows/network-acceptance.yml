@@ -8,8 +8,10 @@
 # open movies published by their rights holder): add the provider, browse its
 # catalogue, open a series and season, play the first episode in AKENO's
 # native player (FFmpeg's software decoder stands in for the PS5 hardware
-# decoder), subtitles, pause, seek, next episode, progress, restart, resume.
-# tests/unit/test_real_network.cpp. A third-party outage turns this red
+# decoder), subtitles, pause, seek, next episode, progress, restart, resume;
+# then the same episode in PeerTube's real embedded player on AKENO's
+# video-only page, in a browser (Playwright; Google Chrome when the runner
+# has it, for H.264). tests/unit/test_real_network.cpp. A third-party outage turns this red
 # without saying anything about the build, so it is kept apart from the Build
 # workflow and never gates a release; the console checklist is still needed.
 
@@ -82,15 +84,27 @@ jobs:
       - name: Build the host test binary (ASan/UBSan)
         run: BUILD_JOBS=$(nproc) bash tools/build-tests.sh
 
+      # A pinned, test-only tool, installed outside the repository.
+      - name: Install Playwright (video-only player step)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-audit --no-fund playwright@1.56.1
+          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install --with-deps chromium
+          if command -v google-chrome >/dev/null; then
+            echo "AKENO_BROWSER_CHANNEL=chrome" >> "$GITHUB_ENV"
+          fi
+
       - name: Run the real-network acceptance test
         env:
+          AKENO_BROWSER_TESTS: "1"
+          AKENO_BROWSER_SHOTS: build/network/screens
+          NODE_PATH: ${{ runner.temp }}/playwright/node_modules
           AKENO_NETWORK_ACCEPTANCE: "1"
           AKENO_NETWORK_PROVIDER: ${{ inputs.provider || 'video.blender.org' }}
           AKENO_NETWORK_SERIES: ${{ inputs.series || '' }}
           AKENO_NETWORK_REPORT: build/network/report.md
           AKENO_NETWORK_SHOTS: build/network/screens
         run: |
-          mkdir -p build/network
+          mkdir -p build/network/screens
           set -o pipefail
           AKENO_SOURCE_ROOT="$PWD" build/tests/akeno_tests --gtest_filter='RealNetwork.*' 2>&1 |
             tee build/network/log.txt

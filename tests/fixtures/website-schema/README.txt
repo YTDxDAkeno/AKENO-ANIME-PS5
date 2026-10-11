@@ -13,6 +13,10 @@ from a local HTTP server; nothing here is fetched from the internet.
   anime/the-signal/s2e1.html   TVEpisode page with its video file
   anime/locked-away.html       episodes marked for subscribers only
   anime/web-player-only.html   episodes offered in a web player only (embedUrl)
+  anime/official-embeds.html   episodes with only a YouTube or PeerTube embedUrl
+                               (the video-only player), an unknown player, and
+                               an episode page naming a PeerTube embed
+                               (official-embeds/e4.html); not in the index
   anime/second-page.html       TVSeries with episodes and no seasons
   films/night-train.html       Movie: its video is encrypted, its trailer is not
                                (the trailer must never be played instead)

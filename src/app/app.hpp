@@ -34,6 +34,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -273,14 +274,19 @@ class App final
     }
     // Resolves an episode with its provider, checks it and plays it in the
     // native player with its subtitles and the next episode; explains why
-    // when it cannot play. start < 0: resume from history.
+    // when it cannot play. An episode with only an official embed, or one
+    // whose format AKENO's player cannot play while its service offers an
+    // embed, plays on the video-only page instead (anime/playback_route.hpp).
+    // start < 0: resume from history.
     void play_episode(const std::string &provider_id, const std::string &series_id,
                       anime::EpisodeRef ref, double start = -1.0);
     // The same episode in its service's official embedded player on the
     // video-only page (anime/playback_route.hpp), sharing its saved position
     // with AKENO's player. False (and a message) when it has none.
+    // target: the embed to use (default: the episode's own).
     bool play_episode_embedded(const std::string &provider_id, const std::string &series_id,
-                               anime::EpisodeRef ref, double start = -1.0);
+                               anime::EpisodeRef ref, double start = -1.0,
+                               std::optional<web::EmbedTarget> target = std::nullopt);
     void show_qr(const MediaItem &item);
     void show_provider_status(const Provider &provider);
     // The embedded browser: websites, the official YouTube player and the

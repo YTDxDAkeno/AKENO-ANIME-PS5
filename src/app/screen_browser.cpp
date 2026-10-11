@@ -448,7 +448,9 @@ class BrowserScreen final : public Screen
 
     void save_progress(bool force)
     {
-        if (s_.item.id.empty() || !(position_ > 0.0 || ended_))
+        // Only what the page reported: a session that never played leaves
+        // the episode's history as it was.
+        if (s_.item.id.empty() || !reported_ || !(position_ > 0.0 || ended_))
             return;
         const std::uint64_t now = mono_ms();
         if (!force && saved_ms_ && now - saved_ms_ < kProgressSaveMs)
@@ -742,6 +744,7 @@ class BrowserScreen final : public Screen
                 position_ = pos;
             if (dur > 0.0 && dur < 1e6)
                 duration_ = dur;
+            reported_ = true;
             save_progress(e.detail != "timer");
         }
         else if (e.type == "seek")
@@ -759,7 +762,7 @@ class BrowserScreen final : public Screen
         }
         else if (e.type == "ended")
         {
-            ended_ = true;
+            ended_ = reported_ = true;
             video("ended", "Plays to the end", Outcome::yes, "");
             save_progress(true);
         }
@@ -942,7 +945,7 @@ class BrowserScreen final : public Screen
     bool played_ = false;
     bool paused_ = false;
     bool playlist_pending_ = false;
-    bool seeked_ = false, ended_ = false;
+    bool seeked_ = false, ended_ = false, reported_ = false;
     double position_ = 0.0, duration_ = 0.0; // video-only player: last reported
     std::uint64_t saved_ms_ = 0;
     std::string fallback_url_; // the video's own page, offered when the embed fails

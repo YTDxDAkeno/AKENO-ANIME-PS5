@@ -76,6 +76,9 @@ int probe_episodes(SourceProvider &provider, std::vector<Series> &series,
         Episode &episode = season.episodes[e];
         if (episode.availability != Availability::unverified)
             continue;
+        // Only an official embed: nothing for AKENO's player to check.
+        if (!episode.media && episode.source_ref.empty())
+            continue;
         ++checked;
         const Resolution r = provider.resolve(sr, season, episode, cancel);
         ProbeResult p;
@@ -85,6 +88,8 @@ int probe_episodes(SourceProvider &provider, std::vector<Series> &series,
             p = probe_media(r.media, cancel);
         episode.availability = p.availability;
         episode.availability_detail = p.detail;
+        if (!r.embed.empty())
+            episode.embed = r.embed; // the episode's page offers an official embed
         if (report)
         {
             ++report->probed;

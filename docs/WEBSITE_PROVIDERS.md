@@ -111,12 +111,15 @@ detection on a saved website and offers *Add to Anime* when it is a provider.
 
 ## What is never done
 
-- No address is invented. An episode plays only from a `contentUrl` the site
-  publishes (or, for PeerTube, the file the API names). `embedUrl` is a web
-  player and is never played; a `Movie`'s `trailer` is never played as the
-  film. An episode without a video file is listed as *Episodes indexed* with
-  the reason ("offered in a web player only (Websites)", "listed without a
-  video file").
+- No address is invented. AKENO's own player plays an episode only from a
+  `contentUrl` the site publishes (or, for PeerTube, the file the API names).
+  An `embedUrl` is a web player: one of YouTube or PeerTube (their documented
+  embed addresses) plays in that service's own player on AKENO's
+  [video-only page](VIDEO_ONLY_PLAYER.md), labelled *Video-only player*; any
+  other is never played. A `Movie`'s `trailer` is never played as the film.
+  An episode without either is listed as *Episodes indexed* with the reason
+  ("offered in a web player only (Websites)", "listed without a video
+  file").
 - No hidden or obfuscated players are read, no scripts run, no cookies or
   browser sign-ins are used, no access control is bypassed.
 - DRM is never bypassed. Before an episode is offered as playable, its first

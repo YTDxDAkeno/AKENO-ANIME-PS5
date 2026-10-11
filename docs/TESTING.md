@@ -90,6 +90,27 @@ AKENO_NETWORK_ACCEPTANCE=1 AKENO_NETWORK_REPORT=build/network.md \
 A pass here is a host result over the real network, not a console result:
 hardware checklist section 15 is still required.
 
+## The video-only page in a real browser (AKENO STREAM)
+
+`BrowserPage.*` (`tests/unit/test_video_only.cpp`) serves the video-only
+player page from the real loopback page server and runs
+`tests/browser/video_only.cjs` in Chromium (Playwright) against an
+official-style mock PeerTube embed and a stand-in for YouTube's IFrame API;
+afterwards it checks the events AKENO received
+([VIDEO_ONLY_PLAYER.md](VIDEO_ONLY_PLAYER.md#tests)). The tests skip unless
+`AKENO_BROWSER_TESTS=1`; the Build workflow runs them in their own step with a
+pinned Playwright installed outside the repository:
+
+```bash
+npm install --prefix /tmp/pw --no-save playwright@1.56.1
+/tmp/pw/node_modules/.bin/playwright install chromium
+AKENO_BROWSER_TESTS=1 NODE_PATH=/tmp/pw/node_modules \
+  make test-unit GTEST_ARGS='--gtest_filter=BrowserPage.*'
+```
+
+Chromium is not the console's WebKit: a pass proves the page, the protocol
+and the security policy, not the PS5 (hardware checklist section 16).
+
 ## PS5 integration validation
 
 Rendering, controller input, AudioOut, mounted paths, launch/closure behavior,

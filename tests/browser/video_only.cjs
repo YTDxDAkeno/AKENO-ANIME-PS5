@@ -20,6 +20,12 @@
 //       API that creates the player frame and reports states like YouTube's.
 // Scenarios: peertube, peertube-legacy, peertube-silent, frame-denied, csp,
 // youtube, youtube-error. Exit code 0: every check passed.
+//
+// peertube-real (the real-network workflow only) mocks nothing: the page
+// frames the real PeerTube instance's embed, so the handshake, "ready" and
+// the status reports come from PeerTube's own code. AKENO_BROWSER_CHANNEL
+// (for example "chrome") picks a browser with H.264; autoplay is allowed,
+// since this checks the protocol, not the console's autoplay rules.
 'use strict';
 const { chromium } = require('playwright');
 
@@ -167,7 +173,11 @@ async function until(fn, ms, what) {
 }
 
 async function main() {
-  const browser = await chromium.launch();
+  const real = scenario === 'peertube-real';
+  const browser = await chromium.launch(real ? {
+    channel: process.env.AKENO_BROWSER_CHANNEL || undefined,
+    args: ['--autoplay-policy=no-user-gesture-required'],
+  } : {});
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   page = await context.newPage();
   const errors = [], requested = [];
@@ -205,7 +215,29 @@ async function main() {
     return f ? (await f.evaluate(() => window.__log.calls)).filter((c) => c.method === method) : [];
   };
 
-  if (scenario.startsWith('peertube')) {
+  if (real) {
+    // Ready within 45 s (a real instance on a shared runner), then play, a
+    // seek, a pause and Back - each answered by PeerTube's own player.
+    const settled = await until(async () => /^(Ready|Playing|Paused|Buffering|Press X|Error)/.test(await status()),
+                                45000, 'the real embed answers');
+    const first = await status();
+    console.log('info status after start: ' + first + (first === 'Error' ? ' - ' + (await note()) : ''));
+    check(settled && first !== 'Error', 'the real PeerTube embed reached ready');
+    const playing = await until(async () => (await status()) === 'Playing', 30000, 'plays');
+    await shot('real');
+    if (playing) {
+      await sleep(3000);
+      const before = await page.textContent('#time');
+      await page.keyboard.press('PageDown');
+      await sleep(2500);
+      console.log('info time before and after +10 s: ' + before + ' -> ' + (await page.textContent('#time')));
+      await page.keyboard.press(' ');
+      check(await until(async () => (await status()) === 'Paused', 8000, 'pause'), 'the real embed pauses');
+    }
+    const closing = page.waitForRequest((r) => r.url().endsWith('/close'), { timeout: 3000 });
+    await page.click('#back');
+    check(!!(await closing.catch(() => null)), 'Back asks AKENO STREAM to close the browser');
+  } else if (scenario.startsWith('peertube')) {
     check(await until(async () => (await status()) === 'Playing', 8000, 'starts playing by itself'),
           'status reads Playing');
     const frame = await page.$('#player iframe');
@@ -301,7 +333,9 @@ async function main() {
     check(false, 'unknown scenario ' + scenario);
   }
   await sleep(300); // let the last events reach the page server
-  check(errors.length === 0, 'no script errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
+  // The real instance's own scripts are not AKENO's to judge: reported only.
+  if (real) console.log('info script errors: ' + (errors.length ? errors.join(' | ') : 'none'));
+  else check(errors.length === 0, 'no script errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();
 }
 

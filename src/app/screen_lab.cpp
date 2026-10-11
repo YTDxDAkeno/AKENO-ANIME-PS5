@@ -255,7 +255,7 @@ class LabScreen final : public Screen
         case Kind::video:
         {
             row.title = "Video-only player (official embeds)";
-            row.hint = "YouTube or PeerTube's own player on AKENO's page: play, seek, full screen";
+            row.hint = "YouTube's or PeerTube's own player, with AKENO's controls";
             const web::TestRecord *a = app_.web_tests().get("video.peertube.playing");
             const web::TestRecord *b = app_.web_tests().get("video.youtube.playing");
             const bool played =

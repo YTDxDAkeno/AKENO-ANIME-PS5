@@ -8,12 +8,11 @@
 // the route an episode takes (native, embed, website, unavailable). The
 // page itself runs in a real browser in tests/browser/video_only.mjs.
 #include "anime/playback_route.hpp"
+#include "browser_page.hpp"
 #include "web/embed.hpp"
 #include "web/local_pages.hpp"
 
 #include <gtest/gtest.h>
-
-#include <sys/wait.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -196,25 +195,12 @@ namespace
 {
 bool browser_tests() noexcept
 {
-    const char *on = std::getenv("AKENO_BROWSER_TESTS");
-    return on && std::string{on} == "1";
+    return test::browser_tests_enabled();
 }
 
-// Runs one scenario against the page; the exit code, with its output.
 int run_page(const std::string &scenario, const std::string &address, std::string *output)
 {
-    const char *root = std::getenv("AKENO_SOURCE_ROOT");
-    const std::string command = "node '" + std::string{root ? root : "."} +
-                                "/tests/browser/video_only.cjs' " + scenario + " '" + address +
-                                "' 2>&1";
-    FILE *pipe = popen(command.c_str(), "r");
-    if (!pipe)
-        return -1;
-    char buffer[512];
-    while (std::fgets(buffer, sizeof(buffer), pipe))
-        *output += buffer;
-    const int status = pclose(pipe);
-    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    return test::run_browser_page(scenario, address, output);
 }
 
 web::EmbedTarget mock_instance(const char *host)

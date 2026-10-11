@@ -730,6 +730,14 @@ void App::play_episode(const std::string &provider_id, const std::string &series
         return;
     }
     const anime::Episode &episode = found->seasons[ref.season].episodes[ref.episode];
+    // Only an official embed, or a format AKENO's player could not play from
+    // a service that offers one: the service's own player, video only.
+    if (anime::route_episode(episode).route == anime::Route::embed ||
+        (anime::embed_may_follow(episode.availability) && anime::episode_embed(episode)))
+    {
+        play_episode_embedded(provider_id, series_id, ref, start);
+        return;
+    }
     switch (episode.availability)
     {
     case anime::Availability::playable:
@@ -779,6 +787,26 @@ void App::play_episode(const std::string &provider_id, const std::string &series
                     ++anime_generation_;
                     if (!r.ok || probe.availability != anime::Availability::playable)
                     {
+                        // The episode's page names an official embed, or AKENO's
+                        // player cannot play this format and the service has
+                        // one: the video-only player, said as such.
+                        std::optional<web::EmbedTarget> embed = web::parse_embed(r.embed);
+                        if (!embed && anime::embed_may_follow(probe.availability))
+                            embed = anime::episode_embed(ep);
+                        if (embed)
+                        {
+                            if (!r.embed.empty())
+                                anime_.set_availability(series.provider_id, series.id, season.id,
+                                                        ep.id, anime::Availability::unverified,
+                                                        r.detail);
+                            else
+                                toast(std::string{"AKENO's player cannot play this video - "
+                                                  "opening "} +
+                                          web::embed_kind_label(embed->kind) + "'s own player",
+                                      th::kInfo);
+                            play_episode_embedded(series.provider_id, series.id, ref, start, embed);
+                            return;
+                        }
                         toast(std::string{anime::availability_label(probe.availability)} + ": " +
                                   probe.detail,
                               th::kWarning);
@@ -809,7 +837,8 @@ void App::play_episode(const std::string &provider_id, const std::string &series
 }
 
 bool App::play_episode_embedded(const std::string &provider_id, const std::string &series_id,
-                                anime::EpisodeRef ref, double start)
+                                anime::EpisodeRef ref, double start,
+                                std::optional<web::EmbedTarget> target)
 {
     const anime::Series *series = anime_.find_series(provider_id, series_id);
     if (!series || ref.season >= series->seasons.size() ||
@@ -820,7 +849,8 @@ bool App::play_episode_embedded(const std::string &provider_id, const std::strin
     }
     const anime::Episode &episode = series->seasons[ref.season].episodes[ref.episode];
     const anime::PlaybackRoute route = anime::route_episode(episode);
-    const auto target = anime::episode_embed(episode);
+    if (!target)
+        target = anime::episode_embed(episode);
     if (route.route == anime::Route::unavailable || !target)
     {
         toast(route.route == anime::Route::unavailable

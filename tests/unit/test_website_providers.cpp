@@ -10,6 +10,7 @@
 // episodes load from the series' own pages, only a contentUrl is ever played
 // (never an embed or a trailer), sign-in, DRM and missing files are labelled,
 // and every request stays on the provider's own site.
+#include "anime/playback_route.hpp"
 #include "anime/registry.hpp"
 #include "anime/website.hpp"
 #include "core/fs.hpp"
@@ -291,6 +292,50 @@ TEST(WebsiteSchema, SeriesSeasonsAndEpisodesFromTheSitesOwnPages)
     const Resolution r = provider->resolve(s, two, two.episodes[0], {});
     ASSERT_TRUE(r.ok) << r.detail;
     EXPECT_EQ(r.media.url, site.url("/media/h264-aac-360p-frag.mp4"));
+}
+
+TEST(WebsiteSchema, OfficialYouTubeAndPeerTubeEmbedsPlayOnTheVideoOnlyPage)
+{
+    Site site;
+    const ProviderConfig config = site.provider();
+    Series s = entry(config, "Web Player Only");
+    s.source_ref = site.url("/anime/official-embeds.html");
+    const SiteSeries full = load_website_series(config, s, {}, {});
+    ASSERT_TRUE(full.ok) << full.error;
+    ASSERT_EQ(full.series.seasons.size(), 1u);
+    const Season &season = full.series.seasons[0];
+    ASSERT_EQ(season.episodes.size(), 4u);
+
+    const Episode &youtube = season.episodes[0];
+    EXPECT_FALSE(youtube.media.has_value());
+    EXPECT_EQ(youtube.embed, "https://www.youtube.com/embed/aqz-KE-bpKQ");
+    EXPECT_EQ(youtube.availability, Availability::unverified);
+    EXPECT_NE(youtube.availability_detail.find("YouTube's official player"), std::string::npos);
+    PlaybackRoute route = route_episode(youtube);
+    EXPECT_EQ(route.route, Route::embed);
+    EXPECT_EQ(route.embed.kind, web::EmbedKind::youtube);
+
+    route = route_episode(season.episodes[1]);
+    EXPECT_EQ(route.route, Route::embed);
+    EXPECT_EQ(route.embed.host, "video.blender.org");
+
+    // A player AKENO does not know stays a web player: listed, not played.
+    const Episode &other = season.episodes[2];
+    EXPECT_TRUE(other.embed.empty());
+    EXPECT_EQ(other.availability, Availability::episodes_indexed);
+    EXPECT_EQ(route_episode(other).route, Route::unavailable);
+
+    // Its own page names only a PeerTube embed: resolving says so.
+    const Episode &paged = season.episodes[3];
+    EXPECT_EQ(route_episode(paged).route, Route::native); // the page is read first
+    const auto provider = make_website_provider(config, {});
+    const Resolution r = provider->resolve(full.series, season, paged, {});
+    EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.availability, Availability::provider_unsupported);
+    EXPECT_EQ(r.embed, "https://video.blender.org/videos/embed/kkGMgK9ZtnKfYAgnEtQxbv");
+    const auto target = web::parse_embed(r.embed);
+    ASSERT_TRUE(target);
+    EXPECT_EQ(target->kind, web::EmbedKind::peertube);
 }
 
 TEST(WebsiteSchema, ProtectedFilmsAndSubscriberEpisodesNeverPlay)
