@@ -205,8 +205,13 @@ jobs:
         if: always()
         run: ccache --show-stats
 
+      # Printed too, so a build can be checked against its log and summary.
       - name: Write release checksums
-        run: cd dist && sha256sum "$TITLE_ID.zip" > SHA256SUMS
+        run: |
+          cd dist && sha256sum "$TITLE_ID.zip" > SHA256SUMS
+          cat SHA256SUMS
+          printf '### Installable build\n\n`%s` (%s)\n\nSHA-256: `%s`\n' "$TITLE_ID.zip" \
+            "${BUILD_LABEL:-$GITHUB_REF_NAME}" "$(cut -d' ' -f1 SHA256SUMS)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload build
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

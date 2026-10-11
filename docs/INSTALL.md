@@ -27,6 +27,16 @@ release ZIP holds the finished app folder.
    its web interface at `http://<PS5 address>:10101/`). The home screen shows
    **AKENO STREAM** with the AKENO icon.
 
+## A build from GitHub Actions (before a release is published)
+
+Every push builds the same installable folder ZIP. On GitHub open **Actions**
+-> **Build**, choose the newest green run of the branch, and download the
+artifact named `AKENO-STREAM-<commit>` (not the `-screenshots` one). The run's
+summary shows the ZIP's SHA-256 under *Installable build*; the artifact holds
+`PPSA99276.zip` and `SHA256SUMS`. Check it, unzip `PPSA99276.zip` and install
+the `PPSA99276/` folder as below. Settings shows the build label (branch and
+commit) bottom right; a tagged release shows "release candidate N" instead.
+
 ## Update an existing installation
 
 1. Close AKENO STREAM (PS button -> close the app).
