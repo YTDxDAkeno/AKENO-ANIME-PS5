@@ -203,6 +203,13 @@ TEST(AnimeEndToEnd, SearchSeasonEpisodePlayNextAndResume)
     // Picture and sound from the episode, through the native player.
     ASSERT_TRUE(h.until([&] { return h.record().frames > 10 && h.record().audio_units > 10; }));
     EXPECT_EQ(h.record().width, 640u);
+    // ... which verifies the provider's native playback on this device.
+    ASSERT_TRUE(h.until(
+        [&]
+        { return app.anime_registry().native_playback(anime::Registry::kSampleId) != nullptr; }));
+    EXPECT_EQ(app.anime_registry().playback_of(anime::Registry::kSampleId),
+              anime::PlaybackClass::verified);
+    EXPECT_GE(app.anime_registry().native_playback(anime::Registry::kSampleId)->frames, 30u);
 
     // Near the end: the episode finishes, "Up next" offers S2 E1, Cross plays it.
     h.press(input::Button::right); // +10 s

@@ -62,6 +62,9 @@ class WebsiteSourceProvider final : public SourceProvider
         if (!listing.ok)
         {
             out.error = listing.error.empty() ? "The site could not be read." : listing.error;
+            out.unreachable = listing.error_kind == SiteError::network ||
+                              listing.error_kind == SiteError::server ||
+                              listing.error_kind == SiteError::rate_limited;
             return out;
         }
         out.series = std::move(listing.series);

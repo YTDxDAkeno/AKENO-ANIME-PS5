@@ -20,6 +20,12 @@ namespace
 {
 constexpr std::size_t kMaxCatalogBytes = 8u * 1024u * 1024u;
 
+// No answer at all, or a server that could not answer now (5xx, 429).
+bool no_answer(const Fetched &f)
+{
+    return f.status == 0 || f.status == 429 || f.status >= 500;
+}
+
 // ---------------------------------------------------------------------------
 // An AKENO catalogue: everything is in one document.
 class CatalogueProvider final : public SourceProvider
@@ -56,6 +62,7 @@ class CatalogueProvider final : public SourceProvider
             if (!f.ok)
             {
                 out.error = f.error;
+                out.unreachable = no_answer(f);
                 return out;
             }
             text = f.body;
@@ -178,6 +185,7 @@ class PeerTubeSeriesProvider final : public SourceProvider
             {
                 out.error = channel.status == 404 ? "The channel does not exist on " + address_.host
                                                   : channel.error;
+                out.unreachable = no_answer(channel);
                 return out;
             }
             const auto c = json::parse(channel.body);
@@ -503,6 +511,12 @@ const char *playback_class_id(PlaybackClass c) noexcept
         return "protected";
     case PlaybackClass::unsupported:
         return "unsupported";
+    case PlaybackClass::verified:
+        return "verified";
+    case PlaybackClass::auth_required:
+        return "auth-required";
+    case PlaybackClass::unavailable:
+        return "unavailable";
     }
     return "unknown";
 }
@@ -514,17 +528,23 @@ const char *playback_class_label(PlaybackClass c) noexcept
     case PlaybackClass::unknown:
         return "Not checked yet";
     case PlaybackClass::native:
-        return "Plays in AKENO";
+        return "Native playback available - not hardware-tested";
     case PlaybackClass::partial:
-        return "Partly plays in AKENO";
+        return "Native playback for some episodes - not hardware-tested";
     case PlaybackClass::catalogue_only:
         return "Catalogue only";
     case PlaybackClass::browser_only:
-        return "Website only (PS5 browser)";
+        return "Browser only (PS5 browser)";
     case PlaybackClass::protected_media:
-        return "Protected (DRM or sign-in)";
+        return "DRM protected";
     case PlaybackClass::unsupported:
-        return "Not supported";
+        return "Unsupported";
+    case PlaybackClass::verified:
+        return "Native playback verified";
+    case PlaybackClass::auth_required:
+        return "Authentication required";
+    case PlaybackClass::unavailable:
+        return "Temporarily unavailable";
     }
     return "";
 }
@@ -536,22 +556,32 @@ const char *playback_class_detail(PlaybackClass c) noexcept
     case PlaybackClass::unknown:
         return "Its videos have not been checked yet; each one is checked before it plays.";
     case PlaybackClass::native:
-        return "Its checked episodes play in AKENO STREAM's own player.";
+        return "Its checked episodes are DRM-free videos AKENO STREAM's own player supports. "
+               "None has played on this console yet: playing one verifies it.";
     case PlaybackClass::partial:
-        return "Some checked episodes play in AKENO STREAM's own player; the others say why "
-               "not.";
+        return "Some checked episodes are DRM-free videos AKENO STREAM's own player supports; "
+               "the others say why not. None has played on this console yet.";
     case PlaybackClass::catalogue_only:
         return "Its series and details appear in AKENO STREAM without Play buttons: no episode "
                "names a video AKENO STREAM may play.";
     case PlaybackClass::browser_only:
         return "Its series appear in AKENO STREAM without Play buttons; episodes play only on "
-               "the website itself, in the PS5 browser (Open on Website).";
+               "the website itself, in the PS5 browser - the website's player, not AKENO's.";
     case PlaybackClass::protected_media:
-        return "Its episodes need DRM, a sign-in or another region. AKENO STREAM plays only "
-               "DRM-free video.";
+        return "Its episodes are DRM-protected. AKENO STREAM plays only DRM-free video and "
+               "never bypasses DRM.";
     case PlaybackClass::unsupported:
-        return "No adapter reads it, or it offers no permitted way in. It can still open in "
-               "Websites (the PS5 browser).";
+        return "No adapter reads it, it offers no permitted way in, or its episodes are not "
+               "offered in this region. It can still open in Websites (the PS5 browser).";
+    case PlaybackClass::verified:
+        return "An episode played in AKENO STREAM's own player on this console: picture and "
+               "sound, no decoder or audio errors.";
+    case PlaybackClass::auth_required:
+        return "Its episodes need a sign-in. AKENO STREAM does not sign in to streaming "
+               "services or reuse a browser's sessions.";
+    case PlaybackClass::unavailable:
+        return "The site or its videos did not answer the last check (network or server "
+               "error). Choose Check Again later.";
     }
     return "";
 }
@@ -561,7 +591,8 @@ std::optional<PlaybackClass> playback_class_from_id(std::string_view id) noexcep
     for (const PlaybackClass c :
          {PlaybackClass::unknown, PlaybackClass::native, PlaybackClass::partial,
           PlaybackClass::catalogue_only, PlaybackClass::browser_only,
-          PlaybackClass::protected_media, PlaybackClass::unsupported})
+          PlaybackClass::protected_media, PlaybackClass::unsupported, PlaybackClass::verified,
+          PlaybackClass::auth_required, PlaybackClass::unavailable})
         if (id == playback_class_id(c))
             return c;
     return std::nullopt;
@@ -576,7 +607,7 @@ PlaybackClass classify_playback(const ProviderReport &r) noexcept
     switch (r.source)
     {
     case SourceClass::unreachable:
-        return PlaybackClass::unknown;
+        return PlaybackClass::unavailable;
     case SourceClass::web_page:
     case SourceClass::media_file:
     case SourceClass::playlist:
@@ -587,9 +618,13 @@ PlaybackClass classify_playback(const ProviderReport &r) noexcept
     if (r.with_media == 0)
         return r.series > 0 ? PlaybackClass::catalogue_only : PlaybackClass::unknown;
     if (blocked > 0 && r.network == 0 && r.missing == 0)
-        return PlaybackClass::protected_media;
-    if (r.probed == 0 || (r.network > 0 && r.network == r.probed))
-        return PlaybackClass::unknown; // videos listed, not (yet) reachable
+        return r.drm > 0    ? PlaybackClass::protected_media
+               : r.auth > 0 ? PlaybackClass::auth_required
+                            : PlaybackClass::unsupported; // another region only
+    if (r.probed == 0)
+        return PlaybackClass::unknown; // videos listed, not checked yet
+    if (r.network > 0 && r.network == r.probed)
+        return PlaybackClass::unavailable;
     return PlaybackClass::unsupported;
 }
 

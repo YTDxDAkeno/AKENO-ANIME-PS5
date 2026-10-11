@@ -410,6 +410,14 @@ std::string App::top_screen_id() const
     return screens.empty() ? std::string{} : screens.back()->screen_id();
 }
 
+std::string App::top_focus_id() const
+{
+    if (!overlay_.empty())
+        return overlay_.back()->focus_id();
+    const auto &screens = stacks_[static_cast<int>(mode_)];
+    return screens.empty() ? std::string{} : screens.back()->focus_id();
+}
+
 void App::pop()
 {
     if (!overlay_.empty())
@@ -570,6 +578,7 @@ void App::play(const MediaItem &item, double start_seconds, std::shared_ptr<Play
     player_->play(request);
     playing_ = item;
     playing_active_ = true;
+    playing_verified_ = false;
     last_progress_save_ms_ = now_ms_;
     push(make_player_screen(*this, item, std::move(context)));
 }
@@ -816,6 +825,43 @@ void App::finish_playback_record()
     playing_active_ = false;
 }
 
+// An anime episode with picture and sound in AKENO's own player - about a
+// second of pictures presented and half a second of audio frames delivered to
+// the audio output, no decoder or audio errors - verifies its provider's
+// native playback on this device. The
+// record keeps what the player measured (the decoder names the PS5 hardware
+// decoder on the console). Nothing else ever marks a provider verified.
+void App::verify_native_playback(const media::PlayerStatus &s)
+{
+    if (playing_verified_ || playing_.provider != anime::kEpisodeItemProvider ||
+        s.state != media::PlayerState::playing || s.frames_presented < 30 || s.audio_frames < 24 ||
+        s.decoder_errors != 0 || s.audio_errors != 0 || s.audio_codec.empty())
+        return;
+    std::string provider, series, season, episode;
+    if (!anime::split_episode_key(playing_.id, &provider, &series, &season, &episode))
+        return;
+    playing_verified_ = true;
+    anime::NativePlayback n;
+    n.at = platform::wall_clock_seconds();
+    n.episode =
+        playing_.subtitle.empty() ? playing_.title : playing_.title + " - " + playing_.subtitle;
+    n.decoder = s.decoder;
+    n.video = s.video_codec + " " + std::to_string(s.width) + "x" + std::to_string(s.height);
+    n.audio = s.audio_codec;
+    if (s.audio_rate > 0)
+        n.audio += " " + std::to_string(s.audio_rate) + " Hz";
+    if (s.audio_channels > 0)
+        n.audio += " " + std::to_string(s.audio_channels) + " ch";
+    n.frames = s.frames_presented;
+    n.audio_frames = s.audio_frames;
+    const bool first = anime_.native_playback(provider) == nullptr;
+    anime_.record_native_playback(provider, std::move(n));
+    if (first)
+        if (const anime::ProviderConfig *c = anime_.config(provider); c && !c->builtin)
+            toast(c->name + ": native playback verified on this console", th::kSuccess);
+    dirty_ = true;
+}
+
 // A bundled clip doubles as the hardware playback test in Diagnostics.
 void App::record_hardware_test(const media::PlayerStatus &s)
 {
@@ -1048,10 +1094,14 @@ void App::update(std::uint64_t now_ms)
                 report_error("playback", s.error);
             finish_playback_record();
         }
-        else if (now_ms - last_progress_save_ms_ > 15000 && s.position > 10.0 && !s.live)
+        else
         {
-            store_.record_progress(playing_, s.position, s.duration);
-            last_progress_save_ms_ = now_ms;
+            verify_native_playback(s);
+            if (now_ms - last_progress_save_ms_ > 15000 && s.position > 10.0 && !s.live)
+            {
+                store_.record_progress(playing_, s.position, s.duration);
+                last_progress_save_ms_ = now_ms;
+            }
         }
     }
     for (auto &screen : overlay_)
@@ -1300,6 +1350,24 @@ DiagnosticSnapshot App::snapshot() const
     s.image_bytes = stats.bytes;
     s.controller_connected = controller_connected_;
     s.player = player_->status();
+    // Anime providers: what each one's episodes do here, and what verified it.
+    for (const anime::ProviderConfig &c : anime_.configs())
+    {
+        const anime::PlaybackClass playback = anime_.playback_of(c.id);
+        std::string line = c.name + " (" +
+                           (c.builtin ? std::string{"built in"} : web::display_host(c.address)) +
+                           "): " + anime::playback_class_label(playback);
+        if (const anime::NativePlayback *n = anime_.native_playback(c.id))
+        {
+            char measured[160];
+            std::snprintf(measured, sizeof(measured), "%llu pictures, %llu audio frames",
+                          static_cast<unsigned long long>(n->frames),
+                          static_cast<unsigned long long>(n->audio_frames));
+            line += " - played " + n->episode + " on " + n->decoder + ": " + measured + "; " +
+                    n->video + (n->audio.empty() ? "" : ", " + n->audio);
+        }
+        s.providers.push_back(std::move(line));
+    }
     const platform::WebEngineInfo engine = web_->info();
     s.browser.push_back("Engine: " +
                         (engine.engine.empty() ? std::string{"not started yet"} : engine.engine));

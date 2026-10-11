@@ -17,7 +17,7 @@
 // site, the precise reason, and how to watch it in the PS5 browser instead.
 //
 // The investigation behind each entry is in docs/ (docs/ANIKOTO.md,
-// docs/MIRURO.md).
+// docs/MIRURO.md, docs/ANIMEPAHE.md).
 #pragma once
 
 #include "anime/provider.hpp"
@@ -36,6 +36,10 @@ struct SitePolicy
     // One line each: catalogue, playback, licence, where it can still be used.
     std::vector<std::string> reasons;
     std::string document; // "docs/ANIKOTO.md"
+    // What its episodes do in AKENO STREAM: unsupported, or browser-only for a
+    // site confirmed to play in the PS5 browser (AnimePahe), with how.
+    PlaybackClass playback = PlaybackClass::unsupported;
+    std::string browser_hint;
 };
 
 // The policy for an address (any of the site's known domains and their

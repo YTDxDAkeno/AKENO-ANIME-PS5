@@ -57,6 +57,9 @@ struct DiagnosticSnapshot
     // The embedded browser: engine start-up steps, saved sites' test marks
     // (host names only) and the browser test results.
     std::vector<std::string> browser;
+    // Anime providers: name, host, capability state and, when an episode
+    // played natively here, what the player measured (no addresses' paths).
+    std::vector<std::string> providers;
 };
 
 class Diagnostics final

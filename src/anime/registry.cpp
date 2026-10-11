@@ -265,6 +265,67 @@ void Registry::load()
             problems_.push_back(std::move(problem));
     if (!problems_.empty())
         last_error_ = problems_.front();
+    load_native_playback();
+}
+
+void Registry::load_native_playback()
+{
+    native_.clear();
+    const auto text = fs::read_text(fs::join(data_dir_, kNativePlaybackFile), 256u * 1024u);
+    if (!text)
+        return;
+    const auto parsed = json::parse(*text);
+    if (!parsed.ok)
+        return; // a damaged file only loses the "verified" labels
+    for (const auto &[id, v] : parsed.value["providers"].members())
+    {
+        if (!v.is_object() || v["at"].integer() <= 0)
+            continue;
+        NativePlayback n;
+        n.at = static_cast<std::uint64_t>(v["at"].integer());
+        n.episode = v["episode"].str();
+        n.decoder = v["decoder"].str();
+        n.video = v["video"].str();
+        n.audio = v["audio"].str();
+        n.frames = static_cast<std::uint64_t>(std::max(0LL, v["frames"].integer()));
+        n.audio_frames = static_cast<std::uint64_t>(std::max(0LL, v["audioFrames"].integer()));
+        native_[id] = std::move(n);
+    }
+}
+
+void Registry::save_native_playback() const
+{
+    json::Value providers = json::Value::object();
+    for (const auto &[id, n] : native_)
+    {
+        json::Value v = json::Value::object();
+        v.set("at", static_cast<long long>(n.at));
+        v.set("episode", n.episode);
+        v.set("decoder", n.decoder);
+        v.set("video", n.video);
+        v.set("audio", n.audio);
+        v.set("frames", static_cast<long long>(n.frames));
+        v.set("audioFrames", static_cast<long long>(n.audio_frames));
+        providers.set(id, std::move(v));
+    }
+    json::Value root = json::Value::object();
+    root.set("version", 1);
+    root.set("providers", std::move(providers));
+    (void)fs::write_atomic(fs::join(data_dir_, kNativePlaybackFile), root.dump(true));
+}
+
+void Registry::record_native_playback(std::string_view id, NativePlayback record)
+{
+    if (!config(id) || record.at == 0)
+        return;
+    native_[std::string{id}] = std::move(record);
+    save_native_playback();
+}
+
+const NativePlayback *Registry::native_playback(std::string_view id) const
+{
+    const auto it = native_.find(id);
+    return it == native_.end() ? nullptr : &it->second;
 }
 
 bool Registry::save(ProviderType type, std::string *why)
@@ -402,6 +463,11 @@ bool Registry::remove(std::string_view id)
     states_.erase(std::remove_if(states_.begin(), states_.end(),
                                  [id](const ProviderState &s) { return s.config.id == id; }),
                   states_.end());
+    if (const auto verified = native_.find(id); verified != native_.end())
+    {
+        native_.erase(verified);
+        save_native_playback();
+    }
     return true;
 }
 
@@ -443,7 +509,7 @@ void Registry::set_playback(std::string_view id, PlaybackClass playback)
 {
     for (ProviderConfig &c : configs_)
         if (c.id == id && c.type == ProviderType::website && playback != PlaybackClass::unknown &&
-            c.playback != playback)
+            playback != PlaybackClass::verified && c.playback != playback)
         {
             c.playback = playback;
             c.checked = platform::wall_clock_seconds();
@@ -469,6 +535,15 @@ PlaybackClass Registry::playback_of(std::string_view id) const
     if (!plays_natively(now))
         if (const auto site = known_site(c->address))
             now = site->playback;
+    // Its last load got no answer: what it offers is not known right now.
+    if (const ProviderState *s = state(id);
+        s && !s->loaded && s->unreachable && !known_site(c->address))
+        return PlaybackClass::unavailable;
+    // Native: verified once an episode has played here (a check alone never does).
+    if ((now == PlaybackClass::native || now == PlaybackClass::partial ||
+         now == PlaybackClass::unknown) &&
+        native_playback(id))
+        now = PlaybackClass::verified;
     return now;
 }
 
@@ -506,6 +581,7 @@ ProviderState Registry::load_provider(const ProviderConfig &config, const Provid
     if (!loaded.ok || loaded.series.empty())
     {
         state.error = loaded.error.empty() ? "The provider offers no series." : loaded.error;
+        state.unreachable = !loaded.ok && loaded.unreachable;
         state.loaded = false;
         return state;
     }
@@ -987,7 +1063,12 @@ ProviderReport check_source_once(const std::string &address, const std::string &
         for (const std::string &reason : policy->reasons)
             report.warnings.push_back({"", reason});
         report.warnings.push_back({"", "Investigation: " + policy->document});
-        report.playback = PlaybackClass::unsupported;
+        report.playback = policy->playback;
+        if (!policy->browser_hint.empty())
+        {
+            report.known_site = policy->site;
+            report.browser_hint = policy->browser_hint;
+        }
         return report;
     }
     ProviderConfig c;

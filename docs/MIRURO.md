@@ -11,7 +11,7 @@ and what AKENO STREAM can and cannot integrate natively: investigated
 | Question | Answer |
 | --- | --- |
 | Episodes in AKENO STREAM's own player | **No.** Miruro's episodes and streams come through a private interface behind Cloudflare's bot protection, with obfuscated answers, from third-party hosts that check the Referer. There is no file AKENO STREAM may play, and no authorization. Precise categories below. |
-| Miruro's catalogue in AKENO STREAM | **Yes, as a catalogue.** The schema.org data its pages publish (the same data 1.1.0-rc.1 found: 49 series) can be added from *Add Streaming Provider*. The provider is labelled **Website only (PS5 browser)**: series and details, **no Play buttons**. *Open on Website* opens a series' own page in the PS5 browser. |
+| Miruro's catalogue in AKENO STREAM | **Yes, as a catalogue.** The schema.org data its pages publish (the same data 1.1.0-rc.1 found: 49 series) can be added from *Add Streaming Provider*. The provider is labelled **Website only (PS5 browser)** (rc.2: **Browser only (PS5 browser)**): series and details, **no Play buttons**. *Open on Website* opens a series' own page in the PS5 browser. |
 | Why Autoplay matters | **Not determined yet.** Confirmed: the browser plays Miruro's video once it has started, so decoding, sound, seeking and the streaming player all work. Only *starting* it differs. Four hypotheses; the Playback Lab's new *Test a Play button* decides between them on the console. |
 | Watching Miruro | Unchanged: Websites (the PS5 browser) with Autoplay on in Miruro's player. AKENO STREAM now says so when it opens a Miruro page. This is browser playback, not AKENO STREAM's player. |
 

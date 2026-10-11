@@ -229,10 +229,21 @@ class InfoScreen final : public Screen
     int first_ = 0;
 };
 
+// "2026-10-11" (UTC) for a Unix time.
+std::string format_date(std::uint64_t seconds)
+{
+    const std::time_t t = static_cast<std::time_t>(seconds);
+    char text[16] = "";
+    if (const std::tm *utc = std::gmtime(&t))
+        std::strftime(text, sizeof(text), "%Y-%m-%d", utc);
+    return text;
+}
+
 Pixel playback_color(anime::PlaybackClass c)
 {
     switch (c)
     {
+    case anime::PlaybackClass::verified:
     case anime::PlaybackClass::native:
     case anime::PlaybackClass::partial:
         return th::kSuccess;
@@ -240,7 +251,9 @@ Pixel playback_color(anime::PlaybackClass c)
     case anime::PlaybackClass::browser_only:
         return th::kInfo;
     case anime::PlaybackClass::protected_media:
+    case anime::PlaybackClass::auth_required:
     case anime::PlaybackClass::unsupported:
+    case anime::PlaybackClass::unavailable:
         return th::kWarning;
     case anime::PlaybackClass::unknown:
         break;
@@ -2248,6 +2261,11 @@ class ProviderHomeScreen final : public Screen
     {
         return "provider-home:" + id_;
     }
+    [[nodiscard]] std::string focus_id() const override
+    {
+        const MediaItem *m = zone_ == 1 ? shelves_.focused() : nullptr;
+        return m ? m->id : std::string{};
+    }
 
     void render(ui::Painter &p, std::uint64_t now_ms) override
     {
@@ -2660,6 +2678,17 @@ class ProviderHomeScreen final : public Screen
             for (const InfoLine &l : report_lines(provider_report(app_.anime_registry(), *state)))
                 if (!l.label.empty())
                     lines.push_back(l);
+        // What verified it: the player's own measurements on this console.
+        if (const anime::NativePlayback *n = app_.anime_registry().native_playback(id_))
+        {
+            lines.push_back({"Verified", format_date(n->at) + ": " + n->episode, th::kSuccess});
+            lines.push_back({"Decoder", n->decoder, th::kTextSecondary});
+            lines.push_back({"Measured",
+                             std::to_string(n->frames) + " pictures presented, " +
+                                 std::to_string(n->audio_frames) + " audio frames; " + n->video +
+                                 (n->audio.empty() ? "" : ", " + n->audio),
+                             th::kTextSecondary});
+        }
         lines.push_back({"",
                          "An episode is offered as playable only when its video file was "
                          "checked: DRM-free MP4, MPEG-TS, Matroska or HLS. Web players, "
@@ -2855,10 +2884,16 @@ class AddProviderScreen final : public Screen
         const bool can_add = report_ && report_->importable;
         p.button(bx, y + 6,
                  !existing_.empty()   ? "Open Provider"
+                 : browser_report()   ? "Open in Websites"
                  : catalogue_report() ? "Add as Catalogue"
                                       : "Add Provider",
-                 row_ == 4, can_add || !existing_.empty() ? th::kSuccess : th::kTextMuted,
-                 existing_.empty() ? Icon::check : Icon::play);
+                 row_ == 4,
+                 can_add || !existing_.empty() ? th::kSuccess
+                 : browser_report()            ? th::kInfo
+                                               : th::kTextMuted,
+                 browser_report()    ? Icon::home
+                 : existing_.empty() ? Icon::check
+                                     : Icon::play);
         // Where the flow is.
         const char *steps[] = {"1  Address", "2  Detect", "3  Review", "4  Add"};
         const int done = address_.empty() ? 0 : !report_ ? 1 : can_add ? 3 : 2;
@@ -2877,14 +2912,24 @@ class AddProviderScreen final : public Screen
 
     [[nodiscard]] std::vector<Hint> hints() const override
     {
-        return {{Glyph::cross, row_ < 3    ? "Edit"
-                               : row_ == 3 ? "Detect"
-                                           : (existing_.empty() ? "Add" : "Open")},
+        return {{Glyph::cross, row_ < 3 ? "Edit"
+                               : row_ == 3
+                                   ? "Detect"
+                                   : (existing_.empty() && !browser_report() ? "Add" : "Open")},
                 {Glyph::dpad, "Choose"},
                 {Glyph::circle, "Back"}};
     }
 
   private:
+    // A website that cannot be a provider but plays in the PS5 browser
+    // (AnimePahe): it can be opened there - its own player, not AKENO's.
+    [[nodiscard]] bool browser_report() const
+    {
+        return report_ && !report_->importable && existing_.empty() &&
+               report_->playback == anime::PlaybackClass::browser_only &&
+               !report_->browser_hint.empty();
+    }
+
     // A report whose provider can be added as a catalogue only: series and
     // details, no Play buttons.
     [[nodiscard]] bool catalogue_report() const
@@ -3028,6 +3073,16 @@ class AddProviderScreen final : public Screen
         default:
             if (!existing_.empty())
                 open_existing();
+            else if (browser_report())
+            {
+                WebSession session;
+                session.url = address_;
+                session.title = report_->known_site;
+                // The browser opens it directly: AKENO STREAM sends the site nothing.
+                session.check_first = false;
+                app_.toast(report_->browser_hint, th::kInfo);
+                app_.open_web(std::move(session));
+            }
             else
                 add();
             return;

@@ -292,6 +292,10 @@ TEST(ProviderEndToEnd, AddBrowsePlaySearchMoreDuplicateRestartRemove)
     ASSERT_TRUE(h.until([&] { return h.record().frames > 10 && h.record().audio_units > 10; }));
     EXPECT_EQ(h.record().width, 640u);
     EXPECT_TRUE(h.requested("/media/h264-aac-360p.mp4"));
+    // Before: available, not hardware-tested; now played here: verified.
+    ASSERT_TRUE(
+        h.until([&] { return app.anime_registry().native_playback(kProvider) != nullptr; }));
+    EXPECT_EQ(app.anime_registry().playback_of(kProvider), anime::PlaybackClass::verified);
     // Stop: back to the series, then the provider's home.
     h.press(input::Button::circle);
     h.step(10);
@@ -328,6 +332,9 @@ TEST(ProviderEndToEnd, AddBrowsePlaySearchMoreDuplicateRestartRemove)
     ASSERT_NE(kept, nullptr);
     EXPECT_EQ(kept->type, anime::ProviderType::website);
     EXPECT_EQ(kept->settings.at("search"), "https://anime.fixture.test/search.html?q=AKENOQUERY");
+    // Verified on this device, measured by the player, kept across the restart.
+    ASSERT_NE(again.anime_registry().native_playback(kProvider), nullptr);
+    EXPECT_EQ(again.anime_registry().playback_of(kProvider), anime::PlaybackClass::verified);
     EXPECT_TRUE(again.anime_registry().storage_problems().empty());
 
     // Remove it from its home (Square, then confirm).
@@ -397,6 +404,32 @@ TEST(ProviderEndToEnd, AnikotoIsExplainedNotAddedAndNeverContacted)
         anime::check_source("https://anikoto.net/watch/x", "", {}, {}, &config);
     EXPECT_FALSE(r.importable);
     EXPECT_EQ(Harness::offline_requests("anikoto"), 0);
+}
+
+// AnimePahe: explained without a request (DDoS-Guard, kwik web players), not
+// added, and offered where it does play - the PS5 browser, its own player.
+TEST(ProviderEndToEnd, AnimePaheIsBrowserOnlyNotAddedAndNeverContacted)
+{
+    Harness h;
+    App &app = h.app();
+    add_by_typing(h, "animepahe.pw");
+    ASSERT_TRUE(h.settled());
+    EXPECT_EQ(h.top(), "add-provider");
+    EXPECT_EQ(Harness::offline_requests("animepahe"), 0); // not one request to the site
+    EXPECT_EQ(Harness::offline_requests("kwik"), 0);
+    // Next to Detect, the button reads "Open in Websites": the PS5 browser, not
+    // a provider.
+    test::web_view_script().finish_after_updates = 5;
+    h.press(input::Button::down, 3);
+    h.press(input::Button::right);
+    h.press(input::Button::cross);
+    ASSERT_TRUE(h.until([] { return !test::web_view_script().opened.empty(); }));
+    EXPECT_EQ(test::web_view_script().opened.front().url, "https://animepahe.pw/");
+    // Nothing was added or written.
+    EXPECT_EQ(app.anime_registry().configs().size(), 1u);
+    EXPECT_FALSE(fs::exists(fs::join(h.dir(), anime::kWebsiteProvidersFile)));
+    EXPECT_FALSE(fs::exists(fs::join(h.dir(), anime::kProvidersFile)));
+    EXPECT_EQ(Harness::offline_requests("animepahe"), 0); // the browser opens it, not AKENO
 }
 
 TEST(ProviderEndToEnd, MiruroIsAddedAsACatalogueAndItsSeriesOpenOnTheWebsite)

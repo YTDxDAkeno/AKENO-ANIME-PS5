@@ -60,6 +60,24 @@ bool miruro_host(const std::string &host)
     return false;
 }
 
+// AnimePahe's domains: animepahe.pw (current), .com and .org (EverythingMoe's
+// listing, June 2026), .ru and .si (used earlier). Look-alike sites under other
+// domains (animepahe.ch publishes a different, slug-based site) are not
+// AnimePahe and are not named here.
+bool animepahe_host(const std::string &host)
+{
+    static const char *const kDomains[] = {"animepahe.pw", "animepahe.com", "animepahe.org",
+                                           "animepahe.ru", "animepahe.si"};
+    for (const char *domain : kDomains)
+    {
+        const std::string d = domain;
+        if (host == d || (host.size() > d.size() && host.ends_with(d) &&
+                          host[host.size() - d.size() - 1] == '.'))
+            return true;
+    }
+    return false;
+}
+
 std::optional<url::Url> host_of(std::string_view address)
 {
     const SiteAddress normalised = normalize_site_address(address);
@@ -74,7 +92,33 @@ std::optional<SitePolicy> unsupported_site(std::string_view address)
 {
     const SiteAddress normalised = normalize_site_address(address);
     const auto u = url::parse(normalised.ok ? std::string_view{normalised.url} : address);
-    if (!u || u->host.empty() || !anikoto_host(u->host))
+    if (!u || u->host.empty())
+        return std::nullopt;
+    if (animepahe_host(u->host))
+    {
+        SitePolicy p;
+        p.site = "AnimePahe";
+        p.document = "docs/ANIMEPAHE.md";
+        p.playback = PlaybackClass::browser_only;
+        p.verdict = "AnimePahe cannot be a native provider: its catalogue and episodes sit "
+                    "behind a DDoS-Guard browser check, and its videos are kwik web players "
+                    "whose streams answer only that player. Nothing was sent to the site.";
+        p.reasons = {
+            "Catalogue: no documented or authorized API - its pages and a private /api "
+            "endpoint behind DDoS-Guard's browser challenge, which AKENO STREAM does not solve.",
+            "Playback: episodes are kwik.cx web players (packed script, hls.js); their HLS "
+            "stream answers only kwik's Referer. Forging it would bypass hotlink protection. "
+            "Never done.",
+            "Licence: none published; it is not a licensed service (EverythingMoe lists it "
+            "without its \"licensed\" tag).",
+            "Still possible: Websites (the PS5 browser). On firmware 12.20 its episodes start "
+            "there without Autoplay - AnimePahe's player, not AKENO STREAM's.",
+        };
+        p.browser_hint = "AnimePahe plays in the PS5 browser on firmware 12.20: its own "
+                         "player, not AKENO STREAM's.";
+        return p;
+    }
+    if (!anikoto_host(u->host))
         return std::nullopt;
     SitePolicy p;
     p.site = "Anikoto";

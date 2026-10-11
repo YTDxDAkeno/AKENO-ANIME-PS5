@@ -50,18 +50,25 @@ downloaded or run at run time.
 ### Playback labels
 
 Every provider says what its episodes do in AKENO STREAM - in the detection
-panel, on its card, on its home and on its series. Only the first two ever
-come with a Play button:
+panel, on its card, on its home, on its series and in the diagnostics report
+(1.1.0-rc.2; [PROVIDER_COMPATIBILITY.md](PROVIDER_COMPATIBILITY.md)). Only
+the native states ever come with a Play button:
 
 | Label | Meaning |
 | --- | --- |
-| **Plays in AKENO** | The checked episodes play in AKENO STREAM's own player. |
-| **Partly plays in AKENO** | Some checked episodes play; the others say why not (DRM, sign-in, region, missing). |
+| **Native playback verified** | An episode played in AKENO STREAM's own player **on this console**: about a second of pictures and half a second of sound, no decoder or audio errors. Recorded by the app from the player's measurements (`anime-native-playback.json`, shown under *Details*); a check of a site never sets it. |
+| **Native playback available - not hardware-tested** | The checked episodes are DRM-free videos AKENO STREAM's player supports; none has played on this console yet. Playing one verifies the provider. (*Native playback for some episodes* when others are protected or missing.) |
 | **Catalogue only** | Series and details only: no episode names a video file AKENO STREAM may play. Added on request with *Add as Catalogue*; no Play buttons. |
-| **Website only (PS5 browser)** | A known website whose episodes play only on its own pages ([Miruro](MIRURO.md)). Series and details, no Play buttons; **Open on Website** opens a series' own page in the PS5 browser - the site's player, not AKENO STREAM's. |
-| **Protected (DRM or sign-in)** | Every checked episode needs DRM, a sign-in or another region. Not added. |
-| **Not supported** | No adapter reads it, or it offers no permitted way in ([Anikoto](ANIKOTO.md)). Not added. |
-| **Not checked yet** | Its videos have not been checked (or could not be reached); each is checked before it plays. |
+| **Browser only (PS5 browser)** | A known website whose episodes play only on its own pages ([Miruro](MIRURO.md), [AnimePahe](ANIMEPAHE.md)). No Play buttons; Miruro's catalogue can be added and *Open on Website* opens a series' page; AnimePahe is not contacted and *Open in Websites* opens it - the site's player, not AKENO STREAM's. |
+| **Authentication required** | Its checked episodes need a sign-in. AKENO STREAM never signs in to a service or reuses the browser's session. Not added. |
+| **DRM protected** | Its checked episodes are DRM-protected. Never played, never bypassed. Not added. |
+| **Unsupported** | No adapter reads it, it offers no permitted way in ([Anikoto](ANIKOTO.md)), or its episodes are for another region. Not added. |
+| **Temporarily unavailable** | The site or its videos did not answer the last check (no connection, timeout, HTTP 5xx or 429). The last full check's result is kept for when it answers again; *Check Again* later. |
+| *Not checked yet* | Before the first check; each episode is checked before it plays. |
+
+rc.1 saved the same ids (`native`, `partial`, `catalogue-only`,
+`browser-only`, `protected`, `unsupported`, `unknown`); rc.2 adds
+`auth-required` and `unavailable`, which rc.1 keeps as they are.
 
 **Check Again** on a website provider's home runs the whole check again and
 updates its label, for a site that starts (or stops) publishing video files.

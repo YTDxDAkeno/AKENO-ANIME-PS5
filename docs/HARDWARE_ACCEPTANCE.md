@@ -488,12 +488,103 @@ Firmware ______ · build label (Settings, bottom right) ______
         on, an episode plays - in the browser, not AKENO's player.
 11. [ ] *Check Again* on the provider's home: the label stays *Website only*.
 12. [ ] **critical** Existing providers are unchanged: a PeerTube provider
-        (for example `video.blender.org`) still reads *Plays in AKENO* and an
+        (for example `video.blender.org`) still reads *Plays in AKENO* (in
+        rc.2: *Native playback available - not hardware-tested*, then *Native
+        playback verified* once an episode has played) and an
         episode plays in AKENO's player.
 13. [ ] Export a report (Settings -> Diagnostics -> *Export report*) and
         attach it. It holds host names and test results only.
 
 Result: ______ passed, ______ failed, ______ not tested.
+
+## 15. 1.1.0-rc.2 release acceptance: the native anime workflow
+
+**This section decides the first stable release (`v1.1.0`).** Every item
+marked **critical** must pass on the console. Host tests and CI do not count
+here: they cannot show the PS5 hardware decoder, the console's network stack
+or the DualSense.
+
+The native workflow needs a real, authorized, DRM-free source. Use
+**`video.blender.org`**, the Blender Foundation's own PeerTube instance: open
+movies released under Creative Commons licences by their rights holder. They
+are animated films, **not anime** - the test proves AKENO STREAM's provider
+and player path, not any anime website. AnimePahe and Miruro play only in the
+browser ([ANIMEPAHE.md](ANIMEPAHE.md), [MIRURO.md](MIRURO.md)).
+
+Hardware: PS5, firmware **12.20**, ShadowMountPlus ______, title ID
+**PPSA99276**. Build: the ZIP from the `v1.1.0-rc.2` pre-release, or the CI
+artifact named in the release notes; build label (Settings, bottom right)
+______ · SHA-256 of the ZIP you installed ______ · date ______
+
+Keep a copy of your current `/data/homebrew/PPSA99276/` folder before
+installing (rollback: copy it back).
+
+1. [ ] **critical** **App launch**: "AKENO STREAM 1.1.0 starting" and, within
+       ~5 s, "... ready"; the splash and Home appear.
+2. [ ] **critical** **DualSense navigation**: D-pad and stick move the focus,
+       L1/R1 switch modes, Cross opens, Circle goes back, on every screen
+       below.
+3. [ ] **critical** **Provider import**: Anime -> *Your Anime Sources* ->
+       *Add Streaming Provider* -> Cross on the address field, after
+       `https://` type `video.blender.org`, OPTIONS. The panel reads
+       *Recognised*, *Recognised by: PeerTube instance*, *In AKENO: Native
+       playback available - not hardware-tested*. Cross on *Add Provider*:
+       the provider's home opens, with the same chip.
+4. [ ] **critical** **Anime catalogue**: the home lists the instance's
+       channels (series) with artwork. Series count ______
+5. [ ] **critical** **Episode list**: open a series (for example *Blender
+       Studio*): its seasons (playlists) and episodes load, with titles,
+       thumbnails and lengths; left/right changes the season. Series and
+       season used ______
+6. [ ] **critical** **Native playback over the real network**: Cross on an
+       episode marked *Play*. It plays in **AKENO STREAM's own player** (full
+       screen, AKENO's controls - not the browser). OPTIONS shows decoder
+       **PS5 hardware decoder (Videodec2)**, H.264 and AAC. Within a few
+       seconds a message reads *"<provider>: native playback verified on this
+       console"*. Note the episode ______ and the stream line ______
+7. [ ] **critical** **Picture and audio**: smooth picture, clear sound in
+       sync with the picture (note any offset ______).
+8. [ ] **critical** **Pause/resume**: Cross pauses picture and sound together
+       and resumes.
+9. [ ] **critical** **Seeking**: Right/Left jump 10 s, R1/L1 60 s; the bar
+       updates and playback continues within a few seconds after each jump.
+10. [ ] **Subtitles where supported**: Triangle. Note the message ("Subtitles:
+        <language>", "Subtitles off", or "This video has no subtitles")
+        ______. When a track is on, the text appears at the bottom.
+11. [ ] **critical** **Next episode**: R2 plays the next episode of the season
+        (L2 the previous one); at the end of an episode *Up next* counts down
+        and plays the next one.
+12. [ ] **critical** **Restart and resume**: stop an episode at about one
+        minute (Circle). Close AKENO (PS button -> close) and start it again.
+        The provider is still in *Streaming Providers*; its home now shows
+        **Native playback verified**; OPTIONS (*Details*) shows *Verified:
+        <date>: <episode>*, the decoder and what was measured. Home ->
+        *Continue Watching* lists the episode; the series' *Continue* action
+        resumes it at the saved position (note it ______).
+13. [ ] **critical** **No crashes** during items 1-12 and 14-17 (no
+        "crashed: ..." notification, no return to the PS5 home screen).
+14. [ ] **critical** **Existing PeerTube playback**: Home -> *Discover* -> a
+        PeerTube video (for example from Blender Studio) plays with picture
+        and sound, as before.
+15. [ ] **critical** **Existing JSON providers**: Anime -> *AKENO Sample
+        Series* (the bundled JSON catalogue) -> S1 E1 plays; any catalogue or
+        PeerTube channel you added in 1.0.0 or 1.1.0-rc.1 is still listed and
+        plays as before.
+16. [ ] **AnimePahe (browser only)**: *Add Streaming Provider* with
+        `animepahe.pw`: the panel explains why it cannot be a native provider
+        (DDoS-Guard, kwik web players, no licence), reads *Browser only (PS5
+        browser)*, and the button next to *Detect Provider* reads **Open in
+        Websites**. Cross: AnimePahe opens in the PS5 browser and an episode
+        plays there (AnimePahe's player, not AKENO's). Sound ______ Seeking
+        ______
+17. [ ] Settings -> Diagnostics -> *Export report*: the section *Anime
+        providers (native playback)* lists `video.blender.org` with "Native
+        playback verified - played ... on PS5 hardware decoder (Videodec2)".
+        Attach the report.
+
+Result: ______ passed, ______ failed, ______ not tested.
+
+Only when items 1-9 and 11-15 pass may `v1.1.0` be published as stable.
 
 ## 9. Stability
 
@@ -515,3 +606,5 @@ Result: ______ passed, ______ failed, ______ not tested.
 | 2026-10-09 | fw 13.09, ShadowMountPlus | 0.4.1/0.4.2 | Crash while typing a YouTube key on the on-screen keyboard (fixed in 0.4.3); `youtube-key.txt` was not read from the install folder (fixed in 0.4.2/0.4.3) |
 | 2026-10-10 | fw 13.09, ShadowMountPlus | 0.5.0 | Tester: "everything works" (not itemised); anime and YouTube videos cannot be watched in the app, as designed |
 | 2026-10-10 | fw 12.20, jailbroken | build before 1.0.0 | Launches; DualSense navigation; native HLS plays; PeerTube videos play with picture and sound; YouTube videos play in the embedded browser; Crunchyroll's website loads and sign-in works; user-entered websites open. Crunchyroll episodes fail with **KAT-6005**; AnikotoTV's player loads but playback never starts |
+| 2026-10-11 | fw 12.20, jailbroken | 1.1.0-rc.1 | Miruro in Websites: an episode starts only with Miruro's own Autoplay on; then pause, resume, seeking and sound work across series; the setting survives a restart. *Add Streaming Provider* on Miruro: schema.org adapter, 49 series, metadata only ([MIRURO.md](MIRURO.md)) |
+| 2026-10-11 | fw 12.20, jailbroken | 1.1.0-rc.1 | AnimePahe (`animepahe.pw/anime`) in Websites: A-Z index, episode lists, an episode starts **without** Autoplay - browser playback ([ANIMEPAHE.md](ANIMEPAHE.md)). Native playback of an anime provider in AKENO's player: not yet run on a console |

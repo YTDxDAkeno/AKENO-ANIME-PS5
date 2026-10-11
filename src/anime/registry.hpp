@@ -21,17 +21,38 @@
 #include "anime/provider_store.hpp"
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace akeno::anime
 {
+// An episode that played in AKENO STREAM's own player on this device - about a
+// second of pictures presented and half a second of sound, no decoder or audio
+// errors - is what makes a
+// provider "Native playback verified". Only the App writes one, from what the
+// player measured; a check of a site never does. Kept per provider in
+// <data>/anime-native-playback.json (the newest replaces the last; removing
+// the provider removes it).
+struct NativePlayback
+{
+    std::uint64_t at = 0; // Unix seconds
+    std::string episode;  // "Series - S1 E2 - Title"
+    std::string decoder;  // "PS5 hardware decoder (Videodec2)"
+    std::string video;    // "h264 1280x720"
+    std::string audio;    // "aac 48000 Hz 2 ch"
+    std::uint64_t frames = 0;
+    std::uint64_t audio_frames = 0;
+};
+inline constexpr char kNativePlaybackFile[] = "anime-native-playback.json";
+
 struct ProviderState
 {
     ProviderConfig config;
     bool loaded = false;
-    std::string error; // the last load failed: why
+    std::string error;        // the last load failed: why
+    bool unreachable = false; // ... because the source did not answer (Temporarily unavailable)
     std::vector<Series> series;
     std::vector<CatalogIssue> errors;
     std::vector<CatalogIssue> warnings;
@@ -98,8 +119,13 @@ class Registry final
     // What a provider's episodes do in AKENO STREAM now: an episode checked
     // and found playable wins; a website's unopened series keep what its last
     // check found; a known website (Miruro) is website-only unless its pages
-    // named a video that played.
+    // named a video that played; a provider that did not answer its last load
+    // is temporarily unavailable; one that plays natively and has played on
+    // this device is verified.
     [[nodiscard]] PlaybackClass playback_of(std::string_view id) const;
+    // UI thread: an episode of this provider played natively (see NativePlayback).
+    void record_native_playback(std::string_view id, NativePlayback record);
+    [[nodiscard]] const NativePlayback *native_playback(std::string_view id) const;
     // Entries the provider files hold but this version does not load, and
     // other problems found while reading them (one sentence each).
     [[nodiscard]] const std::vector<std::string> &storage_problems() const noexcept
@@ -172,6 +198,9 @@ class Registry final
     std::vector<ProviderState> states_;
     std::vector<std::string> problems_;
     std::string last_error_;
+    std::map<std::string, NativePlayback, std::less<>> native_;
+    void load_native_playback();
+    void save_native_playback() const;
 };
 
 // Worker thread: what an address really is, for "Add Streaming Provider" and

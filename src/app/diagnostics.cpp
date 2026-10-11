@@ -225,6 +225,12 @@ std::string Diagnostics::build_report(const DiagnosticSnapshot &s) const
     if (!p.demux_error.empty())
         out += "Demuxer: " + p.demux_error + "\n";
 
+    out += "\nAnime providers (native playback)\n---------------------------------\n";
+    if (s.providers.empty())
+        out += "(none)\n";
+    for (const auto &l : s.providers)
+        out += l + "\n";
+
     out += "\nBrowser (Websites, YouTube player)\n----------------------------------\n";
     if (s.browser.empty())
         out += "(no information)\n";

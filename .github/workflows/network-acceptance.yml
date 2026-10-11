@@ -1,0 +1,115 @@
+# AKENO STREAM PS5 - Real-network acceptance on a GitHub runner.
+# Copyright (C) 2026 AKENO STREAM contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Drives the real App through the controller from an empty data folder, over
+# the real internet, against an authorized, DRM-free source (by default the
+# Blender Foundation's PeerTube instance, video.blender.org: Creative Commons
+# open movies published by their rights holder): add the provider, browse its
+# catalogue, open a series and season, play the first episode in AKENO's
+# native player (FFmpeg's software decoder stands in for the PS5 hardware
+# decoder), subtitles, pause, seek, next episode, progress, restart, resume.
+# tests/unit/test_real_network.cpp. A third-party outage turns this red
+# without saying anything about the build, so it is kept apart from the Build
+# workflow and never gates a release; the console checklist is still needed.
+
+name: Real-network acceptance
+
+on:
+  push:
+    branches:
+      - "claude/**"
+      - "release/**"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "PeerTube instance (host name)"
+        default: "video.blender.org"
+      series:
+        description: "Channel name to play (empty: the first with a playable season)"
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: network-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-network:
+    name: Authorized provider to native player (host, real network)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.deps/ccache
+      CCACHE_MAXSIZE: 800M
+      USE_CCACHE: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install native toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-18 lld-18 libclang-rt-18-dev make ninja-build ccache \
+            pkg-config tar unzip wget ffmpeg libfreetype-dev libcurl4-openssl-dev libssl-dev zlib1g-dev
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+
+      # The Build workflow's dependency cache (GoogleTest, the host FFmpeg).
+      - name: Restore dependencies
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            .deps/native
+            .deps/test
+            .deps/pacbrew
+            .deps/MkPFS
+            .deps/ffmpeg-ps5
+            .deps/ffmpeg-host
+          key: deps-${{ runner.os }}-${{ runner.arch }}-ubuntu24-clang18-${{ hashFiles('tools/setup-*.sh') }}
+
+      - name: Restore compiler cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .deps/ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-clang18-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ runner.arch }}-clang18-
+
+      - name: Build the host test binary (ASan/UBSan)
+        run: BUILD_JOBS=$(nproc) bash tools/build-tests.sh
+
+      - name: Run the real-network acceptance test
+        env:
+          AKENO_NETWORK_ACCEPTANCE: "1"
+          AKENO_NETWORK_PROVIDER: ${{ inputs.provider || 'video.blender.org' }}
+          AKENO_NETWORK_SERIES: ${{ inputs.series || '' }}
+          AKENO_NETWORK_REPORT: build/network/report.md
+          AKENO_NETWORK_SHOTS: build/network/screens
+        run: |
+          mkdir -p build/network
+          set -o pipefail
+          AKENO_SOURCE_ROOT="$PWD" build/tests/akeno_tests --gtest_filter='RealNetwork.*' 2>&1 |
+            tee build/network/log.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          if [[ -f build/network/report.md ]]; then
+            cat build/network/report.md >> "$GITHUB_STEP_SUMMARY"
+            cat build/network/report.md
+          else
+            echo "No report was written." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report and screens
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: AKENO-STREAM-network-acceptance-${{ github.sha }}
+          path: build/network
+          if-no-files-found: warn
+          retention-days: 30

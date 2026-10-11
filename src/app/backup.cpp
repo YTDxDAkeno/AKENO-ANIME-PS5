@@ -39,6 +39,8 @@ const std::vector<std::string> &files()
         // 1.1.0: website providers. 1.0.0 does not back it up, restore it or
         // delete it; it stays in the data folder untouched by a rollback.
         "anime-website-providers.json",
+        // 1.1.0-rc.2: which providers' episodes played natively on this console.
+        "anime-native-playback.json",
     };
     return kFiles;
 }

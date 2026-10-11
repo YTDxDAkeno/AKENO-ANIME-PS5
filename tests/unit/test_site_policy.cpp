@@ -1,4 +1,4 @@
-// AKENO STREAM PS5 - Websites investigated as providers: Anikoto and Miruro.
+// AKENO STREAM PS5 - Websites investigated as providers: Anikoto, Miruro, AnimePahe.
 // Copyright (C) 2026 AKENO STREAM contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
@@ -16,6 +16,15 @@
 // publish as a catalogue - series and details, never a Play button - says
 // precisely why its episodes play only on the website, and never asks for
 // anything but the pages a browser would open.
+//
+// AnimePahe's catalogue and episode lists sit behind DDoS-Guard's browser
+// challenge and its videos are kwik.cx web players whose streams answer only
+// that player's Referer (docs/ANIMEPAHE.md). It plays in the PS5 browser, so
+// it is "Browser only": explained without a request to the site, offered in
+// Websites, never added as a provider.
+//
+// The provider capability states: a check finds what an address offers; only
+// an episode that played in AKENO's player on this device verifies one.
 #include "anime/provider_store.hpp"
 #include "anime/registry.hpp"
 #include "anime/site_policy.hpp"
@@ -354,29 +363,187 @@ TEST(PlaybackClass, ComesFromWhatWasCheckedOnly)
     EXPECT_EQ(classify_playback(r), PlaybackClass::partial);
     r.playable = 0;
     r.probed = 0;
-    EXPECT_EQ(classify_playback(r), PlaybackClass::protected_media);
+    EXPECT_EQ(classify_playback(r), PlaybackClass::protected_media); // DRM
     r.drm = 0;
+    r.auth = 1;
+    EXPECT_EQ(classify_playback(r), PlaybackClass::auth_required); // a sign-in, no DRM
+    r.auth = 0;
+    r.region = 1;
+    EXPECT_EQ(classify_playback(r), PlaybackClass::unsupported); // another region only
+    r.region = 0;
     r.probed = r.network = 2;
-    EXPECT_EQ(classify_playback(r), PlaybackClass::unknown); // unreachable just now
+    EXPECT_EQ(classify_playback(r), PlaybackClass::unavailable); // no answer just now
     r.network = 0;
     r.missing = 2;
     EXPECT_EQ(classify_playback(r), PlaybackClass::unsupported);
     ProviderReport page;
     page.source = SourceClass::web_page; // HTTP 200 is not playback
     EXPECT_EQ(classify_playback(page), PlaybackClass::unsupported);
+    ProviderReport silent;
+    silent.source = SourceClass::unreachable;
+    EXPECT_EQ(classify_playback(silent), PlaybackClass::unavailable);
+    // A check never verifies: only an episode playing in AKENO's player does.
+    EXPECT_NE(classify_playback(r), PlaybackClass::verified);
     EXPECT_FALSE(plays_natively(PlaybackClass::catalogue_only));
     EXPECT_FALSE(plays_natively(PlaybackClass::browser_only));
+    EXPECT_FALSE(plays_natively(PlaybackClass::protected_media));
+    EXPECT_FALSE(plays_natively(PlaybackClass::auth_required));
+    EXPECT_FALSE(plays_natively(PlaybackClass::unavailable));
+    EXPECT_FALSE(plays_natively(PlaybackClass::unsupported));
     EXPECT_TRUE(plays_natively(PlaybackClass::partial));
+    EXPECT_TRUE(plays_natively(PlaybackClass::verified));
+    // The required states, each with its own words.
+    EXPECT_STREQ(playback_class_label(PlaybackClass::verified), "Native playback verified");
+    EXPECT_STREQ(playback_class_label(PlaybackClass::native),
+                 "Native playback available - not hardware-tested");
+    EXPECT_STREQ(playback_class_label(PlaybackClass::catalogue_only), "Catalogue only");
+    EXPECT_STREQ(playback_class_label(PlaybackClass::browser_only), "Browser only (PS5 browser)");
+    EXPECT_STREQ(playback_class_label(PlaybackClass::auth_required), "Authentication required");
+    EXPECT_STREQ(playback_class_label(PlaybackClass::protected_media), "DRM protected");
+    EXPECT_STREQ(playback_class_label(PlaybackClass::unsupported), "Unsupported");
+    EXPECT_STREQ(playback_class_label(PlaybackClass::unavailable), "Temporarily unavailable");
+    // rc.1 saved "protected" for DRM: the id is unchanged.
+    EXPECT_STREQ(playback_class_id(PlaybackClass::protected_media), "protected");
     for (const PlaybackClass c :
          {PlaybackClass::unknown, PlaybackClass::native, PlaybackClass::partial,
           PlaybackClass::catalogue_only, PlaybackClass::browser_only,
-          PlaybackClass::protected_media, PlaybackClass::unsupported})
+          PlaybackClass::protected_media, PlaybackClass::unsupported, PlaybackClass::verified,
+          PlaybackClass::auth_required, PlaybackClass::unavailable})
     {
         EXPECT_EQ(playback_class_from_id(playback_class_id(c)), c);
         EXPECT_NE(std::string{playback_class_label(c)}, "");
         EXPECT_NE(std::string{playback_class_detail(c)}, "");
     }
     EXPECT_FALSE(playback_class_from_id("plays-everything").has_value());
+}
+
+TEST(SitePolicy, AnimePaheIsBrowserOnlyAndNeverContacted)
+{
+    for (const char *address : {"https://animepahe.pw/anime", "animepahe.pw",
+                                "https://animepahe.com/", "https://www.animepahe.org/anime/1a2b",
+                                "http://animepahe.ru", "https://animepahe.si/play/x/y"})
+    {
+        const auto policy = unsupported_site(address);
+        ASSERT_TRUE(policy.has_value()) << address;
+        EXPECT_EQ(policy->site, "AnimePahe");
+        EXPECT_EQ(policy->document, "docs/ANIMEPAHE.md");
+        EXPECT_EQ(policy->playback, PlaybackClass::browser_only);
+        EXPECT_FALSE(policy->browser_hint.empty());
+    }
+    // Look-alike domains are other sites, and the player host is not AnimePahe.
+    for (const char *address : {"https://animepahe.ch/", "https://animepahe.pw.example/",
+                                "https://kwik.cx/e/abc", "https://notanimepahe.pw/"})
+        EXPECT_FALSE(unsupported_site(address).has_value()) << address;
+
+    RecordingTransport transport;
+    ProviderConfig config;
+    const ProviderReport r = check_source("https://animepahe.pw/anime", "", {}, {}, &config);
+    EXPECT_TRUE(transport.urls().empty()) << transport.urls().front();
+    EXPECT_FALSE(r.importable);
+    EXPECT_EQ(r.playback, PlaybackClass::browser_only);
+    EXPECT_EQ(r.known_site, "AnimePahe");
+    EXPECT_NE(r.verdict.find("DDoS-Guard"), std::string::npos) << r.verdict;
+    EXPECT_NE(r.verdict.find("Nothing was sent to the site"), std::string::npos) << r.verdict;
+    ASSERT_EQ(r.warnings.size(), 5u);
+    EXPECT_NE(r.warnings[1].message.find("Referer"), std::string::npos);
+    EXPECT_TRUE(config.address.empty()); // nothing to add
+
+    // Adding it anyway is refused, and nothing is written.
+    const std::string dir = fresh_dir("animepahe");
+    Registry registry(dir, dir);
+    registry.load();
+    ProviderConfig hand = anikoto_website();
+    hand.name = "AnimePahe";
+    hand.address = hand.original_url = "https://animepahe.pw/";
+    ProviderState state = Registry::load_provider(hand, {}, {}, 12);
+    EXPECT_FALSE(state.loaded);
+    EXPECT_FALSE(state.unreachable); // a verdict, not a network failure
+    EXPECT_TRUE(transport.urls().empty());
+}
+
+TEST(PlaybackClass, OnlyAnEpisodePlayedHereVerifiesAProvider)
+{
+    const std::string dir = fresh_dir("verified");
+    ProviderConfig web;
+    web.type = ProviderType::website;
+    web.name = "Open Fixture";
+    web.address = web.original_url = "https://anime.fixture.test/";
+    web.adapter = "schema-org";
+    web.playback = PlaybackClass::native; // what the last check found
+    std::string added;
+    {
+        Registry registry(dir, dir);
+        registry.load();
+        std::string why;
+        ASSERT_TRUE(registry.add(web, &why, nullptr, &added)) << why;
+        EXPECT_EQ(registry.playback_of(added), PlaybackClass::native);
+        EXPECT_EQ(registry.native_playback(added), nullptr);
+        // A record without a time, or for a provider that does not exist, is ignored.
+        registry.record_native_playback(added, {});
+        registry.record_native_playback("web_nobody", NativePlayback{1, "x", "y", "", "", 1, 1});
+        EXPECT_EQ(registry.native_playback(added), nullptr);
+        EXPECT_FALSE(fs::exists(fs::join(dir, kNativePlaybackFile)));
+
+        NativePlayback n;
+        n.at = 1791734400;
+        n.episode = "The Signal - S1 E1 - Lights";
+        n.decoder = "PS5 hardware decoder (Videodec2)";
+        n.video = "h264 640x360";
+        n.audio = "aac 48000 Hz 2 ch";
+        n.frames = 96;
+        n.audio_frames = 90;
+        registry.record_native_playback(added, n);
+        EXPECT_EQ(registry.playback_of(added), PlaybackClass::verified);
+        // "verified" is derived, never saved as what a check found.
+        registry.set_playback(added, PlaybackClass::verified);
+        EXPECT_EQ(registry.config(added)->playback, PlaybackClass::native);
+    }
+    const auto saved =
+        json::parse(fs::read_text(fs::join(dir, kWebsiteProvidersFile)).value_or(""));
+    ASSERT_TRUE(saved.ok);
+    EXPECT_EQ(saved.value["providers"][0]["catalogue"]["playback"].str(), "native");
+
+    // After a restart: still verified, with what was measured.
+    Registry registry(dir, dir);
+    registry.load();
+    ASSERT_NE(registry.native_playback(added), nullptr);
+    EXPECT_EQ(registry.native_playback(added)->decoder, "PS5 hardware decoder (Videodec2)");
+    EXPECT_EQ(registry.native_playback(added)->frames, 96u);
+    EXPECT_EQ(registry.playback_of(added), PlaybackClass::verified);
+    // A later check that finds DRM wins over an old record.
+    registry.set_playback(added, PlaybackClass::protected_media);
+    EXPECT_EQ(registry.playback_of(added), PlaybackClass::protected_media);
+    // Removing the provider removes its record.
+    ASSERT_TRUE(registry.remove(added));
+    EXPECT_EQ(registry.native_playback(added), nullptr);
+    const auto records =
+        json::parse(fs::read_text(fs::join(dir, kNativePlaybackFile)).value_or(""));
+    ASSERT_TRUE(records.ok);
+    EXPECT_FALSE(records.value["providers"].has(added));
+}
+
+TEST(PlaybackClass, AProviderThatDidNotAnswerIsTemporarilyUnavailable)
+{
+    RecordingTransport offline;
+    const std::string dir = fresh_dir("unavailable");
+    ProviderConfig web;
+    web.type = ProviderType::website;
+    web.name = "Open Fixture";
+    web.address = web.original_url = "https://anime.fixture.test/";
+    web.adapter = "schema-org";
+    web.playback = PlaybackClass::native;
+    Registry registry(dir, dir);
+    registry.load();
+    std::string why, added;
+    ASSERT_TRUE(registry.add(web, &why, nullptr, &added)) << why;
+    ProviderState state = Registry::load_provider(*registry.config(added), {}, {}, 12);
+    EXPECT_FALSE(state.loaded);
+    EXPECT_TRUE(state.unreachable) << state.error;
+    registry.install(std::move(state));
+    EXPECT_EQ(registry.playback_of(added), PlaybackClass::unavailable);
+    EXPECT_FALSE(plays_natively(registry.playback_of(added))); // no Play buttons meanwhile
+    // What the last full check found is kept for when it answers again.
+    EXPECT_EQ(registry.config(added)->playback, PlaybackClass::native);
 }
 
 TEST(PlaybackClass, AValueFromANewerVersionIsKept)

@@ -118,6 +118,12 @@ class Screen
     {
         return {};
     }
+    // The id of the item that has the focus, for tests ("web_x/series-id");
+    // empty for screens that do not say.
+    [[nodiscard]] virtual std::string focus_id() const
+    {
+        return {};
+    }
     // Asks the app to remove this screen once the current update is done
     // (a screen cannot pop itself from inside update()).
     void close_later() noexcept
@@ -221,6 +227,12 @@ class App final
     [[nodiscard]] bool showing(const Screen *screen) const;
     // The screen_id() of the screen on top.
     [[nodiscard]] std::string top_screen_id() const;
+    [[nodiscard]] std::string top_focus_id() const;
+    // The newest message on screen (empty: none), for tests.
+    [[nodiscard]] std::string latest_toast() const
+    {
+        return toasts_.empty() ? std::string{} : toasts_.back().text;
+    }
     void open_item(const MediaItem &item);
     void play(const MediaItem &item, double start_seconds = -1.0,
               std::shared_ptr<PlayerContext> context = nullptr);
@@ -413,6 +425,7 @@ class App final
     std::vector<std::unique_ptr<Screen>> &stack();
     void finish_playback_record();
     void record_hardware_test(const media::PlayerStatus &status);
+    void verify_native_playback(const media::PlayerStatus &status);
 
     AppConfig config_;
     gfx::FontEngine &fonts_;
@@ -468,6 +481,7 @@ class App final
     // Playback bookkeeping for resume.
     MediaItem playing_;
     bool playing_active_ = false;
+    bool playing_verified_ = false; // this episode already verified its provider
     std::uint64_t last_progress_save_ms_ = 0;
 };
 } // namespace akeno

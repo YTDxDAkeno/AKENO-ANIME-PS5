@@ -47,17 +47,26 @@ std::optional<ProviderType> provider_type_from_id(std::string_view id) noexcept;
 
 // What a provider's episodes do in AKENO STREAM, shown wherever the provider
 // appears (Add Streaming Provider, its card, its home, its series). Only
-// "plays" and "partly plays" ever come with a Play button: a catalogue-only
-// or website-only provider shows its series and details, never a Play button.
+// the three native classes ever come with a Play button: a catalogue-only,
+// browser-only, protected or unavailable provider shows its series and
+// details, never a Play button.
+//
+// A check can find "native" (its episodes name DRM-free files AKENO's player
+// supports) but never "verified": only an episode that really played in
+// AKENO's player on this device - picture presented, sound output, no decoder
+// or audio errors - verifies a provider (Registry::record_native_playback()).
 enum class PlaybackClass : std::uint8_t
 {
-    unknown,         // not checked yet, or its videos could not be reached
-    native,          // the checked episodes play in AKENO STREAM's own player
-    partial,         // some checked episodes play; others are protected or missing
+    unknown,         // not checked yet
+    native,          // the checked episodes play natively; none has played on this device yet
+    partial,         // some checked episodes play natively; others are protected or missing
     catalogue_only,  // series and details only: no episode names a video AKENO may play
     browser_only,    // a known website whose episodes play only on its own pages (PS5 browser)
-    protected_media, // every checked episode needs DRM, a sign-in or another region
-    unsupported,     // no adapter recognises it, or no permitted way in
+    protected_media, // its checked episodes are DRM-protected (never played, never bypassed)
+    unsupported,     // no adapter recognises it, no permitted way in, or another region only
+    verified,        // an episode played in AKENO's own player on this device
+    auth_required,   // its checked episodes need a sign-in (AKENO never signs in to a service)
+    unavailable,     // the site or its videos did not answer the last check (network, server)
 };
 const char *playback_class_id(PlaybackClass c) noexcept;    // "catalogue-only"
 const char *playback_class_label(PlaybackClass c) noexcept; // "Catalogue only"
@@ -67,7 +76,8 @@ std::optional<PlaybackClass> playback_class_from_id(std::string_view id) noexcep
 // True when its episodes may have a Play button.
 inline bool plays_natively(PlaybackClass c) noexcept
 {
-    return c == PlaybackClass::native || c == PlaybackClass::partial;
+    return c == PlaybackClass::native || c == PlaybackClass::partial ||
+           c == PlaybackClass::verified;
 }
 
 struct ProviderConfig
@@ -157,6 +167,9 @@ struct LoadedCatalog
 {
     bool ok = false;
     std::string error;
+    // The source did not answer (no connection, timeout, HTTP 5xx or 429):
+    // "Temporarily unavailable", not a verdict on what it offers.
+    bool unreachable = false;
     ProviderMeta meta;
     std::vector<Series> series;
     std::vector<CatalogIssue> errors;
