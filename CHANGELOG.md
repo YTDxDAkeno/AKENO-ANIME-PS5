@@ -3,6 +3,26 @@
 AKENO STREAM for PS5 (`PPSA99276`). Versions are `MAJOR.MINOR.PATCH`; release
 candidates are tagged `vX.Y.Z-rc.N` and published as GitHub pre-releases.
 
+## Unreleased
+
+### Anikoto investigated: not a permitted provider
+
+- [docs/ANIKOTO.md](docs/ANIKOTO.md): what three Anikoto projects
+  (zainaqdas/anikoto-api, Shineii86/AniKotoAPI, hexxt-git/anime-sdk) do for
+  catalogue, search, details, seasons, episodes and playback, and why AKENO
+  STREAM cannot use any of it: no documented or authorized API, scraping of
+  pages and private endpoints the site blocks for automated clients (one
+  project recommends a Cloudflare challenge solver), and streams obtainable
+  only by forging `Referer`/`Origin` headers against third-party players. No
+  authorized DRM-free media exists, so no playback proof of concept was built
+  and no Play button exists.
+- *Add Streaming Provider* and *Websites -> Check for native streaming*
+  recognise Anikoto's domains (`anikototv.to`, `anikoto.*`, mirrors) and give
+  that reason at once, **without a request to the site**; adding it is
+  refused; a provider entry written for it by hand is kept but never
+  contacted. Anikoto still opens in *Websites* as before. All other providers
+  are unchanged.
+
 ## 1.1.0 (release candidate 1: `v1.1.0-rc.1`)
 
 `contentVersion` 01.110.000. Host-tested (fixture website, controller-driven

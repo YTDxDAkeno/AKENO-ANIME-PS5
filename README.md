@@ -427,7 +427,9 @@ redacted.
   AKENO catalogues, PeerTube); AniList is metadata only. A website becomes a
   provider only when an adapter recognises it (PeerTube instances, schema.org
   structured data naming video files); Aniworld, AnikotoTV, Crunchyroll and
-  similar sites have no adapter and stay in Websites. The bundled test series
+  similar sites have no adapter and stay in Websites. Anikoto was
+  investigated and offers no permitted way in; AKENO says why
+  ([docs/ANIKOTO.md](docs/ANIKOTO.md)). The bundled test series
   is synthetic test material, not anime. No site-specific scrapers are
   included or planned.
 - Third-party test streams can disappear at any time.

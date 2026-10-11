@@ -108,6 +108,13 @@ planned: they publish no catalogue AKENO may read and play their episodes in
 their own web players, often with DRM. They stay in *Websites*. Crunchyroll's
 protected playback is a separate question ([CRUNCHYROLL.md](CRUNCHYROLL.md)).
 
+**Anikoto** was investigated in detail ([ANIKOTO.md](ANIKOTO.md)): it has no
+documented or authorized API, its catalogue is reachable only by scraping
+pages and private endpoints it blocks for automated clients, and its episodes
+are web players on other hosts whose streams answer only forged `Referer`
+headers. *Add Streaming Provider* recognises its domains and says so at once,
+without a request to the site (`src/anime/site_policy.cpp`).
+
 The structured-data adapter depends on what a site publishes. Many sites
 describe their series with schema.org but name no video file (only a web
 player): AKENO then lists the catalogue in the detection panel and explains

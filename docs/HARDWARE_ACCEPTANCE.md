@@ -430,6 +430,11 @@ site used ______
         `anime-providers.json`; the second contains no `"type": "website"`.
 18. [ ] Export a report (Settings -> Diagnostics -> *Export report*) and
         attach it.
+19. [ ] *Add Streaming Provider* with `anikototv.to`: the panel reads *Not a
+        streaming provider* - "Anikoto cannot be added: it has no documented
+        or authorized API ..." with four notes; *Add Provider* does nothing.
+        Anikoto still opens in *Websites* as before. (There is no Anikoto
+        playback to test: [ANIKOTO.md](ANIKOTO.md).)
 
 Result: ______ passed, ______ failed, ______ not tested.
 
