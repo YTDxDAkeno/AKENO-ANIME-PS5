@@ -118,6 +118,12 @@ which 1.0.0 never opens, changes or deletes; upgrading to 1.1.0 again shows
 them exactly as before, together with any catalogue you added or removed in
 1.0.0 ([WEBSITE_PROVIDERS.md](WEBSITE_PROVIDERS.md#storage-and-rolling-back-to-100)).
 
+**From 1.1.0-rc.2 back to rc.1 or 1.0.0**: rc.2 adds one file,
+`anime-native-playback.json` (which providers' episodes played in AKENO's
+player on this console). Older versions ignore it; a provider label only
+rc.2 knows (`auth-required`) is kept as stored by rc.1. Upgrading again shows
+*Native playback verified* where it was before.
+
 ## Check the download and the installation
 
 - The release's `SHA256SUMS` lists the ZIP's SHA-256. The GitHub release page

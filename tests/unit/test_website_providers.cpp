@@ -522,6 +522,40 @@ TEST(WebsitePeerTube, RecognisesAnInstanceByItsDocumentedApi)
     EXPECT_FALSE(detect_website(fetch_site_page("https://plain.example/", {}), {}).recognised);
 }
 
+// A real instance (video.blender.org, seen by the real-network acceptance run)
+// answers its pages with 406 Not Acceptable when JSON is preferred over HTML.
+net::Response negotiating_tube(const net::Request &request)
+{
+    const bool json_first =
+        std::any_of(request.headers.begin(), request.headers.end(), [](const std::string &h)
+                    { return h.rfind("Accept: application/json", 0) == 0; });
+    if (request.url == "https://tube.example/" && json_first)
+    {
+        {
+            std::lock_guard<std::mutex> guard(g_requests_lock);
+            g_requests.push_back(request.url + " (json first)");
+        }
+        net::Response r;
+        r.outcome = net::Outcome::http_error;
+        r.status = 406;
+        return r;
+    }
+    return tube_instance(request);
+}
+
+TEST(WebsitePeerTube, AnInstanceThatRefusesJsonForItsPagesIsRecognised)
+{
+    TubeTransport tube;
+    net::set_test_transport(negotiating_tube);
+    ProviderConfig config;
+    const ProviderReport report = check_source("https://tube.example", "", {}, {}, &config);
+    EXPECT_TRUE(TubeTransport::requested("https://tube.example/ (json first)"));
+    ASSERT_TRUE(report.importable) << report.verdict;
+    EXPECT_EQ(report.adapter, "peertube-instance");
+    EXPECT_EQ(report.playable, 1);
+    EXPECT_EQ(config.address, "https://tube.example/");
+}
+
 TEST(WebsitePeerTube, LocalChannelsAreSeriesAndPlaylistsSeasons)
 {
     TubeTransport tube;

@@ -1087,10 +1087,18 @@ ProviderReport check_source_once(const std::string &address, const std::string &
     }
     else
     {
-        const SitePage f = fetch_site_page(
+        SitePage f = fetch_site_page(
             c.address, cancel,
             "application/json,text/html;q=0.9,application/xhtml+xml;q=0.9,*/*;q=0.5",
             8u * 1024u * 1024u);
+        // A web application that negotiates content answers its pages with
+        // 406 when JSON is preferred (PeerTube does, video.blender.org among
+        // them): ask once more preferring HTML, as a browser would.
+        if (!f.ok && f.status == 406)
+            f = fetch_site_page(c.address, cancel,
+                                "text/html,application/xhtml+xml;q=0.9,application/json;q=0.8,*/*;"
+                                "q=0.5",
+                                8u * 1024u * 1024u);
         if (!f.ok)
         {
             report.source = (f.status == 401 || f.status == 403) ? SourceClass::protected_source

@@ -23,8 +23,9 @@
 // catalogue from the instance) > a series (channel) > its season (playlist)
 // > the first episode > AKENO's native player: picture and sound counted,
 // the provider verified, subtitles (Triangle) where the episode has any,
-// pause and resume (Cross), seek (Right, Left), the next episode (R2), stop
-// (Circle) with the position saved > restart the App > the provider, its
+// pause and resume (Cross), seek (Right, Left), the next episode (R2), the
+// previous one (L2) and back, stop (Circle) with the position saved >
+// restart the App > the provider, its
 // "verified" state and Continue Watching are still there > the series'
 // Continue action resumes the episode where it stopped.
 //
@@ -608,6 +609,30 @@ TEST(RealNetwork, AuthorizedProviderToNativePlayerEndToEnd)
                     std::to_string(h.record().audio_units.load() - audio_at_next) +
                     " audio frames");
     EXPECT_TRUE(av2);
+
+    // The previous episode (L2), then the next one again (R2).
+    const int opens_at_previous = h.record().opens.load();
+    h.press(input::Button::l2);
+    const bool previous = h.until(
+        [&] {
+            return h.record().opens > opens_at_previous &&
+                   h.status().state == media::PlayerState::playing;
+        },
+        90);
+    h.step(30);
+    const int opens_at_return = h.record().opens.load();
+    h.press(input::Button::r2);
+    const bool returned = h.until(
+        [&] {
+            return h.record().opens > opens_at_return &&
+                   h.status().state == media::PlayerState::playing;
+        },
+        90);
+    report.step("Previous episode (L2) and back (R2)", previous && returned,
+                std::string{"episode 1 again: "} + (previous ? "yes" : "no") +
+                    "; episode 2 again: " + (returned ? "yes" : "no"));
+    EXPECT_TRUE(previous && returned);
+    h.until([&] { return h.status().position > 1.0; }, 60);
 
     // 9. Progress: seek in, stop; the position is kept for episode 2.
     h.press(input::Button::right);

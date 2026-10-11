@@ -34,9 +34,9 @@ stable `v1.1.0`.
   provider). The first time, a message says so; the provider's *Details* and
   the exported report show the record.
 - Saved ids are unchanged (`native`, `partial`, `catalogue-only`,
-  `browser-only`, `protected`, `unsupported`, `unknown`); `auth-required` and
-  `unavailable` are new and rc.1 keeps them as they are. *verified* is never
-  saved as a check result.
+  `browser-only`, `protected`, `unsupported`, `unknown`); `auth-required` is
+  new and rc.1 keeps it as stored. *Temporarily unavailable* and *verified*
+  are never saved as a check's result (an outage keeps the last full check).
 
 ### AnimePahe investigated: browser only, never contacted
 

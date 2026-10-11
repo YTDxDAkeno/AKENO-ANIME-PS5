@@ -68,7 +68,8 @@ the native states ever come with a Play button:
 
 rc.1 saved the same ids (`native`, `partial`, `catalogue-only`,
 `browser-only`, `protected`, `unsupported`, `unknown`); rc.2 adds
-`auth-required` and `unavailable`, which rc.1 keeps as they are.
+`auth-required`, which rc.1 keeps as stored. *Temporarily unavailable* and
+*Native playback verified* are never saved as a check's result.
 
 **Check Again** on a website provider's home runs the whole check again and
 updates its label, for a site that starts (or stops) publishing video files.
