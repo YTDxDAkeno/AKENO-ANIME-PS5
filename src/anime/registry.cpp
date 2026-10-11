@@ -509,7 +509,8 @@ void Registry::set_playback(std::string_view id, PlaybackClass playback)
 {
     for (ProviderConfig &c : configs_)
         if (c.id == id && c.type == ProviderType::website && playback != PlaybackClass::unknown &&
-            playback != PlaybackClass::verified && c.playback != playback)
+            playback != PlaybackClass::verified && playback != PlaybackClass::unavailable &&
+            c.playback != playback)
         {
             c.playback = playback;
             c.checked = platform::wall_clock_seconds();

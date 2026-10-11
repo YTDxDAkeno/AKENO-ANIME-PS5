@@ -186,9 +186,13 @@ class Harness
             step(2);
         }
     }
+    // Wall-clock bound: rendering a 1080p frame with the sanitizers takes far
+    // longer than the app's 16 ms frame on a runner.
     bool until(const std::function<bool()> &done, int seconds)
     {
-        for (int i = 0; i < seconds * 100; ++i)
+        const std::uint64_t end =
+            platform::monotonic_us() + static_cast<std::uint64_t>(seconds) * 1000000u;
+        while (platform::monotonic_us() < end)
         {
             if (done())
                 return true;
@@ -307,6 +311,41 @@ int playable_season(const anime::Series &s)
     return -1;
 }
 
+// When detection did not offer Add Provider: what the instance answers and
+// what the same check found, in the job log (the artifact is not always at hand).
+void explain_detection(const std::string &host, Report &report)
+{
+    net::Client client;
+    net::Request request;
+    request.url = "https://" + host + "/api/v1/config";
+    const net::Response r = client.perform(request);
+    report.fact("GET /api/v1/config", "outcome " + std::to_string(static_cast<int>(r.outcome)) +
+                                          ", HTTP " + std::to_string(r.status) + ", " +
+                                          std::to_string(r.body.size()) + " bytes" +
+                                          (r.error.empty() ? "" : ", " + r.error));
+    anime::ProviderConfig config;
+    const anime::ProviderReport check =
+        anime::check_source("https://" + host, "", {}, net::make_cancel_flag(), &config);
+    report.fact("Check: verdict", check.verdict);
+    report.fact("Check: source", anime::source_class_label(check.source));
+    report.fact("Check: format / adapter", check.format + " / " + check.adapter);
+    report.fact("Check: importable", check.importable ? "yes" : "no");
+    report.fact("Check: playback", anime::playback_class_label(check.playback));
+    report.fact("Check: counts",
+                std::to_string(check.series) + " series, " + std::to_string(check.episodes) +
+                    " episodes, " + std::to_string(check.with_media) + " name a video, " +
+                    std::to_string(check.probed) + " checked, " + std::to_string(check.playable) +
+                    " playable, " + std::to_string(check.network) + " unreachable, " +
+                    std::to_string(check.unsupported) + " unsupported, " +
+                    std::to_string(check.missing) + " missing");
+    for (const std::string &e : check.evidence)
+        report.fact("Check: evidence", e);
+    for (const anime::CatalogIssue &e : check.errors)
+        report.fact("Check: error", e.path + " " + e.message);
+    for (const anime::CatalogIssue &w : check.warnings)
+        report.fact("Check: warning", w.path + " " + w.message);
+}
+
 std::string stream_line(const media::PlayerStatus &s)
 {
     return s.container + ", " + s.video_codec + " " + std::to_string(s.width) + "x" +
@@ -344,8 +383,14 @@ TEST(RealNetwork, AuthorizedProviderToNativePlayerEndToEnd)
     h.press(input::Button::cross);
     ASSERT_TRUE(app.keyboard_active());
     h.type(host);
-    ASSERT_TRUE(h.settled(240)) << "detection did not finish";
+    const bool detected = h.until([&] { return app.top_focus_id() != "detecting"; }, 300);
+    h.settled(60);
     h.shot("01-detection");
+    const std::string button = app.top_focus_id();
+    report.fact("Detection", std::string{detected ? "finished" : "still running after 300 s"} +
+                                 ", focus on \"" + button + "\"");
+    if (button != "add-provider")
+        explain_detection(host, report);
     h.press(input::Button::cross); // Add Provider
     const std::string home = h.top();
     const bool added = home.rfind("provider-home:", 0) == 0;
@@ -386,7 +431,7 @@ TEST(RealNetwork, AuthorizedProviderToNativePlayerEndToEnd)
     for (const anime::Series &s : state->series)
         if (wanted.empty() || s.title == wanted)
             candidates.push_back(s.id);
-    for (std::size_t i = 0; i < candidates.size() && i < 10 && season < 0; ++i)
+    for (std::size_t i = 0; i < candidates.size() && i < 8 && season < 0; ++i)
     {
         const std::string card = pid + "/" + candidates[i];
         if (!h.focus_on(card))
@@ -572,9 +617,11 @@ TEST(RealNetwork, AuthorizedProviderToNativePlayerEndToEnd)
     h.step(20);
     const HistoryEntry *two = h.history(key2);
     const bool saved = two && two->position >= 10.0 && !two->finished();
+    // A copy: the history entry belongs to the App that the restart replaces.
+    const double saved_position = two ? two->position : -1.0;
     report.step("Playback progress saved", saved,
                 "episode 2 stopped at " + fixed(stopped_at) + " s; saved " +
-                    (two ? fixed(two->position) + " s" : std::string{"nothing"}));
+                    (two ? fixed(saved_position) + " s" : std::string{"nothing"}));
     EXPECT_TRUE(saved);
     h.shot("05-series-after-stop");
 
@@ -621,10 +668,10 @@ TEST(RealNetwork, AuthorizedProviderToNativePlayerEndToEnd)
         h.until([&] { return h.status().state == media::PlayerState::playing; }, 90) &&
         h.until([&] { return h.status().position > 0.0; }, 60);
     const double resumed_at = h.status().position;
-    const bool resume_ok = resumed_play && two && resumed_at >= two->position - 3.0;
+    const bool resume_ok = resumed_play && saved && resumed_at >= saved_position - 3.0;
     report.step("Resume after restart", resume_ok,
-                "Continue started at " + fixed(resumed_at) + " s (saved " +
-                    (two ? fixed(two->position) : std::string{"-"}) + " s)");
+                "Continue started at " + fixed(resumed_at) + " s (saved " + fixed(saved_position) +
+                    " s)");
     EXPECT_TRUE(resume_ok);
     h.shot("07-resumed");
     h.press(input::Button::circle);

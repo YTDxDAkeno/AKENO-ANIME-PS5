@@ -544,6 +544,8 @@ TEST(PlaybackClass, AProviderThatDidNotAnswerIsTemporarilyUnavailable)
     EXPECT_FALSE(plays_natively(registry.playback_of(added))); // no Play buttons meanwhile
     // What the last full check found is kept for when it answers again.
     EXPECT_EQ(registry.config(added)->playback, PlaybackClass::native);
+    registry.set_playback(added, PlaybackClass::unavailable); // a check during the outage
+    EXPECT_EQ(registry.config(added)->playback, PlaybackClass::native);
 }
 
 TEST(PlaybackClass, AValueFromANewerVersionIsKept)

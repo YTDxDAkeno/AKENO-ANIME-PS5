@@ -3,7 +3,93 @@
 AKENO STREAM for PS5 (`PPSA99276`). Versions are `MAJOR.MINOR.PATCH`; release
 candidates are tagged `vX.Y.Z-rc.N` and published as GitHub pre-releases.
 
-## Unreleased
+## 1.1.0 (release candidate 2: `v1.1.0-rc.2`)
+
+`contentVersion` 01.110.000 (unchanged from rc.1: same version, next
+candidate). Host-tested (ASan/UBSan), real-network tested on a GitHub runner
+against an authorized PeerTube instance (software decoder), and built for the
+PS5; awaiting the console run of the
+[hardware checklist](docs/HARDWARE_ACCEPTANCE.md) section 15 before the
+stable `v1.1.0`.
+
+### Provider capability states
+
+- Every provider now shows one of eight states, in *Add Streaming Provider*,
+  on its card, its home, its series and in the diagnostics report:
+  **Native playback verified**, **Native playback available - not
+  hardware-tested** (*for some episodes* when others are protected or
+  missing), **Catalogue only**, **Browser only (PS5 browser)**,
+  **Authentication required**, **DRM protected**, **Unsupported**,
+  **Temporarily unavailable** - plus *Not checked yet* before the first
+  check ([docs/PROVIDER_COMPATIBILITY.md](docs/PROVIDER_COMPATIBILITY.md)).
+  Sign-in and DRM are told apart; a provider that did not answer its last
+  load is *Temporarily unavailable* (its last full check is kept). Play
+  buttons appear only for episodes of native states.
+- **Verified means played here.** A check of a site never verifies a
+  provider. The app records *Native playback verified* when one of the
+  provider's episodes plays in AKENO's own player with about a second of
+  pictures and half a second of sound and no decoder or audio errors, and
+  keeps what the player measured (decoder, codecs, size, counts) in
+  `anime-native-playback.json` (data backup included; removed with the
+  provider). The first time, a message says so; the provider's *Details* and
+  the exported report show the record.
+- Saved ids are unchanged (`native`, `partial`, `catalogue-only`,
+  `browser-only`, `protected`, `unsupported`, `unknown`); `auth-required` and
+  `unavailable` are new and rc.1 keeps them as they are. *verified* is never
+  saved as a check result.
+
+### AnimePahe investigated: browser only, never contacted
+
+- [docs/ANIMEPAHE.md](docs/ANIMEPAHE.md): why AnimePahe plays in the PS5
+  browser (a full WebKit browser runs DDoS-Guard's challenge, AnimePahe's and
+  kwik's scripts and requests the stream from kwik's own page) and why that
+  does not make it a native provider: catalogue and episodes behind
+  DDoS-Guard's browser challenge, kwik.cx web players whose HLS address is
+  built by an obfuscated script and answers only kwik's `Referer`, no API,
+  terms or licence. No challenge solving, session extraction, script
+  de-obfuscation or header forging; no native playback built or claimed.
+- *Add Streaming Provider* recognises `animepahe.pw`, `.com`, `.org`, `.ru`
+  and `.si` **without a request**, explains why, labels it *Browser only* and
+  adds nothing; the button next to *Detect Provider* reads **Open in
+  Websites** and opens it in the PS5 browser directly (no pre-check request
+  from AKENO). Look-alike domains are not treated as AnimePahe.
+
+### EverythingMoe: provider compatibility assessment
+
+- [docs/PROVIDER_COMPATIBILITY.md](docs/PROVIDER_COMPATIBILITY.md): the
+  directory as a discovery source (June 2026 snapshot: 8 of 86 active
+  anime-streaming entries carry its `licensed` tag - all subscription, DRM or
+  region-locked services, or YouTube), the criteria (documentation,
+  permission, catalogue API, search, episodes, native MP4/HLS, codecs,
+  sign-in, DRM, region, reliability) and the authorized open sources AKENO
+  plays natively (PeerTube, Internet Archive, your own catalogues). No
+  EverythingMoe entry was integrated.
+
+### Real-network acceptance
+
+- `tests/unit/test_real_network.cpp` and the *Real-network acceptance*
+  workflow (`.github/workflows/network-acceptance.yml`): the real App,
+  through the controller, from an empty data folder, over the internet:
+  *Add Streaming Provider* with `video.blender.org` (the Blender
+  Foundation's PeerTube instance; Creative Commons open movies - animated
+  films, not anime), its catalogue, a series, its season, the first episode
+  in AKENO's native player (FFmpeg's software decoder standing in for the
+  hardware decoder), the provider verified, subtitles, pause and resume,
+  seek both ways, the next episode (R2), progress saved, restart, resume from
+  the series' *Continue*. A Markdown report and screenshots are uploaded. It
+  is skipped in the normal test run and never gates a release: a third-party
+  outage says nothing about the build.
+- `Screen::focus_id()` and `App::latest_toast()` let the tests read the
+  focused card and the newest message.
+
+### Hardware checklist
+
+- Section 15: the rc.2 acceptance run on firmware 12.20 (launch, DualSense,
+  provider import, catalogue, episode list, native playback over the real
+  network with the hardware decoder, picture and audio, pause/resume, seek,
+  subtitles, next episode, restart and resume, no crashes, existing PeerTube
+  and JSON providers, AnimePahe in the browser, report). The tester's Miruro
+  and AnimePahe browser results are recorded under *Results so far*.
 
 ### Miruro investigated: a website-only catalogue; the Play button diagnosis
 

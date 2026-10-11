@@ -30,11 +30,10 @@ namespace akeno::anime
 {
 // An episode that played in AKENO STREAM's own player on this device - about a
 // second of pictures presented and half a second of sound, no decoder or audio
-// errors - is what makes a
-// provider "Native playback verified". Only the App writes one, from what the
-// player measured; a check of a site never does. Kept per provider in
-// <data>/anime-native-playback.json (the newest replaces the last; removing
-// the provider removes it).
+// errors - is what makes a provider "Native playback verified". Only the App
+// writes one, from what the player measured; a check of a site never does.
+// Kept per provider in <data>/anime-native-playback.json (the newest replaces
+// the last; removing the provider removes it).
 struct NativePlayback
 {
     std::uint64_t at = 0; // Unix seconds
@@ -114,7 +113,9 @@ class Registry final
     // Website providers: what the last check of the catalogue found.
     void set_summary(std::string_view id, int series, int episodes);
     // Website providers: what the last full check (Add, Check Again) found
-    // their episodes do in AKENO STREAM.
+    // their episodes do in AKENO STREAM. "Not checked", "temporarily
+    // unavailable" and "verified" are never saved: the first two say nothing
+    // about what the site offers, the last is derived from native playback.
     void set_playback(std::string_view id, PlaybackClass playback);
     // What a provider's episodes do in AKENO STREAM now: an episode checked
     // and found playable wins; a website's unopened series keep what its last

@@ -2721,7 +2721,12 @@ class ProviderHomeScreen final : public Screen
                             return;
                         checking_ = false;
                         app_.anime_registry().set_playback(id_, report.playback);
-                        const anime::PlaybackClass now = app_.anime_registry().playback_of(id_);
+                        // No answer: say so now; the last full check stays saved.
+                        const bool silent = report.source == anime::SourceClass::unreachable ||
+                                            report.playback == anime::PlaybackClass::unavailable;
+                        const anime::PlaybackClass now =
+                            silent ? anime::PlaybackClass::unavailable
+                                   : app_.anime_registry().playback_of(id_);
                         app_.toast(name_of() + ": " + anime::playback_class_label(now),
                                    playback_color(now));
                         rebuild();
@@ -2828,6 +2833,18 @@ class AddProviderScreen final : public Screen
     [[nodiscard]] std::string screen_id() const override
     {
         return "add-provider";
+    }
+    [[nodiscard]] std::string focus_id() const override
+    {
+        static const char *const kRows[] = {"address", "name", "anilist-id", "detect"};
+        if (detecting_)
+            return "detecting";
+        if (row_ < 4)
+            return kRows[row_];
+        return !existing_.empty()   ? "open-provider"
+               : browser_report()   ? "open-in-websites"
+               : catalogue_report() ? "add-as-catalogue"
+                                    : "add-provider";
     }
 
     void render(ui::Painter &p, std::uint64_t now_ms) override

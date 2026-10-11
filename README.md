@@ -23,12 +23,29 @@ backup and a diagnostics screen.
 | | |
 | --- | --- |
 | Title ID | `PPSA99276` (unchanged since v0.1) |
-| Version | 1.1.0 (`contentVersion` 01.110.000); first release candidate `v1.1.0-rc.1` (previous: 1.0.0, `v1.0.0-rc.1`) |
+| Version | 1.1.0 (`contentVersion` 01.110.000); release candidate `v1.1.0-rc.2` (previous: `v1.1.0-rc.1`, 1.0.0 `v1.0.0-rc.1`) |
 | Tested on | PS5 firmware 12.20 (builds before 1.0.0: browser, YouTube, PeerTube, websites) and 13.09 with ShadowMountPlus (0.4.1); no PSN account, no PC needed after install |
 | Install path | `/data/homebrew/PPSA99276/` |
 | Licence | GPL-3.0-or-later |
 
-> **Status: 1.1.0 release candidate.** 1.1.0 adds **website providers**:
+> **Status: 1.1.0 release candidate 2 - not yet a stable release.** rc.2
+> ships one complete **native anime workflow** on an authorized, DRM-free
+> source - Anime -> *Add Streaming Provider* -> `video.blender.org` (the
+> Blender Foundation's PeerTube instance; Creative Commons open movies,
+> animated films, not anime) -> series -> season -> episode -> AKENO's own
+> player -> resume / next episode - and labels every provider honestly:
+> *Native playback verified* (set only after an episode really played in
+> AKENO's player on your console), *Native playback available - not
+> hardware-tested*, *Catalogue only*, *Browser only*, *Authentication
+> required*, *DRM protected*, *Unsupported*, *Temporarily unavailable*.
+> AnimePahe plays in the PS5 browser but cannot be a native provider
+> ([docs/ANIMEPAHE.md](docs/ANIMEPAHE.md)); EverythingMoe lists no
+> authorized native source ([docs/PROVIDER_COMPATIBILITY.md](docs/PROVIDER_COMPATIBILITY.md)).
+> Host-tested, real-network tested on a GitHub runner (software decoder) and
+> built for the PS5; the console run is section 15 of the
+> [hardware acceptance checklist](docs/HARDWARE_ACCEPTANCE.md).
+>
+> **1.1.0 release candidate 1.** 1.1.0 adds **website providers**:
 > *Add Streaming Provider* recognises PeerTube instances and websites with
 > schema.org structured data from their address, lists their catalogue,
 > search, seasons and episodes in AKENO and plays DRM-free episodes natively
@@ -124,6 +141,9 @@ into `eboot.bin`, not yet tried on the console.
 | Add Streaming Provider: AKENO catalogue or PeerTube channel/playlist; test, compatibility report, capabilities, preview, import, remove, check again | Host-tested, PS5 build | New in 1.0.0; 1.1.0 detects automatically, shows posters and opens the provider's home |
 | Website providers: PeerTube instances (documented API) and schema.org websites recognised from their address; catalogue, search, more pages, series, seasons, episodes, native playback | Host-tested (offline fixture site, recorded PeerTube answers, controller-driven end to end), PS5 build | New in 1.1.0; only `contentUrl` media is played, never web players, trailers or protected streams. [docs/WEBSITE_PROVIDERS.md](docs/WEBSITE_PROVIDERS.md) |
 | Provider home: catalogue, search, Load More, Check Again, Open Website, Turn Off, Details, Remove | Host-tested (controller-driven), PS5 build | New in 1.1.0 |
+| Provider capability states (verified, available - not hardware-tested, catalogue only, browser only, authentication required, DRM protected, unsupported, temporarily unavailable); "verified" recorded from the player's own measurements | Host-tested (controller-driven), PS5 build | New in rc.2; [docs/PROVIDER_COMPATIBILITY.md](docs/PROVIDER_COMPATIBILITY.md) |
+| Native anime workflow over the real network: `video.blender.org` -> series -> season -> episode -> native player -> subtitles, pause, seek, next episode, progress, restart, resume | Real network on a GitHub runner (software decoder; *Real-network acceptance* workflow); console pending (checklist section 15) | New in rc.2; Creative Commons open movies, not anime |
+| AnimePahe recognised as browser only, never contacted, Open in Websites | Host-tested (controller-driven); AnimePahe itself plays in the PS5 browser on fw 12.20 (tester) | New in rc.2; [docs/ANIMEPAHE.md](docs/ANIMEPAHE.md) |
 | Provider storage across versions: website providers in their own file, rollback to 1.0.0 and upgrade again, damaged/duplicate/newer files kept | Host-tested against 1.0.0's own storage code | New in 1.1.0 |
 | Anime search: English, romaji and alternative titles, partial matches, suggestions, history, year/genre/status/availability filters | Host-tested (typed on the on-screen keyboard), PS5 build | New in 1.0.0 |
 | Bundled synthetic test series (offline; generated test patterns, not anime) | Host-tested, PS5 build | New in 1.0.0; checks the episode path on the console without a network |
@@ -432,12 +452,16 @@ redacted.
   similar sites have no adapter and stay in Websites. Anikoto was
   investigated and offers no permitted way in; AKENO says why
   ([docs/ANIKOTO.md](docs/ANIKOTO.md)). Miruro's published catalogue can be
-  added as *Website only*: series and details without Play buttons, its
+  added as *Browser only*: series and details without Play buttons, its
   episodes on the website in the browser ([docs/MIRURO.md](docs/MIRURO.md)).
-  Every provider is labelled with what its episodes do in AKENO (*Plays in
-  AKENO*, *Catalogue only*, *Website only* ...). The bundled test series
-  is synthetic test material, not anime. No site-specific scrapers are
-  included or planned.
+  AnimePahe plays in the PS5 browser but is never contacted by AKENO: its
+  catalogue is behind DDoS-Guard's challenge and its streams answer only its
+  kwik player ([docs/ANIMEPAHE.md](docs/ANIMEPAHE.md)). **No anime website
+  plays in AKENO's own player**; the native workflow is verified with
+  authorized open sources (PeerTube). Every provider is labelled with what
+  its episodes do in AKENO ([docs/PROVIDER_COMPATIBILITY.md](docs/PROVIDER_COMPATIBILITY.md)).
+  The bundled test series is synthetic test material, not anime. No
+  site-specific scrapers are included or planned.
 - Third-party test streams can disappear at any time.
 - USB access from inside the title sandbox has not been confirmed on the
   console (firmware 13.09).

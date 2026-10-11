@@ -2,7 +2,23 @@
 
 Ausführliche Dokumentation (Englisch): [README.md](README.md).
 
-**Neu in 1.1.0 (Release Candidate `v1.1.0-rc.1`):** **Website-Anbieter.**
+**Neu in Release Candidate `v1.1.0-rc.2` (noch keine stabile Version):** ein
+vollständiger **nativer Anime-Ablauf** mit einer erlaubten, DRM-freien Quelle:
+Anime -> *Add Streaming Provider* -> `video.blender.org` (PeerTube der
+Blender Foundation; Creative-Commons-Animationsfilme, **kein Anime**) ->
+Serie -> Staffel -> Folge -> AKENOs eigener Player -> Fortsetzen / nächste
+Folge. Jeder Anbieter zeigt ehrlich seinen Zustand: *Native playback
+verified* (erst nachdem eine Folge auf **deiner** Konsole in AKENOs Player
+lief), *Native playback available - not hardware-tested*, *Catalogue only*,
+*Browser only*, *Authentication required*, *DRM protected*, *Unsupported*,
+*Temporarily unavailable*. **AnimePahe** läuft im PS5-Browser, kann aber kein
+nativer Anbieter sein (DDoS-Guard-Prüfung, kwik-Webplayer, keine Lizenz);
+AKENO kontaktiert die Seite nicht und bietet *Open in Websites* an
+([docs/ANIMEPAHE.md](docs/ANIMEPAHE.md)). Bitte **Abschnitt 15** der
+[Hardware-Checkliste](docs/HARDWARE_ACCEPTANCE.md) auf der PS5 (Firmware
+12.20) durchgehen und den Diagnosebericht anhängen.
+
+**1.1.0 (Release Candidate `v1.1.0-rc.1`):** **Website-Anbieter.**
 Unter *Anime -> Add Streaming Provider* genügt jetzt die Adresse einer
 unterstützten Webseite: PeerTube-Instanzen (z. B. `video.blender.org`) und
 Webseiten, die ihren Katalog mit schema.org-Strukturdaten beschreiben, werden
@@ -42,7 +58,7 @@ Installationsanleitung (Englisch): [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Herunterladen
 
-**Release:** Auf GitHub unter **Releases** `AKENO-STREAM-PS5-v1.1.0-rc.1.zip`
+**Release:** Auf GitHub unter **Releases** `AKENO-STREAM-PS5-v1.1.0-rc.2.zip`
 und `SHA256SUMS` herunterladen, die Prüfsumme vergleichen
 (`sha256sum -c SHA256SUMS`) und die ZIP entpacken: darin liegt der Ordner
 `PPSA99276/`.
