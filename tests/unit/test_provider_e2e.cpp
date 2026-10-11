@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <mutex>
 #include <string>
 
 using namespace akeno;
@@ -40,6 +41,10 @@ std::string source_root()
     const char *root = std::getenv("AKENO_SOURCE_ROOT");
     return root ? root : ".";
 }
+
+// Addresses the app asked for that the fixture site does not serve.
+std::mutex g_offline_lock;
+std::vector<std::string> g_offline;
 
 std::string fresh_dir()
 {
@@ -55,11 +60,19 @@ class Harness
         setenv("AKENO_DATA_DIR", dir_.c_str(), 1);
         test::reset_web_view_script();
         test::clear_fixture_site_requests();
+        {
+            std::lock_guard<std::mutex> guard(g_offline_lock);
+            g_offline.clear();
+        }
         net::set_test_transport(
             [site = site_](const net::Request &request)
             {
                 if (auto r = test::serve_fixture_site(site, request))
                     return *r;
+                {
+                    std::lock_guard<std::mutex> guard(g_offline_lock);
+                    g_offline.push_back(request.url);
+                }
                 net::Response offline;
                 offline.outcome = net::Outcome::network_error;
                 offline.error = "offline";
@@ -169,6 +182,14 @@ class Harness
     [[nodiscard]] std::string top() const
     {
         return app_->top_screen_id();
+    }
+    // Requests to anything but the fixture site containing this text.
+    [[nodiscard]] static int offline_requests(const std::string &part)
+    {
+        std::lock_guard<std::mutex> guard(g_offline_lock);
+        return static_cast<int>(std::count_if(g_offline.begin(), g_offline.end(),
+                                              [&part](const std::string &u)
+                                              { return u.find(part) != std::string::npos; }));
     }
     [[nodiscard]] bool requested(const std::string &path) const
     {
@@ -347,4 +368,29 @@ TEST(ProviderEndToEnd, AnAddressThatIsAlreadyAProviderOpensItsHome)
     app.push(make_add_provider_screen(app, "http://www.anime.fixture.test"));
     h.step(3);
     EXPECT_EQ(h.top(), "provider-home:" + added);
+}
+
+TEST(ProviderEndToEnd, AnikotoIsExplainedNotAddedAndNeverContacted)
+{
+    Harness h;
+    App &app = h.app();
+    // Typed like any website: "anikototv.to" after the field's "https://".
+    add_by_typing(h, "anikototv.to");
+    ASSERT_TRUE(h.settled());
+    EXPECT_EQ(h.top(), "add-provider");
+    EXPECT_EQ(Harness::offline_requests("anikoto"), 0); // not one request to the site
+    // Add Provider does nothing: there is no provider to add.
+    h.press(input::Button::down, 4);
+    h.press(input::Button::cross);
+    h.step(3);
+    EXPECT_EQ(h.top(), "add-provider");
+    EXPECT_EQ(app.anime_registry().configs().size(), 1u);
+    EXPECT_FALSE(fs::exists(fs::join(h.dir(), anime::kWebsiteProvidersFile)));
+    EXPECT_FALSE(fs::exists(fs::join(h.dir(), anime::kProvidersFile)));
+    // The same from Websites -> Check for native streaming (any address).
+    anime::ProviderConfig config;
+    const anime::ProviderReport r =
+        anime::check_source("https://anikoto.net/watch/x", "", {}, {}, &config);
+    EXPECT_FALSE(r.importable);
+    EXPECT_EQ(Harness::offline_requests("anikoto"), 0);
 }

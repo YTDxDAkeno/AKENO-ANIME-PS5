@@ -4,6 +4,7 @@
 #include "anime/registry.hpp"
 
 #include "anime/address.hpp"
+#include "anime/site_policy.hpp"
 #include "anime/website.hpp"
 #include "core/fs.hpp"
 #include "core/json.hpp"
@@ -325,6 +326,9 @@ bool Registry::add(ProviderConfig c, std::string *why, std::string *existing, st
     const auto u = url::parse(c.address);
     if (!u || !u->is_http())
         return fail("A provider needs an http(s) address.");
+    for (const std::string &address : {c.address, c.original_url})
+        if (const auto policy = unsupported_site(address))
+            return fail(policy->verdict);
     if (c.type == ProviderType::bundled)
         c.type = ProviderType::catalog;
     const bool website = c.type == ProviderType::website;
@@ -454,6 +458,14 @@ ProviderState Registry::load_provider(const ProviderConfig &config, const Provid
 {
     ProviderState state;
     state.config = config;
+    // A provider entry for a site that cannot be one (written by hand): its
+    // site is never contacted.
+    for (const std::string &address : {config.address, config.original_url})
+        if (const auto policy = unsupported_site(address))
+        {
+            state.error = policy->verdict;
+            return state;
+        }
     const auto provider = make_provider(config, context);
     LoadedCatalog loaded = provider->load(cancel);
     state.errors = std::move(loaded.errors);
@@ -896,6 +908,19 @@ ProviderReport check_source(const std::string &address, const std::string &name,
     {
         report.source = SourceClass::unreachable;
         report.verdict = "Enter an http(s) address of a catalogue, channel or playlist.";
+        return report;
+    }
+    // A site investigated and found to offer no permitted way in: the reason,
+    // without a single request to it (anime/site_policy.hpp).
+    if (const auto policy = unsupported_site(address))
+    {
+        report.source = SourceClass::web_page;
+        report.format = policy->site + " (website)";
+        report.name = policy->site;
+        report.verdict = policy->verdict;
+        for (const std::string &reason : policy->reasons)
+            report.warnings.push_back({"", reason});
+        report.warnings.push_back({"", "Investigation: " + policy->document});
         return report;
     }
     ProviderConfig c;

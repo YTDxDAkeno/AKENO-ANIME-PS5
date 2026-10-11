@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "anime/website.hpp"
 
+#include "anime/site_policy.hpp"
 #include "core/url.hpp"
 
 #include <algorithm>
@@ -305,6 +306,12 @@ SiteSeries load_website_series(const ProviderConfig &config, const Series &entry
                                const ProviderContext &context, const net::CancelFlag &cancel)
 {
     SiteSeries out;
+    if (const auto policy = unsupported_site(config.address))
+    {
+        out.error = policy->verdict;
+        out.error_kind = SiteError::unsupported;
+        return out;
+    }
     const WebsiteAdapter *adapter = find_website_adapter(config.adapter);
     if (!adapter)
     {
@@ -338,6 +345,12 @@ SiteListing load_website_page(const ProviderConfig &config, const std::string &p
                               const ProviderContext &context, const net::CancelFlag &cancel)
 {
     SiteListing out;
+    if (const auto policy = unsupported_site(config.address))
+    {
+        out.error = policy->verdict;
+        out.error_kind = SiteError::unsupported;
+        return out;
+    }
     const WebsiteAdapter *adapter = find_website_adapter(config.adapter);
     if (!adapter)
     {
@@ -358,6 +371,12 @@ SiteListing search_website(const ProviderConfig &config, const std::string &quer
                            const ProviderContext &context, const net::CancelFlag &cancel)
 {
     SiteListing out;
+    if (const auto policy = unsupported_site(config.address))
+    {
+        out.error = policy->verdict;
+        out.error_kind = SiteError::unsupported;
+        return out;
+    }
     const WebsiteAdapter *adapter = find_website_adapter(config.adapter);
     if (!adapter)
     {

@@ -240,6 +240,12 @@ int main()
     press(app, input::Button::circle); // stop
     press(app, input::Button::circle); // the provider's home
     press(app, input::Button::circle); // Anime
+    // Anikoto: why it cannot be a provider (no request is sent to it).
+    app.push(make_add_provider_screen(app, "https://anikototv.to/"));
+    for (int i = 0; i < 200 && app.jobs().pending(); ++i)
+        settle(app, 5);
+    shot(app, "54-provider-anikoto");
+    press(app, input::Button::circle);
     press(app, input::Button::left, 3);
     press(app, input::Button::down); // AniList: Trending Anime
     press(app, input::Button::right, 2);
