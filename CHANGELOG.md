@@ -82,6 +82,23 @@ stable `v1.1.0`.
 - `Screen::focus_id()` and `App::latest_toast()` let the tests read the
   focused card and the newest message.
 
+### Fixed
+
+- **A PeerTube instance that negotiates content could not be added.**
+  `video.blender.org` answers *Add Streaming Provider*'s first request (which
+  prefers JSON, so that plain JSON catalogues are recognised) with **HTTP 406
+  Not Acceptable**; rc.1 reported "answered HTTP 406" and added nothing - on
+  the console too, with the address the rc.1 checklist named. Found by the
+  first real-network acceptance run; on a 406 the homepage is now asked for
+  once more preferring HTML, as a browser does.
+- **Paused during start-up, the player said "Buffering".** The stream reports
+  "playing" only once it is resumed, so a pause in the first moment of an
+  episode showed *Buffering* for as long as it lasted. A pause now always
+  reads *Paused*. Found by the same run; the host test decoder (which ignored
+  pause, unlike the console's) now holds the stream while paused, and
+  `Player.PauseHoldsPlaybackUntilResumed` checks that pictures and position
+  stand still, resume continues, and a seek or stop while paused is prompt.
+
 ### Hardware checklist
 
 - Section 15: the rc.2 acceptance run on firmware 12.20 (launch, DualSense,

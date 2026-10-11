@@ -349,9 +349,9 @@ void explain_detection(const std::string &host, Report &report)
 
 std::string stream_line(const media::PlayerStatus &s)
 {
+    // The status names the audio codec; rate and channels are not reported.
     return s.container + ", " + s.video_codec + " " + std::to_string(s.width) + "x" +
-           std::to_string(s.height) + ", " + s.audio_codec + " " + std::to_string(s.audio_rate) +
-           " Hz " + std::to_string(s.audio_channels) + " ch" +
+           std::to_string(s.height) + ", " + s.audio_codec +
            (s.variant.empty() ? "" : ", variant " + s.variant) +
            (s.variant_count ? " of " + std::to_string(s.variant_count) : "");
 }

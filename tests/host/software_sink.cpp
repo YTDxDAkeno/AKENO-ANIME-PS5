@@ -8,7 +8,9 @@ extern "C"
 #include <libavcodec/avcodec.h>
 }
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 namespace akeno::test
 {
@@ -42,7 +44,9 @@ class SoftwareSink final : public media::DecodeSink
         { return static_cast<SoftwareSink *>(self)->video(d, n, pts); };
         b.submit_audio = [](void *self, const std::uint8_t *, std::size_t, std::uint64_t)
         {
-            ++static_cast<SoftwareSink *>(self)->record_->audio_units;
+            auto &s = *static_cast<SoftwareSink *>(self);
+            s.hold_while_paused();
+            ++s.record_->audio_units;
             return 0;
         };
         b.disable_audio = [](void *) { return 0; };
@@ -67,8 +71,16 @@ class SoftwareSink final : public media::DecodeSink
         return b;
     }
 
-    void set_paused(bool) override
+    // Like the console's backend: while paused nothing more is presented and
+    // the demuxer is held; a stop or seek (request_stop) releases it.
+    void set_paused(bool paused) override
     {
+        paused_.store(paused);
+    }
+    void hold_while_paused()
+    {
+        while (paused_.load() && !stop_.load())
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     void request_stop() override
     {
@@ -108,6 +120,7 @@ class SoftwareSink final : public media::DecodeSink
 
     int video(const std::uint8_t *data, std::size_t bytes, std::uint64_t pts)
     {
+        hold_while_paused();
         if (stop_.load())
             return -125;
         ++record_->video_units;
@@ -175,6 +188,7 @@ class SoftwareSink final : public media::DecodeSink
     AVPacket *packet_ = nullptr;
     std::vector<std::uint8_t> nv12_;
     std::atomic<bool> stop_{false};
+    std::atomic<bool> paused_{false};
     std::atomic<std::uint64_t> presented_{UINT64_MAX};
 };
 } // namespace

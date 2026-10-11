@@ -406,7 +406,10 @@ PlayerStatus Player::status() const
             }
         }
     }
-    if (session_->paused.load() && out.state == PlayerState::playing)
+    // The user's pause wins over buffering: paused during start-up, the
+    // stream never reports "playing" until it is resumed.
+    if (session_->paused.load() &&
+        (out.state == PlayerState::playing || out.state == PlayerState::buffering))
         out.state = PlayerState::paused;
     if (config_.frames)
         out.convert_us = config_.frames->last_convert_us();

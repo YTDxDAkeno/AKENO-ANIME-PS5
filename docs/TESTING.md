@@ -54,6 +54,42 @@ contact a console.
 Each test must clean up its files, avoid shared mutable state, and include the
 failure case that would have caught the associated bug.
 
+## Real-network acceptance (AKENO STREAM)
+
+`RealNetwork.AuthorizedProviderToNativePlayerEndToEnd`
+(`tests/unit/test_real_network.cpp`) is the one test that uses the real
+internet. It is skipped unless `AKENO_NETWORK_ACCEPTANCE=1`, so `make
+test-unit` stays deterministic and offline. The *Real-network acceptance*
+workflow (`.github/workflows/network-acceptance.yml`) runs it on every push
+to `claude/**` and `release/**` and on demand (with another PeerTube instance
+or channel as inputs). It is a separate workflow and never gates a release: a
+third-party outage says nothing about the build.
+
+The test drives the real App through the controller from an empty data
+folder: *Add Streaming Provider* with `video.blender.org` (the Blender
+Foundation's PeerTube instance; Creative Commons open movies), detection, the
+provider's home and catalogue, a series and season whose first episode plays,
+AKENO's player (FFmpeg's software decoder in place of the PS5's hardware
+decoder), the provider's *Native playback verified* state, subtitles where the
+episode has captions, pause and resume, seeking both ways, the next and
+previous episode, saved progress, a restart and the series' *Continue*. The
+step table goes to the job log and summary; the report and screenshots are
+uploaded as an artifact.
+
+It found two defects the offline fixtures could not show: a PeerTube instance
+answering 406 to AKENO's JSON-first detection request (CHANGELOG, rc.2
+*Fixed*), and a pause during start-up reading *Buffering*.
+
+Locally (with network access):
+
+```bash
+AKENO_NETWORK_ACCEPTANCE=1 AKENO_NETWORK_REPORT=build/network.md \
+  make test-unit GTEST_ARGS='--gtest_filter=RealNetwork.*'
+```
+
+A pass here is a host result over the real network, not a console result:
+hardware checklist section 15 is still required.
+
 ## PS5 integration validation
 
 Rendering, controller input, AudioOut, mounted paths, launch/closure behavior,

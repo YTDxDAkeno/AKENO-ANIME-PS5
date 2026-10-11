@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <functional>
 #include <cstdlib>
 #include <thread>
 
@@ -219,6 +220,53 @@ TEST(Player, StopIsPromptAndClean)
     // Replaying after a stop works.
     rig.player->play(request);
     EXPECT_EQ(rig.wait_done().state, media::PlayerState::ended);
+}
+
+// Pause holds the picture (no frame presented, the position stands still),
+// resume continues, a stop while paused is still prompt, and a seek while
+// paused releases the held stream.
+TEST(Player, PauseHoldsPlaybackUntilResumed)
+{
+    test::TestServer server(fixtures());
+    Rig rig;
+    media::PlayRequest request;
+    request.url = server.url("hls/master.m3u8");
+    rig.player->play(request);
+    const auto until = [&](const std::function<bool()> &done)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (std::chrono::steady_clock::now() < deadline && !done())
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        return done();
+    };
+    ASSERT_TRUE(until([&] { return rig.record->frames.load() > 5; }));
+    rig.player->toggle_pause();
+    EXPECT_EQ(rig.player->status().state, media::PlayerState::paused);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200)); // what was in flight
+    const auto frames = rig.record->frames.load();
+    const double position = rig.player->status().position;
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    EXPECT_LE(rig.record->frames.load(), frames + 1);
+    EXPECT_NEAR(rig.player->status().position, position, 0.05);
+    EXPECT_EQ(rig.player->status().state, media::PlayerState::paused);
+    rig.player->toggle_pause();
+    EXPECT_TRUE(until([&] { return rig.record->frames.load() > frames + 5; }));
+    // Paused again, then a seek: the held stream is released and plays on.
+    rig.player->toggle_pause();
+    rig.player->seek_to(1.0);
+    EXPECT_TRUE(until(
+        [&]
+        {
+            const auto s = rig.player->status();
+            return s.state != media::PlayerState::seeking && rig.record->opens.load() >= 2;
+        }));
+    // A stop while paused is prompt.
+    if (rig.player->status().state != media::PlayerState::paused)
+        rig.player->toggle_pause();
+    const auto started = std::chrono::steady_clock::now();
+    rig.player->stop();
+    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(3));
+    EXPECT_EQ(rig.record->opens.load(), rig.record->closes.load());
 }
 
 TEST(Player, ReportsMissingPlaylists)
